@@ -1,0 +1,28 @@
+name: agent-hub
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: agent-hub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: agent_hub
+      POSTGRES_USER: agent_hub
+      POSTGRES_PASSWORD: agent_hub_dev
+      # 初始化脚本只在数据卷为空时执行一次
+      TZ: Asia/Shanghai
+    ports:
+      # 宿主机 5433 → 容器 5432，避免与本机已有 PostgreSQL 冲突
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent_hub -d agent_hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+    name: agent-hub-postgres-data

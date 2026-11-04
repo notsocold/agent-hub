@@ -1,0 +1,42 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# 环境与本地数据（API key、数据库密码不进代码仓库）
+.env
+.env.*
+!.env.example
+*.db
+*.sqlite3
+
+# 向量索引的本地导出物（正式数据在 PostgreSQL 中）
+vector_index/
+
+# 测试与工具缓存
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# 日志
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# DSH workspace-session machine-local index (safe to ignore)
+.dsh/workspace-session.json
+
+# DSH session locks and conflict backups
+.dsh/sessions/**/session.lock
+.dsh/sessions/.backup/
