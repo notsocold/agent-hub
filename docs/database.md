@@ -11,8 +11,8 @@
 
 | Schema | 内容 | 管理方 |
 |---|---|---|
-| `public` | 业务表（用户、会话、消息、run、Agent 注册表、A2A 任务、知识库、审批、审计） | Alembic |
-| `langgraph` | LangGraph checkpoint 表（`checkpoints`、`checkpoint_blobs`、`checkpoint_writes`、`checkpoint_migrations`） | `PostgresSaver.setup()` |
+| `public` | 业务表（用户、会话、消息、run、Agent 注册表、A2A 任务、知识库、审批、审计、个人能力配置） | Alembic |
+| `langgraph` | LangGraph checkpoint 表（`checkpoints`、`checkpoint_blobs`、`checkpoint_writes`、`checkpoint_migrations`）与长期记忆 Store（`store`、`store_vectors`） | `PostgresSaver.setup()` / `AsyncPostgresStore.setup()` |
 | `public.vector` 扩展 | pgvector 类型与索引 | `docker/initdb` / 迁移 |
 
 选择同库的理由：
@@ -49,12 +49,19 @@ erDiagram
     knowledge_documents ||--o{ knowledge_chunks : splits
     users ||--o{ approvals : decides
     users ||--o{ audit_logs : acts
+    users ||--o{ mcp_servers : owns
+    mcp_servers ||--o{ mcp_tools : exposes
+    users ||--o{ skills : owns
+    skills ||--o{ skill_files : contains
+    users ||--o{ user_settings : has
+    users ||--o{ user_capability_overrides : overrides
 
     users {
         uuid id PK
         varchar email UK
         varchar password_hash
         varchar status
+        varchar role
     }
     conversations {
         uuid id PK
@@ -104,6 +111,43 @@ erDiagram
         uuid run_id FK
         varchar status
     }
+    mcp_servers {
+        uuid id PK
+        uuid owner_user_id FK
+        varchar scope
+        varchar slug
+        varchar transport
+        varchar health_status
+    }
+    mcp_tools {
+        uuid id PK
+        uuid server_id FK
+        varchar name
+        varchar risk
+        boolean requires_approval
+    }
+    skills {
+        uuid id PK
+        uuid owner_user_id FK
+        varchar scope
+        varchar slug
+        boolean enabled
+    }
+    skill_files {
+        uuid id PK
+        uuid skill_id FK
+        varchar path
+    }
+    user_settings {
+        uuid user_id PK
+        text instructions
+    }
+    user_capability_overrides {
+        uuid user_id PK
+        varchar capability PK
+        uuid target_id PK
+        boolean enabled
+    }
 ```
 
 ## 4. 表设计
@@ -117,6 +161,7 @@ erDiagram
 | `password_hash` | varchar(255) | not null | argon2 哈希（pwdlib） |
 | `display_name` | varchar(64) | not null default '' | 展示名 |
 | `status` | varchar(16) | not null default 'active' | `active` / `disabled` |
+| `role` | varchar(16) | not null default 'user' | M1.5：`user` / `admin` |
 | `last_login_at` | timestamptz | null | 最近登录时间 |
 | `created_at` / `updated_at` | timestamptz | not null | 审计时间 |
 
@@ -167,6 +212,7 @@ erDiagram
 | `model` | varchar(64) | not null default '' | 实际模型名 |
 | `input_tokens` / `output_tokens` | integer | not null default 0 | 用量统计 |
 | `error_code` / `error_message` | varchar/text | null | 失败原因（脱敏） |
+| `capabilities` | jsonb | not null default '{}' | M1.5：本轮显式选择的技能/MCP |
 | `idempotency_key` | varchar(128) | null | 客户端幂等键 |
 | `started_at` / `finished_at` | timestamptz | null | 执行时间 |
 | `created_at` | timestamptz | not null | |
@@ -225,6 +271,8 @@ erDiagram
 | `run_id` | uuid | FK runs, cascade | |
 | `tool_call_id` | varchar(64) | not null | 模型生成的调用 ID |
 | `tool_name` | varchar(128) | not null | 工具名 |
+| `source` | varchar(16) | not null default 'native' | M1.5：`native` / `mcp` / `a2a` / `knowledge` / `skill` |
+| `source_id` | varchar(128) | null | 服务器/技能等来源 ID |
 | `args` | jsonb | not null | 参数摘要（脱敏、截断） |
 | `result` | jsonb | null | 结果摘要（截断） |
 | `status` | varchar(16) | not null | `ok` / `error` |
@@ -311,6 +359,139 @@ CREATE INDEX ix_knowledge_chunks_metadata
 
 索引：`(created_at desc)`、`(actor_id, created_at desc)`、`(action, created_at desc)`。
 
+### 4.12 `mcp_servers`（MCP 服务器注册表）
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | uuid | PK | |
+| `scope` | varchar(16) | check `('system','user')` | 系统默认 / 用户自建 |
+| `owner_user_id` | uuid | FK users, cascade, null | 系统项为空 |
+| `slug` | varchar(64) | not null | 工具名前缀，`[a-z0-9_-]` |
+| `name` | varchar(128) | not null | 展示名 |
+| `description` | text | not null default '' | |
+| `transport` | varchar(24) | check `('streamable_http','sse','stdio')` | 传输方式 |
+| `url` | text | null | 远程传输必填 |
+| `command` | varchar(512) | null | stdio 必填 |
+| `args` | jsonb | not null default '[]' | stdio 参数 |
+| `env_refs` | jsonb | not null default '[]' | 只存环境变量名，不存值 |
+| `credentials_ciphertext` | bytea | null | AES-GCM 加密的请求头/Token |
+| `credentials_hint` | varchar(160) | not null default '' | 脱敏提示 |
+| `enabled` | boolean | not null default true | 系统默认启停 |
+| `auto_inject` | boolean | not null default true | 是否自动进入每轮工具目录 |
+| `force_disabled` | boolean | not null default false | 管理员强制停用，优先级高于用户覆盖 |
+| `health_status` | varchar(16) | not null default 'unknown' | `unknown/healthy/unhealthy/disabled` |
+| `last_checked_at` | timestamptz | null | 最近一次检查 |
+| `last_error` | text | null | 脱敏错误 |
+| `tools_synced_at` | timestamptz | null | 工具缓存时间 |
+| `created_at` / `updated_at` | timestamptz | not null | |
+
+约束/索引：
+
+```sql
+CHECK ((scope = 'system' AND owner_user_id IS NULL)
+    OR (scope = 'user' AND owner_user_id IS NOT NULL));
+CHECK ((transport = 'stdio' AND command IS NOT NULL)
+    OR (transport <> 'stdio' AND url IS NOT NULL));
+CREATE UNIQUE INDEX uq_mcp_servers_system_slug ON mcp_servers (slug) WHERE scope = 'system';
+CREATE UNIQUE INDEX uq_mcp_servers_user_slug ON mcp_servers (owner_user_id, slug) WHERE scope = 'user';
+CREATE INDEX ix_mcp_servers_owner ON mcp_servers (owner_user_id, enabled);
+```
+
+### 4.13 `mcp_tools`（工具发现缓存与策略）
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | uuid | PK | |
+| `server_id` | uuid | FK mcp_servers, cascade | |
+| `name` | varchar(128) | not null | 服务器原始工具名 |
+| `exposed_name` | varchar(64) | not null | `mcp__<slug>__<tool>`，同一用户目录内唯一 |
+| `description` | text | not null default '' | |
+| `input_schema` | jsonb | not null default '{}' | JSON Schema |
+| `annotations` | jsonb | not null default '{}' | readOnly/destructive 等 |
+| `risk` | varchar(16) | not null default 'unknown' | `read/write/destructive/unknown` |
+| `requires_approval` | boolean | not null default true | 审批策略 |
+| `enabled` | boolean | not null default true | 工具级启停 |
+| `discovered_at` / `updated_at` | timestamptz | not null | |
+
+索引：`UNIQUE (server_id, name)`、`UNIQUE (server_id, exposed_name)`、`(server_id, enabled)`；用户自建 slug 不得与系统项 slug 重名，保证单个用户的工具目录内 `exposed_name` 不冲突。
+
+### 4.14 `skills`（本地技能包）
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | uuid | PK | |
+| `scope` | varchar(16) | check `('system','user')` | |
+| `owner_user_id` | uuid | FK users, cascade, null | 系统项为空 |
+| `slug` | varchar(64) | not null | 来自 frontmatter `name` |
+| `name` | varchar(128) | not null | 展示名 |
+| `description` | text | not null | 路由描述，参与技能目录 |
+| `content` | text | not null | `SKILL.md` 正文 |
+| `metadata` | jsonb | not null default '{}' | frontmatter 其余字段 |
+| `source` | varchar(16) | check `('builtin','upload','manual')` | |
+| `enabled` | boolean | not null default true | |
+| `force_disabled` | boolean | not null default false | 管理员强制停用，优先级高于用户覆盖 |
+| `size_bytes` | integer | not null default 0 | |
+| `file_count` | integer | not null default 0 | 参考文件数 |
+| `created_at` / `updated_at` | timestamptz | not null | |
+
+索引：系统/用户 slug 部分唯一索引（同 `mcp_servers`）、`(owner_user_id, enabled)`。
+
+### 4.15 `skill_files`（技能参考文件）
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | uuid | PK | |
+| `skill_id` | uuid | FK skills, cascade | |
+| `path` | varchar(512) | not null | 相对路径，禁止 `..` |
+| `content` | text | not null | 文本内容 |
+| `size_bytes` | integer | not null | |
+| `created_at` | timestamptz | not null | |
+
+索引：`UNIQUE (skill_id, path)`。
+
+### 4.16 `system_settings` / `user_settings`
+
+`system_settings`（管理员维护的平台默认值）：
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `key` | varchar(128) | PK | 如 `instruction.default` |
+| `value` | jsonb | not null | |
+| `updated_by` | uuid | FK users, set null | |
+| `updated_at` | timestamptz | not null | |
+
+启动时若 `instruction.default` 不存在，写入代码内置默认文本。
+
+`user_settings`（账号级覆盖）：
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `user_id` | uuid | PK, FK users, cascade | |
+| `instructions` | text | null | `null` = 继承平台默认 |
+| `created_at` / `updated_at` | timestamptz | not null | |
+
+### 4.17 `user_capability_overrides`（系统项按用户启停）
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `user_id` | uuid | FK users, cascade | |
+| `capability` | varchar(16) | check `('mcp_server','skill')` | |
+| `target_id` | uuid | 无外键（跨两张表） | 系统项 ID |
+| `enabled` | boolean | not null | |
+| `created_at` / `updated_at` | timestamptz | not null | |
+
+主键 `(user_id, capability, target_id)`；删除系统项时后台清理孤儿覆盖。有效启停 = `NOT force_disabled AND COALESCE(overrides.enabled, 自身 enabled)`。
+
+### 4.18 既有表变更
+
+| 表 | 变更 | 说明 |
+|---|---|---|
+| `users` | 新增 `role varchar(16) not null default 'user' check ('user','admin')` | 管理端鉴权 |
+| `runs` | 新增 `capabilities jsonb not null default '{}'` | 本轮显式选择的技能/MCP，供审计与回放 |
+| `tool_invocations` | 新增 `source varchar(16) not null default 'native'`、`source_id varchar(128) null` | `source ∈ native/mcp/a2a/knowledge/skill` |
+
+`tool_invocations` 补索引 `(source, created_at desc)`。
+
 ## 5. 向量检索设计
 
 ### 5.1 索引选择
@@ -358,7 +539,9 @@ LIMIT :top_k;
 
 迁移脚本不得直接 `ALTER COLUMN ... TYPE vector(N)`，向量类型不支持隐式转换到不同维度。
 
-## 6. LangGraph checkpoint
+## 6. LangGraph 持久化（checkpoint + store）
+
+### 6.1 checkpoint
 
 - 表由 `langgraph-checkpoint-postgres` 的 `PostgresSaver.setup()` 创建；
 - 放独立 schema `langgraph`，避免与业务表混；
@@ -377,6 +560,17 @@ with psycopg.connect(settings.checkpoint_dsn, options="-csearch_path=langgraph")
 - checkpoint 表增长较快，建议按 `thread_id` 的最近活跃时间归档（规划脚本 `scripts/prune_checkpoints.py`）；
 - 多实例部署时所有实例必须连同一数据库，禁止使用 InMemorySaver。
 
+### 6.2 长期记忆 Store（`store` / `store_vectors`）
+
+- 使用 `langgraph-checkpoint-postgres` 提供的 `AsyncPostgresStore`（模块 `langgraph.store.postgres`）；
+- 与 checkpoint 同库、同 schema `langgraph`；连接 `search_path=langgraph,public`（`vector` 类型在 `public`）；
+- `setup()` 幂等创建 `store`、`store_vectors`，与 checkpoint 一样由框架管理，**不进 Alembic**；
+- 命名空间 `("memories", "<user_id>")`，key `mem_<uuid4hex>`，value 为 JSONB（`kind/content/pinned/status/source/tags`）；
+- 配置 `index={"dims": EMBEDDING_DIM, "embed": ..., "fields": ["content"]}` 获得 pgvector 语义检索；
+- `search()` 无 query 时按 `updated_at DESC` 返回，供设置页「最近更新」；`filter` 可过滤 `kind/status/pinned`；
+- 应用启动时调用 `setup()`（幂等），与 checkpointer 同时初始化；`EMBEDDING_DIM` 变更需重建 `store_vectors` 并重算记忆；
+- 备份覆盖 `langgraph` schema；恢复后对 `store_vectors` 执行 `REINDEX` 重建向量索引。
+
 ## 7. 并发与一致性
 
 | 场景 | 策略 |
@@ -386,6 +580,10 @@ with psycopg.connect(settings.checkpoint_dsn, options="-csearch_path=langgraph")
 | 知识库重建 | `knowledge_documents.status='indexing'`；旧块在新块写完后事务内替换 |
 | 审批并发 | `UPDATE ... WHERE status='pending'` 乐观更新，影响行数为 0 则返回冲突 |
 | 删除会话 | 软删除会话 + 异步清理消息/向量/checkpoint |
+| 记忆保存去重 | 先按 content 语义查重（≥0.92 更新），再写入；并发以 Store key 唯一性兜底，重复整理列为 v2 |
+| MCP 工具发现 | 同一服务器并发 check/refresh 用 advisory lock 串行，发现结果覆盖式写入 `mcp_tools` |
+| 系统技能同步 | 启动时按 slug upsert；仓库中删除的内置技能标记 `force_disabled=true`，不物理删除 |
+| 指令更新 | `user_settings` 单行更新，最后写入生效；变更写审计 |
 
 ## 8. 迁移规范
 
@@ -418,6 +616,10 @@ uv run alembic history
 | `a2a_tasks` | 90 天 | 批量删除 |
 | `audit_logs` | 365 天 | 按月分区/归档 |
 | `knowledge_*` | 随文档 | 外键级联 |
+| `store`（长期记忆） | 随用户；删除/清空立即生效 | 管理接口 / 账号删除后台清理命名空间 |
+| `mcp_tools` | 随服务器；每次发现覆盖 | 级联 / 覆盖写 |
+| `skills` / `skill_files` | 随用户；系统技能随仓库版本 | 级联 / 启动同步 |
+| `user_settings` / `user_capability_overrides` | 随用户 | 级联 |
 | checkpoint | 会话最近活跃 30 天 | `scripts/prune_checkpoints.py` |
 | 上传附件 | 30 天或随消息删除 | 对象存储生命周期 |
 

@@ -20,6 +20,8 @@
 
 同时，本服务自身也是一个 A2A Server：发布 Agent Card，暴露 JSON-RPC 端点，允许其他智能体反向调用。
 
+平台另提供**个人能力层**：账号级的 MCP 接入、Skill 技能包、长期记忆与自定义 Instruction。配置采用「系统默认 + 用户自定义」两层模型，运行时合并；会话内可以显式点名使用某个 Skill 或某个 MCP 服务器，只影响当次请求。设计见 [个人能力层设计](docs/superpowers/specs/2026-11-05-agent-capabilities-design.md)。
+
 ## 2. 架构（设计）
 
 ```mermaid
@@ -149,10 +151,12 @@ curl http://localhost:8000/healthz
 - [x] PostgreSQL + pgvector 的 Docker 编排与初始化 SQL（未拉取镜像、未启动）
 - [x] 数据库目录化方案：`app/db/{models,vector}` 分层
 - [x] 完整设计文档：架构、数据库、A2A、API、开发、路线图、初始化设计稿
+- [x] 个人能力层需求设计：MCP / Skill / 长期记忆 / Instruction（仅文档，未实现）
 
 明确未包含（全部留待后续编码任务）：
 
 - [ ] Python 实现代码（`app/main.py`、`core/`、`db/`、`agents/`、`modules/` 下的业务代码）
+- [ ] 个人能力层的实现、数据库迁移与前端改动
 - [ ] Alembic `env.py` 与迁移脚本
 - [ ] 依赖安装、锁文件、虚拟环境
 - [ ] 容器拉取/启动、数据库迁移
@@ -179,8 +183,9 @@ curl http://localhost:8000/healthz
 | [A2A 集成](docs/a2a.md) | Agent Card、服务端/客户端、任务状态、安全 |
 | [API 契约](docs/api.md) | REST 端点、SSE 事件、错误码 |
 | [开发指南](docs/development.md) | 环境、命令、编码规范、联调、FAQ |
-| [路线图](docs/roadmap.md) | M0–M6 里程碑与验收标准 |
+| [路线图](docs/roadmap.md) | M0–M6 里程碑与验收标准（含 M1.5 个人能力层） |
 | [初始化设计稿](docs/superpowers/specs/2026-11-04-agent-hub-init-design.md) | 本次初始化的决策记录 |
+| [个人能力层设计](docs/superpowers/specs/2026-11-05-agent-capabilities-design.md) | MCP / Skill / 长期记忆 / Instruction 的设计与决策 |
 
 ## 9. 下一步
 
@@ -188,7 +193,8 @@ curl http://localhost:8000/healthz
 
 1. 先落 `users` / `conversations` / `messages` / `runs` 模型与迁移；
 2. 再实现认证与最小对话闭环；
-3. 每一步先更新设计文档，再写代码。
+3. M1 完成后进入 M1.5：指令、长期记忆、Skill、MCP（见 [个人能力层设计](docs/superpowers/specs/2026-11-05-agent-capabilities-design.md)）；
+4. 每一步先更新设计文档，再写代码。
 
 编码前建议阅读：
 

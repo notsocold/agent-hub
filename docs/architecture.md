@@ -51,6 +51,10 @@ flowchart TB
 | `modules/agents` | 远程 Agent 注册、发现、健康检查 | 具体协议传输细节 |
 | `modules/knowledge` | 文档入库、切分、Embedding、检索 | 向量 SQL（由 `db/vector` 实现） |
 | `modules/approvals` | 审批工单、恢复图执行 | 决定何时需要审批（由工具声明） |
+| `modules/mcp` | MCP 服务器注册、连接管理、工具发现、工具桥接 | 用户凭据的加密原语（由 `core/` 提供） |
+| `modules/skills` | 本地技能包导入、校验、存储、激活 | 脚本执行（v2） |
+| `modules/memories` | 长期记忆的写入策略、检索、管理接口 | 单次会话上下文（由 checkpoint 负责） |
+| `modules/instructions` | 指令解析、覆盖合并、审计 | 基础系统提示词（代码内置） |
 | `db/` | ORM 模型、会话、迁移、向量存储实现 | 业务规则 |
 | `core/` | 配置、日志、中间件、异常、鉴权原语 | 业务模块依赖 |
 
@@ -215,6 +219,10 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 | DB 目录化 | `app/db/{base,engine,session,models,vector}` | 避免单文件膨胀，模型按领域拆分，迁移边界清晰 | 文件增多，需要 `models/__init__.py` 汇总导入 |
 | 认证 | JWT（access + refresh） | 前后端分离标准方案，无状态易扩展 | 需要吊销能力时引入 token 黑名单/短 TTL |
 | 前端 | Vue 3 + TS + Vite | 与现有 Node 项目技术栈一致，生态成熟 | — |
+| 个人能力配置 | 账号级「系统默认 + 用户覆盖」 | 会话级独立配置 / 仅允许用户自建 | 用户明确要求；系统默认可更新，覆盖表避免批量回填 | 系统项正文不可改，只能在启停层覆盖；会话级覆盖留待后续 |
+| 长期记忆 | LangGraph `AsyncPostgresStore` | 自建 `memories` 表 / 外部记忆服务 | 框架原生、自带 pgvector 语义检索、少写存储代码 | 业务字段只能放 value、无外键；表由框架 `setup()` 管理，不进 Alembic |
+| 本地 Skill | v1 纯指令包（`SKILL.md`） | v1 支持可执行脚本 | 多用户 Web 服务执行上传代码风险过高 | 需要动作时走 MCP/A2A；脚本方案需沙箱，列为 v2 |
+| 用户 MCP 传输 | 仅远程 URL；stdio 只允许系统项 | 全部允许 stdio | 进程隔离、资源限制、进程清理与密钥注入成本高 | 需要本地工具时由管理员配置系统 MCP |
 
 ## 8. 失败处理与幂等
 
@@ -254,6 +262,10 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 | 用户授权 | 会话/消息按 `user_id` 过滤；管理员接口单独角色 |
 | A2A 入站 | API Key / OAuth2；按技能授权；请求体大小限制；限流 |
 | A2A 出站 | SSRF 防护（默认拒绝内网/回环，白名单放行）；Agent Card URL 校验；TLS 校验 |
+| MCP 出站 | SSRF 校验（拒绝私网/回环/云元数据地址，`MCP_ALLOWED_HOSTS` 白名单）；TLS 校验；超时与响应大小限制 |
+| 能力凭据 | MCP 请求头/Token 用 AES-GCM 加密存储，接口只回脱敏 hint；日志脱敏 |
+| 技能包 | 只接受文本文件；zip 路径穿越/符号链接/压缩炸弹校验；大小、数量、正文 token 上限 |
+| 长期记忆 | 按用户命名空间隔离；禁止保存敏感类别；用户可删除/清空/导出；管理员无正文读取接口 |
 | 工具执行 | 白名单工具；参数 schema 校验；高风险动作审批；超时 |
 | 提示词注入 | 检索内容与远程结果作为不可信数据，提示词明确隔离；输出过滤 |
 | 密钥管理 | `.env` 不进仓库；数据库只存密钥引用/加密值；日志脱敏 |
@@ -304,3 +316,38 @@ vite dev server :5173（/api 代理到 8000）
 3. **A2A 生态**：Agent 市场式注册、能力自动发现、跨组织鉴权（OAuth2 client credentials）、计费。
 4. **可观测**：OpenTelemetry + Prometheus + Grafana，LLM trace 接入 LangSmith（可选）。
 5. **企业能力**：多租户、RBAC、审计导出、数据脱敏、私有化部署。
+
+## 13. 个人能力层（M1.5，设计）
+
+> 详细设计、数据模型与接口见 [个人能力层设计](superpowers/specs/2026-11-05-agent-capabilities-design.md)。
+
+四项能力（MCP / Skill / 长期记忆 / Instruction）共享「系统默认 + 用户自定义」模型，账号级生效；会话内可显式选择 Skill/MCP，只影响当次请求。
+
+### 13.1 组件
+
+| 组件 | 职责 |
+|---|---|
+| `modules/mcp` | 服务器 CRUD、连通性检查、工具发现与缓存、调用桥接、健康巡检 |
+| `modules/skills` | 技能包导入与校验、目录、激活、参考文件读取 |
+| `modules/memories` | `AsyncPostgresStore` 封装、保存去重、检索注入、管理 CRUD |
+| `modules/instructions` | 平台默认/用户覆盖解析、长度校验、生效预览 |
+| `agents/` | 提示词装配、`save_memory` / `read_skill_file` 工具、MCP 工具目录 |
+
+### 13.2 每轮装配顺序
+
+```mermaid
+flowchart TB
+    A["基础系统提示词（不可覆盖）"] --> B["用户指令（覆盖或继承默认）"]
+    B --> C["长期记忆（置顶 + 语义 top-k）"]
+    C --> D["技能目录 + 本轮激活正文"]
+    D --> E["工具定义（知识检索 / A2A / MCP）"]
+    E --> F["会话历史 + 本轮用户消息"]
+```
+
+### 13.3 关键约束
+
+- **MCP**：系统项可 stdio，用户项仅远程 URL；工具名 `mcp__<slug>__<tool>`；破坏性工具强制审批；系统 MCP 的写/破坏性工具仅管理员可用；调用写 `tool_invocations(source='mcp')`；
+- **Skill**：v1 只接受文本指令包；显式激活最多 3 个；正文按不可信数据包裹；脚本执行列为 v2；
+- **记忆**：存 `langgraph` schema 的 `store`；按 `("memories", user_id)` 隔离；v1 只做显式保存（`save_memory`）与手动管理，自动提取列为 v2；
+- **Instruction**：用户文本整段覆盖平台默认，`null` 表示继承；基础系统提示词与安全规则不可覆盖；
+- **降级**：MCP 不可达、Store 故障都只降级不阻断对话，并发 `notice` 事件。

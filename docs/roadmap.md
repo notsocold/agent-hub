@@ -43,6 +43,34 @@
 - 同一会话并发发消息被串行化或返回 409；
 - 断线后重新查询 run 能拿到最终结果。
 
+## M1.5 个人能力层（MCP / Skill / 长期记忆 / Instruction）
+
+**目标**：账号级能力配置 + 会话内显式使用；系统默认与用户自定义在运行时合并。
+
+> 编号 1.5 表示排在 M1 之后、M2 之前，不改动既有 M2–M6 编号。详细设计见 [个人能力层设计](superpowers/specs/2026-11-05-agent-capabilities-design.md)。
+
+**前置与切片**：以 M1 完成为前提；`tool_invocations`、`audit_logs`、`approvals` 与共享 SSRF 主机校验以最小切片提前落地，M2/M5 的完整范围不变。
+
+范围：
+
+- `users.role`、`system_settings`、`user_settings`、`user_capability_overrides`
+- `tool_invocations` / `audit_logs` / `approvals` 最小切片（M2/M5 复用）
+- 指令：平台默认 + 用户覆盖（覆盖式）、生效预览
+- 长期记忆：LangGraph `AsyncPostgresStore` + `save_memory` + 管理接口
+- 技能：`skills` / `skill_files`、zip 导入、`@` 显式激活、`read_skill_file`
+- MCP：`mcp_servers` / `mcp_tools`、远程 Streamable HTTP/SSE、工具发现、审批接入、系统 stdio
+- 前端：设置页四个区块、输入框 `@` 选择器、Skill/记忆/MCP 事件卡
+- 审计、限流与降级事件
+
+验收：
+
+- 指令覆盖生效，点「恢复默认」回到平台默认；
+- 记忆可保存、跨会话检索、可编辑/归档/删除/清空；
+- 技能包可导入并在会话中显式使用，时间线出现 Skill 卡；
+- MCP 工具可发现可调用，写工具必须审批，拒绝后不执行；
+- 普通用户只能使用系统 MCP 的只读工具，写工具仅管理员可用；
+- 跨用户访问返回 404；MCP 不可达或 Store 故障时对话不中断。
+
 ## M2 A2A 出站
 
 **目标**：注册远程 Agent，主智能体能把任务委派出去并整合结果。
@@ -105,6 +133,8 @@
 
 **目标**：高风险动作可控、可审计。
 
+> M1.5 已提前落地 `audit_logs` / `approvals` 最小切片，M5 在其上补全管理/审计界面与安全加固。
+
 范围：
 
 - `approvals` / `audit_logs` 模型与迁移
@@ -152,3 +182,6 @@
 | 文件与多模态 | 对象存储 + 签名 URL / 直传 | M4 后 |
 | 计费与配额 | 按 token / 按调用次数 | 暂不做 |
 | 前端组件库 | Element Plus / Naive UI | 已选 Element Plus，若视觉不满足可替换 |
+| 管理员读取用户记忆正文 | 提供审计接口 / 不提供 | v1 不提供，仅数据库运维可访问 |
+| 系统 MCP 的按用户凭据 | 平台凭据 / 用户凭据 | v1 平台凭据，按用户凭据 v2 |
+| 技能自动触发 | 仅显式 `@` / 模型自动选择 | v1 仅显式，v2 增加 `load_skill` |

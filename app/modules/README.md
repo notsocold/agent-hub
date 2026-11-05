@@ -14,6 +14,10 @@
 | `knowledge/` | 知识库文档上传、解析、切分、Embedding、重建索引、检索接口 | `schemas.py` `repo.py` `service.py` `router.py` |
 | `tasks/` | run 与 A2A Task 的查询、取消、事件回放 | `schemas.py` `repo.py` `service.py` `router.py` |
 | `approvals/` | 高风险工具/远程调用的人工审批（HITL） | `schemas.py` `repo.py` `service.py` `router.py` |
+| `mcp/` | MCP 服务器注册、连接与工具发现、工具桥接、健康检查 | `schemas.py` `repo.py` `service.py` `router.py` `client.py` `tool.py` |
+| `skills/` | 本地技能包导入、校验、存储、激活与参考文件读取 | `schemas.py` `repo.py` `service.py` `router.py` `importer.py` |
+| `memories/` | 长期记忆的保存策略、检索注入、管理接口 | `schemas.py` `service.py` `router.py` |
+| `instructions/` | 平台默认/用户覆盖解析、生效预览、审计 | `schemas.py` `repo.py` `service.py` `router.py` |
 
 ## 文件分层
 
@@ -36,6 +40,9 @@ router → schemas
 service → schemas（类型化输入输出）
 modules/a2a → agents（LangGraph 图与工具）
 modules/chat → agents（图执行）
+modules/chat → modules/{instructions,memories,skills,mcp}（能力目录装配）
+modules/mcp → agents（MCP 工具定义）
+modules/skills → agents（技能正文注入）
 ```
 
 禁止反向依赖：`agents/` 不 import `modules/`；`db/` 不 import `modules/`。

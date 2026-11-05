@@ -47,12 +47,18 @@ Authorization: Bearer <access_token>
 | 400 | `bad_request` | 参数语义错误 |
 | 401 | `unauthorized` | 未登录 / token 无效 |
 | 403 | `forbidden` | 无权限 |
+| 403 | `capability_disabled` | 能力总开关关闭 |
 | 404 | `not_found` | 资源不存在 |
 | 409 | `conflict` | 状态冲突（重复审批、并发 run） |
+| 413 | `payload_too_large` | 技能包/上传文件超限 |
 | 422 | `validation_error` | 请求体校验失败（FastAPI 默认结构会包装为本信封） |
+| 422 | `skill_invalid` | 技能包校验失败 |
+| 422 | `instruction_too_long` | 指令超过字符上限 |
+| 422 | `mcp_transport_not_allowed` | 用户自建 MCP 使用了被禁用的传输 |
 | 429 | `rate_limited` | 触发限流 |
 | 500 | `internal_error` | 未预期异常 |
 | 502 | `a2a_unavailable` | 远程智能体不可用 |
+| 502 | `mcp_unreachable` | 显式选择的 MCP 服务器不可达 |
 | 504 | `a2a_timeout` | 远程调用超时 |
 
 ## 2. 端点总表
@@ -127,7 +133,73 @@ Authorization: Bearer <access_token>
 | GET | `/api/v1/approvals/{id}` | 审批详情 |
 | POST | `/api/v1/approvals/{id}/decision` | 批准/拒绝并恢复运行 |
 
-### 2.8 系统
+### 2.8 MCP
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/mcp/servers` | 系统项 + 自己创建的 MCP 服务器（含有效启停状态） |
+| POST | `/api/v1/mcp/servers` | 创建（用户侧仅远程 URL，stdio 默认禁用） |
+| GET | `/api/v1/mcp/servers/{id}` | 详情 |
+| PATCH | `/api/v1/mcp/servers/{id}` | 修改名称/URL/凭据/自动注入 |
+| DELETE | `/api/v1/mcp/servers/{id}` | 删除（系统项不可删） |
+| PUT | `/api/v1/mcp/servers/{id}/enabled` | 启停（系统项写用户覆盖表） |
+| POST | `/api/v1/mcp/servers/{id}/check` | 连通性检查 + 工具发现 |
+| POST | `/api/v1/mcp/servers/{id}/refresh-tools` | 强制刷新工具缓存 |
+| GET | `/api/v1/mcp/servers/{id}/tools` | 工具列表（含风险/审批/启停） |
+| PATCH | `/api/v1/mcp/tools/{id}` | 工具启停、审批策略（所有者） |
+| GET | `/api/v1/mcp/available` | 输入框选择器用的精简目录 |
+
+> 系统 MCP 对普通用户只返回只读工具；写/破坏性工具仅管理员可用，`GET /mcp/servers/{id}/tools` 会返回 `user_allowed=false` 供前端置灰说明。
+
+### 2.9 技能（本地 Skill）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/skills` | 系统 + 自己的技能（含有效启停） |
+| POST | `/api/v1/skills` | 手写创建（name/description/content） |
+| POST | `/api/v1/skills/import` | 上传 zip 技能包（multipart） |
+| GET | `/api/v1/skills/{id}` | 详情（含参考文件列表） |
+| PATCH | `/api/v1/skills/{id}` | 修改自己的技能 |
+| DELETE | `/api/v1/skills/{id}` | 删除自己的技能 |
+| PUT | `/api/v1/skills/{id}/enabled` | 启停（系统项写用户覆盖表） |
+| GET | `/api/v1/skills/{id}/files` | 参考文件列表 |
+| GET | `/api/v1/skills/{id}/files/{path}` | 读取参考文件（文本） |
+| GET | `/api/v1/skills/catalog` | 输入框选择器用的精简目录 |
+
+### 2.10 长期记忆
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/memories` | 列表：`limit`、`cursor`、`kind`、`status`、`q`（有 q 走语义检索） |
+| POST | `/api/v1/memories` | 手动新增 |
+| GET | `/api/v1/memories/{id}` | 详情 |
+| PATCH | `/api/v1/memories/{id}` | 修改内容/类型/标题/置顶/状态 |
+| DELETE | `/api/v1/memories/{id}` | 物理删除 |
+| DELETE | `/api/v1/memories` | 清空全部（`?confirm=true`） |
+| GET | `/api/v1/memories/export` | 导出 JSON |
+
+### 2.11 指令
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/instructions` | 生效指令、来源（user/system_default）、默认值、上限 |
+| PUT | `/api/v1/instructions` | 保存用户指令；`null` 表示恢复默认 |
+
+### 2.12 管理端
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET/PUT | `/api/v1/admin/settings/instruction` | 平台默认指令 |
+| GET/POST/PATCH/DELETE | `/api/v1/admin/mcp/servers[...]` | 系统 MCP（允许 stdio） |
+| PUT | `/api/v1/admin/mcp/servers/{id}/enabled` | 系统 MCP 启停 |
+| PUT | `/api/v1/admin/mcp/servers/{id}/force-disable` | 强制停用（压过用户覆盖） |
+| GET | `/api/v1/admin/skills` | 系统技能列表 |
+| PUT | `/api/v1/admin/skills/{id}/enabled` | 系统技能启停 |
+| PUT | `/api/v1/admin/skills/{id}/force-disable` | 强制停用（压过用户覆盖） |
+
+> 管理端接口要求 `users.role='admin'`，越权返回 403。管理员由运维脚本 `scripts/grant_admin.py` 设置，注册流程不自动提权。
+
+### 2.13 系统
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -149,7 +221,10 @@ Accept: text/event-stream
   "conversation_id": "0f1e...",
   "message": "帮我查一下退货政策，然后让代码助手看看这段代码",
   "client_message_id": "c-uuid",
-  "attachments": []
+  "attachments": [],
+  "skills": ["<skill_id>"],
+  "mcp_servers": ["<server_id>"],
+  "mcp_tools": ["<tool_id>"]
 }
 ```
 
@@ -159,6 +234,11 @@ Accept: text/event-stream
 | `message` | 是 | 用户输入，1–8000 字符 |
 | `client_message_id` | 否 | 前端幂等键，重试时避免重复消息 |
 | `attachments` | 否 | 附件 ID 列表（文件上传接口后续提供） |
+| `skills` | 否 | 本轮显式激活的本地技能，≤ 3 个 |
+| `mcp_servers` | 否 | 本轮强制纳入的 MCP 服务器，≤ 5 个 |
+| `mcp_tools` | 否 | 本轮强制纳入的 MCP 工具，≤ 10 个 |
+
+> 显式选择只影响本次请求，不写回账号配置；MCP 写工具仍需审批。
 
 ### 3.2 响应
 
@@ -180,13 +260,16 @@ data: <单行 JSON>
 | `conversation.created` | 新会话创建 | `conversation_id` |
 | `message.created` | 用户/助手消息落库 | `message_id`、`role` |
 | `message.delta` | 模型增量 token | `message_id`、`delta` |
-| `tool.start` | 工具开始执行 | `tool_call_id`、`tool`、`args` |
-| `tool.result` | 工具执行结束 | `tool_call_id`、`status`、`summary` |
+| `tool.start` | 工具开始执行 | `tool_call_id`、`tool`、`args`、`source`、`server`（MCP 时） |
+| `tool.result` | 工具执行结束 | `tool_call_id`、`status`、`summary`、`source` |
 | `a2a.task` | 远程任务状态变化 | `task_id`、`agent`、`state`、`progress` |
 | `a2a.artifact` | 远程产出片段 | `task_id`、`artifact` |
 | `a2a.input_required` | 远程要求补充信息 | `task_id`、`question` |
 | `a2a.auth_required` | 远程要求授权 | `task_id`、`agent` |
 | `approval.required` | 需要人工确认 | `approval_id`、`tool`、`reason`、`payload` |
+| `skill.activated` | 本轮技能激活 | `skill_id`、`slug`、`name`、`scope`、`estimated_tokens` |
+| `memory.saved` | 记忆保存成功 | `memory_id`、`kind`、`action`、`preview` |
+| `notice` | 能力降级/提示 | `level`、`code`、`message` |
 | `message.done` | 本轮结束 | `run_id`、`message_id`、`usage`、`finish_reason` |
 | `error` | 流内错误 | `code`、`message`、`request_id` |
 | `ping` | 心跳（也可用注释） | — |
@@ -331,6 +414,83 @@ POST /api/v1/knowledge/search
 }
 ```
 
+### 4.6 创建 MCP 服务器
+
+```http
+POST /api/v1/mcp/servers
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "name": "GitHub",
+  "slug": "github",
+  "transport": "streamable_http",
+  "url": "https://mcp.example.com/mcp",
+  "headers": {"Authorization": "Bearer ghp_xxx"}
+}
+```
+
+```json
+{
+  "id": "...",
+  "scope": "user",
+  "slug": "github",
+  "name": "GitHub",
+  "transport": "streamable_http",
+  "enabled": true,
+  "effective_enabled": true,
+  "health_status": "healthy",
+  "tool_count": 12,
+  "credentials_hint": "Bearer ****xxx",
+  "last_checked_at": "2026-11-05T15:30:00Z"
+}
+```
+
+> 请求头只写不回；响应只返回 `credentials_hint`，明文凭据不落接口。
+
+### 4.7 记忆列表
+
+```http
+GET /api/v1/memories?limit=20&kind=preference&status=active
+```
+
+```json
+{
+  "items": [
+    {
+      "id": "mem_9f2c...",
+      "kind": "preference",
+      "title": "称呼",
+      "content": "用户希望被称为「老赵」",
+      "pinned": true,
+      "status": "active",
+      "source": {"conversation_id": "...", "message_id": "...", "created_by": "agent"},
+      "created_at": "2026-11-05T10:00:00Z",
+      "updated_at": "2026-11-05T10:00:00Z"
+    }
+  ],
+  "next_cursor": null,
+  "has_more": false
+}
+```
+
+### 4.8 生效指令
+
+```http
+GET /api/v1/instructions
+```
+
+```json
+{
+  "effective": "请用简洁的中文回答，先给结论，再给依据。",
+  "source": "user",
+  "user_value": "请用简洁的中文回答，先给结论，再给依据。",
+  "default_value": "回答使用中文；专业问题给出依据。",
+  "max_chars": 4000,
+  "updated_at": "2026-11-05T10:00:00Z"
+}
+```
+
 ## 5. 限流与配额
 
 | 接口 | 默认限制 | 说明 |
@@ -339,6 +499,11 @@ POST /api/v1/knowledge/search
 | `POST /auth/register` | 5 次/小时/IP | |
 | `POST /chat/stream` | 20 次/分钟/用户，同时 1 个运行 | 超出返回 429 |
 | `POST /agents` | 30 次/小时/用户 | 管理操作 |
+| `POST /mcp/servers` | 30 次/小时/用户 | 管理操作 |
+| `POST /mcp/servers/{id}/check` | 10 次/小时/用户 | 连接测试 |
+| `POST /skills/import` | 20 次/小时/用户 | 上传校验成本高 |
+| `POST /memories` | 60 次/分钟/用户 | |
+| 能力目录读取（`/mcp/available`、`/skills/catalog`） | 120 次/分钟/用户 | |
 | A2A 入站 | 按 `client_id` 限流（默认 60 次/分钟） | 与用户侧独立 |
 
 ## 6. 兼容与版本

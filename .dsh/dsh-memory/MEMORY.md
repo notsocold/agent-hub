@@ -1,0 +1,18 @@
+# dsh-memory · Project agent-hub
+
+> Generated index. Topic files in this directory are the source of truth;
+> edits here are overwritten. Edit a topic file or use Settings → Memory.
+
+Project: `/home/zhaodan/work/PythonProjects/agent-hub`
+
+Active topics: 9
+
+- [agent-hub 系统 MCP 对普通用户只开放只读工具，写工具仅管理员](m_2ac1ede0-agent-hub-系统-mcp-对普通用户只开放只读工具-写工具仅管理员.md) — 按方案 A 定稿：系统 MCP 的写/破坏性工具仅管理员可用，普通用户只能看到并调用只读工具；用户自建 MCP 的写工具由本人审批。 · `decision` · importance 4 · 2026-11-05
+- [agent-hub A2A 入站请求用 CapabilityContext(user_id=None) 隔离用户级上下文](m_e52f35a6-agent-hub-a2a-入站请求用-capabilitycontext-us.md) — A2A 入站调用构造无用户身份的 CapabilityContext，不注入任何用户级指令、记忆、技能与 MCP。 · `decision` · importance 4 · 2026-11-05
+- [agent-hub 管理员引导用 scripts/grant_admin.py，系统项用 force_disabled 硬停用](m_ca134ea1-agent-hub-管理员引导用-scripts-grant-admin-py-.md) — 管理员身份改为运维脚本显式授权（不做注册邮箱自动提权），并新增 force_disabled 让管理员硬停用系统项、压过用户覆盖。 · `decision` · importance 4 · 2026-11-05
+- [agent-hub 迭代计划基线：M1.5 以 M1 完成为前提，部分能力提前最小切片](m_40e181ee-agent-hub-迭代计划基线-m1-5-以-m1-完成为前提-部分能力提前最.md) — agent-hub 的 M1.5 里程碑依赖 M1 完成，并把 tool_invocations、audit_logs、approvals 与共享 SSRF 校验作为最小切片提前落地，M2/M5 范围不变。 · `decision` · importance 4 · 2026-11-05
+- [agent-hub 长期记忆存储复用 LangGraph Store（AsyncPostgresStore），不自研存储](m_fb420a74-agent-hub-长期记忆存储复用-langgraph-store-async.md) — agent-hub 的长期记忆直接用 LangGraph Store 的 Postgres 实现做存储层，插件只管写入策略与 REST 管理，表结构由框架 setup() 管理，不走 Alembic。 · `decision` · importance 4 · 2026-11-05
+- [agent-hub Skill v1 定为纯指令包，可执行脚本列为后续方案](m_638f250d-agent-hub-skill-v1-定为纯指令包-可执行脚本列为后续方案.md) — agent-hub 的 Skill 能力第一阶段只做纯指令包，可执行脚本（含沙箱、资源限制、网络隔离等前置条件）单列为后续第二方案，不混入 v1 范围。 · `decision` · importance 4 · 2026-11-05
+- [agent-hub MCP 接入边界：内置可 stdio，用户自建仅远程 URL](m_c9d2ab0a-agent-hub-mcp-接入边界-内置可-stdio-用户自建仅远程-url.md) — agent-hub 的 MCP 支持定为：系统内置 MCP 允许 stdio 传输，用户自建 MCP 只允许远程 URL，stdio 开关默认关闭。 · `decision` · importance 4 · 2026-11-05
+- [agent-hub 需求：MCP、Skill、长期记忆、Instruction 四大能力 + 两层配置模型](m_869f2af8-agent-hub-需求-mcp-skill-长期记忆-instruction-.md) — agent-hub 本阶段做四大能力（MCP、Skill、长期记忆、Instruction），配置为账号级并由「系统默认 + 用户自定义」两层在运行时合并，会话内可显式点名使用 Skill/MCP。 · `project` · importance 4 · 2026-11-05
+- [agent-hub 长度口径：API 用字符（指令 4000 字符），token 用保守系数做预算](m_0464a21e-agent-hub-长度口径-api-用字符-指令-4000-字符-token-.md) — 对外 API 一律以字符为单位（如指令上限 4000 字符），内部预算用保守系数估算 token，技能在导入时即校验 ≤8000 tokens。 · `decision` · importance 3 · 2026-11-05
