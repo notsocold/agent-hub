@@ -40,3 +40,14 @@ logs/
 # DSH session locks and conflict backups
 .dsh/sessions/**/session.lock
 .dsh/sessions/.backup/
+
+# 本地 uv 缓存与 Python 解释器（体积大，不进仓库）
+.uv-cache/
+.uv-python/
+.pgdata*/
+.tmp/
+.run/
+.dev/
+
+# 本地附件存储
+data/attachments/

@@ -1,7 +1,7 @@
 # 开发指南
 
-> **当前仓库处于 M0 结构初始化**：没有实现代码、未安装依赖、未启动数据库。
-> 本文描述的是后续编码时的目标流程与规范，命令当前不能直接执行。
+> **当前仓库处于 M1**：认证、会话、聊天 SSE、运行/事件已实现，依赖已安装。
+> 本文命令可直接执行；M1.5/M2+ 模块仍按路线图推进。
 
 ## 1. 环境要求
 
@@ -9,11 +9,12 @@
 |---|---|---|
 | Python | 3.13 | `uv` 会自动下载/使用 `.python-version` 指定的版本 |
 | uv | ≥ 0.11 | 依赖与虚拟环境管理 |
-| Docker + Compose | 任意近期版本 | 本地 PostgreSQL + pgvector |
+| PostgreSQL | 16（本机已有） | 业务库 + checkpoint；项目不托管数据库 |
+| Docker + Compose | 可选 | 仅当本机没有 PostgreSQL 时的备用编排 |
 | Node.js | 24 LTS | 前端 |
 | pnpm | ≥ 10 | 前端包管理（统一使用 pnpm） |
 
-## 2. 首次初始化（实现代码后）
+## 2. 首次初始化
 
 ```bash
 cd /home/zhaodan/work/PythonProjects/agent-hub
@@ -22,31 +23,31 @@ cp .env.example .env
 # 必填：LLM_API_KEY、EMBEDDING_API_KEY、JWT_SECRET（openssl rand -hex 32）
 
 uv sync          # 安装依赖
-docker compose up -d   # 启动 PostgreSQL 16 + pgvector（宿主机 5433）
+# 在 .env 中把 DATABASE_URL 指向本机已有 PostgreSQL；
+# 如果还没有业务库，按实际用户/端口创建：
+createdb -h localhost -p 5432 -U postgres agent_hub
 uv run alembic upgrade head
 
 uv run uvicorn app.main:app --reload
 curl http://localhost:8000/healthz
 ```
 
-验证数据库与扩展：
+验证数据库（使用本机 psql；M1 只需要 langgraph schema，pgvector 在 M4 再建）：
 
 ```bash
-docker compose exec postgres psql -U agent_hub -d agent_hub \
-  -c "SELECT extname FROM pg_extension;" \
-  -c "\dn"
-# 应看到 vector 扩展与 langgraph schema
+# DATABASE_URL 是 SQLAlchemy 格式（含 +psycopg），给 psql 时去掉驱动后缀
+psql "${DATABASE_URL/postgresql+psycopg/postgresql}" -c "\dn"
+psql "${DATABASE_URL/postgresql+psycopg/postgresql}" -c "SELECT extname FROM pg_extension;"
 ```
 
 ## 3. 常用命令
 
-> 当前仓库没有 `Makefile`（初始化阶段未提供），以下为后续使用的原始命令。
-> 命令在实现代码、补上 `alembic/env.py` 后才可执行。
+> 当前仓库没有 `Makefile`，以下为原始命令。
 
 | 命令 | 作用 |
 |---|---|
 | `uv sync` | 安装/同步依赖 |
-| `docker compose up -d` / `docker compose down` | 启动/停止 PostgreSQL（保留数据卷） |
+| `psql "$DATABASE_URL"` | 连接本机已有 PostgreSQL（项目不负责启停） |
 | `uv run alembic upgrade head` | 应用迁移到最新 |
 | `uv run alembic revision --autogenerate -m "说明"` | 生成 autogenerate 迁移 |
 | `uv run uvicorn app.main:app --reload` | 开发服务器 |
@@ -99,7 +100,7 @@ docker compose exec postgres psql -U agent_hub -d agent_hub \
 4. 在 `app/agents/tools/__init__.py` 汇总；
 5. 补工具单测（mock 外部依赖）。
 
-## 6. 数据库迁移流程
+## 6. 数据库迁移流程（已可用）
 
 ```bash
 # 1. 改模型
@@ -152,14 +153,14 @@ curl -s http://localhost:8000/a2a/.well-known/agent-card.json | python3 -m json.
 | 层次 | 范围 | 依赖 |
 |---|---|---|
 | 单元 | schema、工具封装、状态映射、权限函数 | 无外部服务 |
-| 集成 | FastAPI + 测试 PG + 假 LLM | Docker PG |
+| 集成 | FastAPI + 测试 PG + 假 LLM | 本机 PostgreSQL（`TEST_DATABASE_URL`） |
 | 契约 | Agent Card schema、JSON-RPC 方法、SSE 事件 | 固定样本/假 Agent |
 | E2E | 真实链路（可选） | 真模型 + 假远程 Agent |
 
 约定：
 
 - 默认不依赖真实 LLM/Embedding；用 `FakeListChatModel` 或 mock；
-- 测试数据库独立 schema，跑完清理；
+- 测试数据库独立（默认 `agent_hub_test`），跑完清理；首次需 `createdb agent_hub_test`；
 - SSE 断言事件序列，不只断言文本；
 - 远程调用测试覆盖超时、5xx、非法响应、取消。
 
@@ -175,7 +176,7 @@ curl -s http://localhost:8000/a2a/.well-known/agent-card.json | python3 -m json.
 
 | 问题 | 原因 | 处理 |
 |---|---|---|
-| `psycopg.OperationalError` 连接失败 | 容器未启动/端口不对 | `docker compose up -d`；确认 5433 映射 |
+| `psycopg.OperationalError` 连接失败 | 本机 PG 未启动/端口、用户、库名不对 | 检查 `.env` 的 `DATABASE_URL`；项目不负责启停本机 PostgreSQL |
 | `extension "vector" is not available` | 镜像不是 pgvector 版 | 使用 `pgvector/pgvector:pg16` |
 | `type "vector" does not exist` | 未执行 initdb 或未建扩展 | 重建数据卷或手动 `CREATE EXTENSION vector` |
 | `psycopg` 连接串报 driver 错误 | 把 `postgresql+psycopg://` 直接给了 psycopg | 用 `settings.checkpoint_dsn`（已去掉驱动后缀） |

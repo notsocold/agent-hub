@@ -13,7 +13,7 @@
 |---|---|---|
 | `public` | 业务表（用户、会话、消息、run、Agent 注册表、A2A 任务、知识库、审批、审计、个人能力配置） | Alembic |
 | `langgraph` | LangGraph checkpoint 表（`checkpoints`、`checkpoint_blobs`、`checkpoint_writes`、`checkpoint_migrations`）与长期记忆 Store（`store`、`store_vectors`） | `PostgresSaver.setup()` / `AsyncPostgresStore.setup()` |
-| `public.vector` 扩展 | pgvector 类型与索引 | `docker/initdb` / 迁移 |
+| `public.vector` 扩展 | pgvector 类型与索引 | 本机 PostgreSQL 手动建 / 可选 compose initdb |
 
 选择同库的理由：
 
@@ -592,7 +592,7 @@ with psycopg.connect(settings.checkpoint_dsn, options="-csearch_path=langgraph")
 3. 已合并的迁移禁止修改，修复用新迁移；
 4. 生产环境破坏性变更分两步：先加新列/双写，再切读，最后删旧列；
 5. 大表加索引使用 `CREATE INDEX CONCURRENTLY`（Alembic 中需 `autocommit_block`）；
-6. 向量扩展与 schema 由 `docker/initdb` 初始化，迁移中只建表/索引；
+6. 向量扩展与 schema 由本机 PostgreSQL 初始化（或可选 compose 的 `docker/initdb`），迁移中只建表/索引；
 7. 迁移前备份，发布流程中由单实例 Job 执行 `alembic upgrade head`。
 
 常用命令：
@@ -644,3 +644,47 @@ uv run alembic history
 2. 通过配置 `VECTOR_BACKEND=pgvector|qdrant` 装配；
 3. 双写 + 结果对比，逐步切读；
 4. PostgreSQL 中的 `knowledge_chunks` 保留为元数据源，向量列可下线。
+
+---
+
+## 12. M1 实现备注（2026-11-09）
+
+### 12.1 新增 `refresh_tokens`
+
+设计稿只写了 JWT，但「刷新轮换 / 登出 / 改密后旧令牌失效」必须落库，因此新增：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | uuid PK | |
+| `user_id` | uuid FK users cascade | |
+| `jti` | varchar(64) unique | refresh token 的 JWT ID |
+| `expires_at` | timestamptz | |
+| `revoked_at` | timestamptz null | 轮换/登出/改密时置值 |
+| `replaced_by_jti` | varchar(64) null | 轮换后的新 jti |
+| `user_agent` / `ip` | varchar | 审计辅助 |
+| `created_at` | timestamptz | |
+
+索引：`(user_id, expires_at)`；`jti` 唯一。
+
+### 12.2 既有表落地差异
+
+| 表 | 差异 |
+|---|---|
+| `messages` | 增加 `updated_at`；`status` 增加内部值 `streaming`（API 不返回）；按交接包落地 `client_message_id`、`citations`、`attachments`、`artifacts`、`capabilities`、`usage`、`error` |
+| `runs` | 按交接包落地 `reasoning_effort`、`workflow_id/version`、`reasoning_tokens`、`first_token_ms`、`duration_ms`、`active_duration_ms`、`canceled_at`；`idempotency_key` 与 `(conversation_id, idempotency_key)` 唯一约束 |
+| `approvals` | 落地展示字段 `tool_display_name/source/executor/target/side_effect/risk/payload_preview` |
+| `conversations` | 落地 `message_count`、`last_message_preview`、`archived_at` |
+| `run_events` | 按交接包建表；`payload` 内部含 `_event` 键，API 返回前剥离 |
+
+### 12.3 约束与迁移注意事项
+
+1. 同一会话只能有一个未结束 run：
+
+```sql
+CREATE UNIQUE INDEX uq_runs_active_conversation ON runs (conversation_id)
+WHERE status IN ('queued', 'running', 'interrupted');
+```
+
+2. `messages` 与 `runs` 互相引用，Alembic 迁移里先建表、再 `op.create_foreign_key`，降级时先删 `fk_messages_run_id_runs` 再删 `runs`；
+3. LangGraph checkpoint/Store 表由框架 `setup()` 创建在 `langgraph` schema，不进 Alembic；
+4. M1 迁移已通过 `upgrade → downgrade base → upgrade` 与 `alembic check`。

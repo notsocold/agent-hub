@@ -4,10 +4,10 @@
 
 配套前端：[agent-hub-web](../../NodeJsProjects/agent-hub-web)（Vue 3 + TypeScript + Vite）。
 
-> **当前状态：M0 结构初始化。**
-> 本仓库目前只包含目录骨架、声明式配置（依赖清单、环境变量模板、Docker 编排）与设计文档，
-> **不包含任何 Python 实现代码，未安装依赖，未启动数据库，也未执行迁移。**
-> 需求还在细化，后续在独立工作区继续编码。
+> **当前状态：M1 对话最小闭环已实现（2026-11-09）。**
+> 已包含认证、会话/消息、聊天 SSE、运行与事件回放、审批最小接口、系统信息；
+> 依赖已安装并通过 17 个契约测试，迁移已通过 `upgrade → downgrade → upgrade`。
+> M1.5（Skill/记忆/Instruction/MCP/附件）与 M2–M6 仍未实现，能力开关会明确返回 `false`。
 
 ## 1. 项目定位
 
@@ -75,37 +75,39 @@ flowchart LR
 | 前端 | Vue 3 + TypeScript + Vite + Pinia + Vue Router | 见 `agent-hub-web` |
 | 包管理 | uv（Python 3.13） / pnpm | 与现有项目保持一致 |
 
-> 以上为设计选择，依赖清单已写入 `pyproject.toml`，但**尚未安装**；需求细化后允许调整。
+> 以上为设计选择，依赖已安装并锁定在 `uv.lock`；后续里程碑可在不破坏 M1 的前提下调整。
 
 ## 4. 目录结构
 
 ```text
 agent-hub/
 ├── app/
-│   ├── api/v1/              # /api/v1 聚合路由（空包，待实现）
-│   ├── core/                # 配置、日志、中间件、异常（空包，待实现）
+│   ├── main.py              # create_app() / lifespan / CORS / 异常与请求 ID
+│   ├── api/v1/              # /api/v1 聚合路由
+│   ├── core/                # 配置、日志、错误、JWT、游标、限流、依赖
 │   ├── db/                  # 数据库层（目录化，替代单文件 db.py）
-│   │   ├── models/          # ORM 模型按领域分文件（待实现）
-│   │   └── vector/          # 向量存储抽象与 pgvector 实现（待实现）
-│   ├── agents/              # LangGraph 图、状态、提示词、工具（待实现）
+│   │   ├── models/          # users/conversations/messages/runs/run_events/approvals...
+│   │   └── vector/          # 向量存储抽象与 pgvector 实现（M4）
+│   ├── agents/              # LangGraph 图、提示词、checkpoint、假模型
 │   │   └── tools/
-│   └── modules/             # 业务模块（空目录，约定见 README）
-│       ├── auth/
-│       ├── conversations/
-│       ├── chat/
-│       ├── agents/
-│       ├── a2a/
-│       ├── knowledge/
-│       ├── tasks/
-│       └── approvals/
-├── alembic/                 # 迁移目录（README + versions/.gitkeep，env.py 待生成）
-├── docker/initdb/           # pgvector 扩展 + langgraph schema 初始化 SQL
-├── docker-compose.yml       # PostgreSQL + pgvector 编排（仅配置，未启动）
-├── scripts/                 # 离线脚本（规划，见 README）
-├── tests/                   # 测试（规划，见 README）
+│   └── modules/             # 业务模块
+│       ├── auth/            # 注册、登录、刷新轮换、账号资料
+│       ├── conversations/   # 会话、消息历史与分页
+│       ├── chat/            # SSE、run、事件、取消
+│       ├── approvals/       # 审批查询与决定
+│       ├── agents/          # 远程智能体（M2）
+│       ├── a2a/             # A2A Server/Client（M2/M3）
+│       ├── knowledge/       # 知识库（M4）
+│       ├── tasks/           # A2A Task（M2）
+│       └── system/          # 系统信息与健康检查
+├── alembic/                 # 异步 env.py + M1 初始迁移
+├── docker/initdb/           # 可选：使用 docker compose 时的扩展/schema 初始化 SQL
+├── docker-compose.yml       # 可选：本机没有 PostgreSQL 时的备用编排
+├── scripts/                 # 运维/导出脚本（grant_admin、export_openapi）
+├── tests/                   # 单元 + 集成契约测试
 ├── data/                    # 知识库原始文档（规划）
 ├── docs/                    # 架构、数据库、A2A、API、开发、路线图
-├── pyproject.toml           # 依赖声明（未安装）
+├── pyproject.toml           # 依赖声明（uv.lock 已生成）
 ├── .env.example             # 环境变量模板
 └── README.md
 ```
@@ -113,54 +115,60 @@ agent-hub/
 说明：
 
 - `app/db/` 是本次相对 `customer-service` 的关键调整：不再用单文件 `app/db.py`，而是 `base / engine / session / mixins / models / vector` 分目录；
-- 当前所有 `app/**/` 只有 `__init__.py` 包标记与 README，**没有实现文件**；
-- 规划中的具体文件与职责见 `app/modules/README.md`、`app/agents/README.md` 和 `docs/architecture.md`。
+- M1 已实现 `app/core`、`app/db`、`app/agents`、`app/modules/{auth,conversations,chat,approvals,system}`；
+- 模块边界与后续文件规划见 `app/modules/README.md`、`app/agents/README.md` 和 `docs/architecture.md`。
 
-## 5. 后续开始编码时的环境准备（当前未执行）
+## 5. 环境准备
 
-> 以下命令是设计中的开发流程，当前仓库缺少实现代码与 `alembic/env.py`，**尚不能直接运行**。
-> 需求细化、补齐代码后再执行；请勿把这里的命令当作“已完成”的证据。
+> 本项目**不依赖 Docker**：默认使用使用方本机已有的 PostgreSQL。
+> `DATABASE_URL` 指向已有实例即可；`docker-compose.yml` 仅作为没有现成 PostgreSQL 时的可选项。
+> `pgvector` 扩展在 M4 才需要，M1 用普通 PostgreSQL 即可。
 
 ```bash
 # 1. 配置环境变量
 cp .env.example .env
-# 填入 LLM_API_KEY、EMBEDDING_API_KEY、JWT_SECRET（openssl rand -hex 32）
+# 把 DATABASE_URL 改成你本机已有 PostgreSQL 的连接串；
+# 再填 JWT_SECRET；没有模型密钥时保持 LLM_PROVIDER=fake
 
 # 2. 安装依赖
 uv sync
 
-# 3. 启动 PostgreSQL + pgvector（宿主机端口 5433）
-docker compose up -d
+# 3. 创建业务库（如果本机还没有 agent_hub 库）
+createdb -h localhost -p 5432 -U postgres agent_hub   # 按实际用户/端口修改
 
-# 4. 初始化迁移环境（当前仓库未包含 env.py）
-uv run alembic init alembic   # 或按 docs/database.md 的异步模板补 env.py
+# 4. 执行迁移
 uv run alembic upgrade head
 
-# 5. 启动服务（需先实现 app/main.py）
+# 5. 启动服务
 uv run uvicorn app.main:app --reload
 curl http://localhost:8000/healthz
+curl http://localhost:8000/api/v1/system/info   # 需要先登录拿 Bearer token
 ```
 
-## 6. 当前状态（M0 · 仅结构）
+## 6. 当前状态（M1 · 对话最小闭环）
 
-已初始化：
+已完成：
 
-- [x] 分层目录与模块边界约定（`app/modules/README.md`、`app/agents/README.md`）
-- [x] 依赖声明 `pyproject.toml`（未安装、未生成锁文件）
-- [x] 环境变量模板 `.env.example`
-- [x] PostgreSQL + pgvector 的 Docker 编排与初始化 SQL（未拉取镜像、未启动）
-- [x] 数据库目录化方案：`app/db/{models,vector}` 分层
-- [x] 完整设计文档：架构、数据库、A2A、API、开发、路线图、初始化设计稿
-- [x] 个人能力层需求设计：MCP / Skill / 长期记忆 / Instruction（仅文档，未实现）
+- [x] 配置、日志、统一错误信封、`X-Request-ID`、CORS、限流
+- [x] `users` / `refresh_tokens` / `conversations` / `messages` / `runs` / `run_events` / `approvals` / `audit_logs` / `system_settings` / `user_settings` 模型
+- [x] Alembic `env.py` + M1 初始迁移（含 downgrade）
+- [x] 注册、登录、刷新轮换、登出、`GET/PATCH /auth/me`、改密
+- [x] 会话 CRUD、标题搜索、归档/软删、消息历史游标分页
+- [x] LangGraph 主图 + PostgresSaver/InMemorySaver + 假流式模型
+- [x] `POST /chat/stream` SSE（`run.started`、`message.*`、`X-Run-ID`、心跳、取消）
+- [x] `GET /runs/{id}`、`GET /runs/{id}/events`、`POST /runs/{id}/cancel`
+- [x] 审批列表/详情/决定（M1 无工具触发 interrupt）
+- [x] `/healthz`、`/readyz`、`GET /system/info` 能力开关
+- [x] `scripts/grant_admin.py`、`scripts/export_openapi.py`
+- [x] 17 个 pytest 契约用例；真实 HTTP 流式与 Postgres checkpoint 验证
 
-明确未包含（全部留待后续编码任务）：
+明确未包含（按路线图后续交付）：
 
-- [ ] Python 实现代码（`app/main.py`、`core/`、`db/`、`agents/`、`modules/` 下的业务代码）
-- [ ] 个人能力层的实现、数据库迁移与前端改动
-- [ ] Alembic `env.py` 与迁移脚本
-- [ ] 依赖安装、锁文件、虚拟环境
-- [ ] 容器拉取/启动、数据库迁移
-- [ ] 测试用例与 CI
+- [ ] M1.5：Skill / 长期记忆 / Instruction / MCP / 附件（能力开关为 false）
+- [ ] M2/M3：A2A 出站/入站、智能体页、任务页
+- [ ] M4：知识库 + pgvector
+- [ ] M5+：工作流、管理控制台、RBAC
+- [ ] CI、Dockerfile、生产可观测性
 
 ## 7. 与 customer-service 的结构差异
 
@@ -186,15 +194,17 @@ curl http://localhost:8000/healthz
 | [路线图](docs/roadmap.md) | M0–M6 里程碑与验收标准（含 M1.5 个人能力层） |
 | [初始化设计稿](docs/superpowers/specs/2026-11-04-agent-hub-init-design.md) | 本次初始化的决策记录 |
 | [个人能力层设计](docs/superpowers/specs/2026-11-05-agent-capabilities-design.md) | MCP / Skill / 长期记忆 / Instruction 的设计与决策 |
+| [M1 前端契约反馈](docs/feedback/2026-11-09-frontend-contract-feedback.md) | 与前端交接包的差异、待拍板决策、联调步骤 |
+| [OpenAPI](docs/openapi.json) | M1 实际接口契约（由 FastAPI 导出） |
 
 ## 9. 下一步
 
-需求细化完成后，按 `docs/roadmap.md` 的 M1 开始：
+M1 已完成，按 `docs/roadmap.md` 继续：
 
-1. 先落 `users` / `conversations` / `messages` / `runs` 模型与迁移；
-2. 再实现认证与最小对话闭环；
-3. M1 完成后进入 M1.5：指令、长期记忆、Skill、MCP（见 [个人能力层设计](docs/superpowers/specs/2026-11-05-agent-capabilities-design.md)）；
-4. 每一步先更新设计文档，再写代码。
+1. 与前端对齐 [M1 契约反馈](docs/feedback/2026-11-09-frontend-contract-feedback.md) 中的 12 个点；
+2. 进入 M1.5-A：指令、长期记忆、技能（`system_settings` / `user_settings` / `skills` / `skill_files` 已建基础表）；
+3. 再做 M1.5-B：MCP + 附件 + 完整审批链路；
+4. 每一步先更新设计文档与 `docs/openapi.json`，再写代码。
 
 编码前建议阅读：
 

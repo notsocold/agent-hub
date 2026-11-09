@@ -11,7 +11,7 @@
 - [x] `app/` 分层目录与模块约定
 - [x] `pyproject.toml` 依赖声明（未安装、无锁文件）
 - [x] `.env.example` 配置模板
-- [x] PostgreSQL + pgvector Docker Compose 与 initdb SQL（仅配置，未启动）
+- [x] 可选的 PostgreSQL + pgvector Docker Compose 与 initdb SQL（默认使用本机已有 PostgreSQL，不要求启动）
 - [x] `app/db/` 目录化方案（空包，待实现）
 - [x] 架构 / 数据库 / A2A / API / 开发文档
 - [x] 前端 `agent-hub-web` 脚手架（create-vue bare，未安装依赖）

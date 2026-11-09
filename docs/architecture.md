@@ -210,7 +210,7 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 
 | 决策 | 选择 | 理由 | 代价/触发重审条件 |
 |---|---|---|---|
-| 业务库 | PostgreSQL | 事务、JSONB、扩展生态、生产成熟 | 需要 Docker/运维；单机开发可用 Docker |
+| 业务库 | PostgreSQL | 事务、JSONB、扩展生态、生产成熟 | 需要 PostgreSQL 运维；Docker 只是可选方案 |
 | 向量库 | pgvector（同库） | 业务元数据与向量同事务，删除/权限过滤简单，备份统一 | 千万级以上或高 QPS 检索可能成为瓶颈；届时切 Qdrant |
 | 会话记忆 | LangGraph PostgresSaver | 与业务库同源，支持多实例；避免 SQLite 单机限制 | checkpoint 表增长快，需要定期归档 |
 | 多智能体编排 | 单主图 + 远程 Agent 工具 | 实现简单、可解释、调试成本低；A2A 天然适合工具化 | 复杂 DAG 任务需要 planner/executor 子图（M5 后评估） |
@@ -283,7 +283,7 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 ### 开发/单机
 
 ```text
-docker compose: postgres(pgvector) :5433
+使用方本机已有的 PostgreSQL（DATABASE_URL 指向它；不要求 Docker）
 uvicorn app.main:app :8000
 vite dev server :5173（/api 代理到 8000）
 ```

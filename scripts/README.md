@@ -9,6 +9,7 @@
 | `check_agents.py` | 巡检已注册 Agent 的 Agent Card 与健康状态 |
 | `seed_demo.py` | 本地演示数据（演示用户、会话、示例 Agent） |
 | `eval_rag.py` | 离线检索评测集：问题 → 期望来源，统计召回率 |
-| `grant_admin.py` | 设置/撤销用户管理员角色（`users.role`），用于首个管理员引导 |
+| `grant_admin.py` | 已实现：设置/撤销用户管理员角色（`users.role`），用于首个管理员引导 |
+| `export_openapi.py` | 已实现：导出 `docs/openapi.json`，作为前后端契约源 |
 
 脚本必须通过 `app.core.config.get_settings()` 读取配置，不重复实现环境变量解析。

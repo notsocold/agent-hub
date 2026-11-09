@@ -1,4 +1,4 @@
--- 仅在数据库首次初始化（数据卷为空）时执行。
+-- 可选：仅在使用 docker compose 且数据卷为空时执行；本机已有 PostgreSQL 时手动建扩展/schema。
 -- 业务表、向量表与 LangGraph checkpoint 统一放在同一个数据库中，按 schema 隔离。
 
 CREATE EXTENSION IF NOT EXISTS vector;

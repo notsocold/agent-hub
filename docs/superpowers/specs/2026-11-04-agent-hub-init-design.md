@@ -35,7 +35,7 @@
 | 编排 | LangChain + LangGraph | 1.4.x / 1.2.x | 用户指定；LangGraph 状态图适合多轮与工具循环 |
 | A2A | `a2a-sdk[fastapi]` | 1.3.x | 实现 A2A 1.0，兼容 0.3；官方 Python SDK |
 | 业务库 | PostgreSQL 16 + SQLAlchemy 2（异步） | — | 事务、JSONB、扩展生态 |
-| 向量库 | pgvector（HNSW + cosine） | 0.5.x | 与业务同库同事务；用户已有 Docker |
+| 向量库 | pgvector（HNSW + cosine） | 0.5.x | 与业务同库同事务；优先使用用户本机已有 PostgreSQL，Docker 仅可选 |
 | 会话记忆 | `langgraph-checkpoint-postgres` | 3.2.x | 多实例可共享，避免 SQLite 单机限制 |
 | 迁移 | Alembic | ≥ 1.20 | SQLAlchemy 官方迁移工具 |
 | 配置 | pydantic-settings | ≥ 2.15 | 类型安全、与 customer-service 一致 |
@@ -84,7 +84,7 @@ agent-hub/
 - `app/db.py` → `app/db/` 目录（base/engine/session/mixins/models/vector）；
 - ORM 模型从各业务模块内 `models.py` 收敛到 `app/db/models/<领域>.py`；
 - 新增 `app/agents/`（LangGraph 领域层）与 `app/modules/a2a/`；
-- 新增 `docker-compose.yml`、`docker/initdb/`；
+- 新增可选的 `docker-compose.yml`、`docker/initdb/`（默认使用本机已有 PostgreSQL）；
 - 存储从 SQLite + FAISS 改为 PostgreSQL + pgvector。
 
 ## 5. 模块职责
@@ -184,7 +184,7 @@ SSE 事件、错误码、示例见 `docs/api.md`。
 - 后端分层目录骨架与模块约定（空包、README、`.gitkeep`）；
 - 依赖声明 `pyproject.toml`（未安装、无锁文件）；
 - 环境变量模板 `.env.example`；
-- PostgreSQL + pgvector 的 Docker Compose 与 initdb SQL（仅配置，未启动）；
+- 可选的 PostgreSQL + pgvector Docker Compose 与 initdb SQL（仅配置，未启动；不要求使用）；
 - 前端 Vue 工程脚手架（create-vue `--bare`，未安装依赖）；
 - 完整文档：README、架构、数据库、A2A、API、开发、路线图、本设计稿；
 - 独立 Git 仓库（如执行初始化提交）。
@@ -204,7 +204,7 @@ SSE 事件、错误码、示例见 `docs/api.md`。
 1. 目录结构与本文档及 README 第 4 节一致；
 2. `pyproject.toml` 与前端 `package.json` 的依赖声明与技术选型文档一致；
 3. `.env.example` 覆盖文档中列出的配置项；
-4. `docker compose config` 语法可校验（不要求拉取镜像或启动容器）；
+4. 如保留可选 compose，`docker compose config` 语法可校验（不要求拉取镜像或启动容器）；
 5. 两个项目各自独立，文档可读、链接有效；
 6. 不要求本次可启动、可构建或可迁移——运行验证留到 M1 编码阶段。
 

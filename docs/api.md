@@ -512,3 +512,66 @@ GET /api/v1/instructions
 - 响应只增字段不删字段；新增枚举值前端需容忍未知值；
 - SSE 事件新增类型时前端忽略未知事件，不报错；
 - OpenAPI 作为契约源，前端类型可由 `/openapi.json` 生成（规划）。
+
+---
+
+## 7. M1 实现状态（2026-11-09）
+
+> 本节记录相对上文设计稿的落地差异；机器可读契约见 [`openapi.json`](openapi.json)。
+
+### 7.1 已实现端点
+
+| 模块 | 端点 | 备注 |
+|---|---|---|
+| 认证 | `POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`POST /auth/logout`、`GET /auth/me`、`PATCH /auth/me`、`POST /auth/change-password` | refresh token 落库、旋转、吊销；access 15 分钟、refresh 7 天 |
+| 会话 | `GET/POST /conversations`、`GET/PATCH/DELETE /conversations/{id}`、`GET /conversations/{id}/messages` | 标题搜索、状态筛选、cursor 分页、`stats` |
+| 聊天 | `POST /chat/stream` | SSE + `X-Run-ID`；单会话并发 409 |
+| 运行 | `GET /runs/{id}`、`GET /runs/{id}/events`、`POST /runs/{id}/cancel`、`POST /runs/{id}/resume` | 事件回放支持 `after_seq`、`types`、`q`；`resume` 在 M1 返回 409 |
+| 审批 | `GET /approvals`、`GET /approvals/{id}`、`POST /approvals/{id}/decision` | M1 无工具触发，仅数据模型与接口 |
+| 系统 | `GET /healthz`、`GET /readyz`、`GET /system/info` | 能力开关、模型白名单、限额 |
+
+### 7.2 错误信封扩展
+
+`error` 对象在 `code` / `message` / `request_id` 之外允许可选的 `details`：
+
+```json
+{"error":{"code":"run_in_progress","message":"…","request_id":"…","details":{"run_id":"…"}}}
+```
+
+- `run_in_progress.details.run_id`：当前占用会话的 run；
+- `run_not_cancelable.details.status`：当前状态；
+- `rate_limited.details.retry_after_seconds`：建议重试秒数。
+
+### 7.3 SSE 实现范围
+
+已实现：`conversation.created`、`run.started`、`message.created`、`message.started`、`message.delta`、`message.done`、`error`，心跳 `: ping`。
+
+- `seq` 从 1 开始单调递增；`message.delta` 不落 `run_events`，因此事件回放的 `seq` 允许跳号；
+- 取消后 `message.done.finish_reason=canceled`，已生成内容保留；
+- 相同 `conversation_id + client_message_id` 返回同一 run 的事件回放，不创建新消息；
+- 致命错误只发 `error`，不发 `message.done`；
+- `reasoning.delta/done`、`tool.*`、`a2a.*`、`skill.activated`、`approval.required`、`workflow.step`、`memory.saved`、`notice` 在后续里程碑接入。
+
+### 7.4 能力开关
+
+`GET /system/info.capabilities` 在 M1 返回：
+
+```json
+{
+  "instructions": false, "memories": false, "skills": false, "mcp": false,
+  "knowledge": false, "attachments": false, "workflows": false,
+  "approvals": true, "agents": false, "tasks": false
+}
+```
+
+- 请求携带未启用的能力字段时返回 403 `capability_disabled`；
+- 携带 `workflow_id` 返回 409 `workflow_disabled`；
+- `reasoning_efforts` 默认空数组（模型不支持时），`default_reasoning_effort` 仍返回 `low`。
+
+### 7.5 数据层差异
+
+- 新增 `refresh_tokens` 表（用于 refresh token 轮换/吊销）；
+- `messages.status` 增加内部值 `streaming`，API 只返回 `completed/failed/canceled`；
+- `messages` 增加 `updated_at`；`runs` 按交接包补齐用量、首 token、时长、工作流占位列；
+- 同一会话未结束 run 由部分唯一索引 `uq_runs_active_conversation` 保证唯一；
+- `messages.run_id` 与 `runs.user_message_id/assistant_message_id` 互相引用，迁移中用 `ALTER TABLE` 补外键。
