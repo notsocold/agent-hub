@@ -174,11 +174,27 @@ async def test_validation_and_capability_errors(client: httpx.AsyncClient) -> No
 
     capability_error = await client.post(
         "/api/v1/chat/stream",
-        json={"message": "hi", "skills": ["00000000-0000-4000-8000-000000000000"]},
+        json={"message": "hi", "knowledge_categories": ["售后"]},
         headers=headers,
     )
     assert capability_error.status_code == 403
     assert capability_error.json()["error"]["code"] == "capability_disabled"
+
+    # M1.5：技能/MCP/附件已启用，选择不存在的资源返回 404（不再是 capability_disabled）。
+    skill_missing = await client.post(
+        "/api/v1/chat/stream",
+        json={"message": "hi", "skills": ["00000000-0000-4000-8000-000000000000"]},
+        headers=headers,
+    )
+    assert skill_missing.status_code == 404
+    assert skill_missing.json()["error"]["code"] == "not_found"
+
+    attachment_missing = await client.post(
+        "/api/v1/chat/stream",
+        json={"message": "hi", "attachments": ["00000000-0000-4000-8000-000000000000"]},
+        headers=headers,
+    )
+    assert attachment_missing.status_code == 404
 
     effort_error = await client.post(
         "/api/v1/chat/stream",
@@ -215,7 +231,16 @@ async def test_system_info_and_readyz(client: httpx.AsyncClient) -> None:
     assert body["default_model"]
     assert body["models"][0]["capabilities"]["streaming"] is True
     assert body["capabilities"]["approvals"] is True
-    assert body["capabilities"]["skills"] is False
+    # M1.5 能力开关：个人能力层全部启用，agents/tasks 仍为 false（M2）。
+    assert body["capabilities"]["skills"] is True
+    assert body["capabilities"]["mcp"] is True
+    assert body["capabilities"]["memories"] is True
+    assert body["capabilities"]["instructions"] is True
+    assert body["capabilities"]["attachments"] is True
+    assert body["capabilities"]["knowledge"] is False
+    # M2：A2A 出站已实现，agents/tasks 与入站 A2A_ENABLED 无关，恒为 true。
+    assert body["capabilities"]["agents"] is True
+    assert body["capabilities"]["tasks"] is True
     assert body["limits"]["message_max_chars"] == 8000
     assert body["a2a"]["card_url"].endswith("/a2a/.well-known/agent-card.json")
 
@@ -224,3 +249,33 @@ async def test_system_info_and_readyz(client: httpx.AsyncClient) -> None:
     ready = await client.get("/readyz")
     assert ready.status_code == 200
     assert ready.json()["status"] == "ok"
+
+
+async def test_user_message_keeps_capabilities(client: httpx.AsyncClient) -> None:
+    """用户消息同样落 capabilities：历史时间线刷新后仍能展示「本轮：技能 ×N」。"""
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    created = await client.post(
+        "/api/v1/skills",
+        json={"name": "周报", "description": "周报生成", "content": "1. 收集进展；2. 三段式输出。"},
+        headers=headers,
+    )
+    skill_id = created.json()["id"]
+
+    run_id, events = await collect_sse(
+        client, headers=headers, payload={"message": "写周报", "skills": [skill_id]}
+    )
+    assert run_id
+    conversation_id = next(data for name, data in events if name == "run.started")[
+        "conversation_id"
+    ]
+
+    messages = await client.get(
+        f"/api/v1/conversations/{conversation_id}/messages", headers=headers
+    )
+    assert messages.status_code == 200
+    items = messages.json()["items"]
+    user_message = next(item for item in items if item["role"] == "user")
+    assert user_message["capabilities"]["skills"] == [skill_id]
+    assistant_message = next(item for item in items if item["role"] == "assistant")
+    assert assistant_message["capabilities"]["skills"] == [skill_id]

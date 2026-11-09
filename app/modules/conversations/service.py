@@ -334,9 +334,12 @@ async def list_messages(
         .order_by(Message.created_at.desc(), Message.id.desc())
         .limit(limit + 1)
     )
-    if before is not None:
+    # 契约：``before`` 与 ``cursor`` 二选一，同时传时以 ``cursor`` 为准。
+    cursor_data = decode_cursor(cursor)
+    if cursor_data:
+        stmt = _apply_message_cursor(stmt, cursor_data)
+    elif before is not None:
         stmt = stmt.where(Message.created_at < before)
-    stmt = _apply_message_cursor(stmt, decode_cursor(cursor))
     rows = list((await db.execute(stmt)).scalars().all())
     has_more = len(rows) > limit
     rows = rows[:limit]

@@ -1,15 +1,25 @@
 # 测试
 
-M1 已落地：
+M1.5 已落地：
 
 ```
 tests/
-├── conftest.py                    # 测试 PostgreSQL、httpx ASGI Client、假模型、表清理
-├── test_security_unit.py          # 密码、JWT、游标、schema 单元测试
+├── conftest.py                    # 测试 PostgreSQL、httpx ASGI Client、假模型、表清理、MCP 白名单
+├── helpers.py                     # ScriptedToolModel（脚本化工具调用模型）与 MCP mock transport
+├── test_security_unit.py          # 密码、JWT、游标、schema 单元测试（M1）
+├── test_cursor_unit.py            # 游标编解码单元测试（M1）
+├── test_capability_unit.py        # M1.5：zip 校验、SSRF、MCP 响应解析、工具名、凭据、提示词装配
 └── integration/
-    ├── test_auth.py               # 注册/登录/刷新轮换/登出/改密
-    ├── test_conversations.py      # 会话 CRUD、搜索、消息历史与计数
-    └── test_chat.py               # SSE 顺序、幂等、并发 409、取消、事件回放、系统信息
+    ├── test_auth.py               # 注册/登录/刷新轮换/登出/改密（M1）
+    ├── test_conversations.py      # 会话 CRUD、搜索、消息历史与计数（M1）
+    ├── test_chat.py               # SSE 顺序、幂等、并发 409、取消、事件回放、系统信息（M1 已按 M1.5 更新）
+    ├── test_pagination.py         # 分页回归（M1）
+    ├── test_attachments.py        # 上传/下载/去重/越权/软删/文本注入模型上下文
+    ├── test_instructions.py       # 默认值/覆盖/超长/恢复默认/审计/注入
+    ├── test_memories.py           # CRUD/stats/q/导出/清空/越权/save_memory 工具与 memory.saved
+    ├── test_skills.py             # 手写/zip 导入/文件读取/系统项只读/越权/skill.activated/read_skill_file
+    ├── test_mcp.py                # CRUD/check/工具发现/审批策略/凭据不回显/SSRF/stdio 禁用/聊天调用/HITL/超时/降级
+    └── test_approvals.py          # 重复决定 409、取消清理 pending、列表 stats
 ```
 
 运行：
@@ -19,14 +29,17 @@ tests/
 createdb -h localhost -p 5432 -U postgres agent_hub_test
 
 # 指向本机测试库；不配置时集成测试自动 skip
-TEST_DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/agent_hub_test \
+TEST_DATABASE_URL=postgresql+psycopg://devuser:devpass@localhost:54321/agent_hub_test \
   uv run pytest -q
 ```
 
 约定：
 
 - 没有可用 PostgreSQL 时集成测试自动 skip，单元测试仍可运行；
-- 测试默认不依赖真实 LLM/Embedding API key，使用 `FakeStreamingChatModel`；
+- 测试默认不依赖真实 LLM/Embedding API key，使用 `FakeStreamingChatModel`；工具循环用例用 `ScriptedToolModel`；
 - 集成测试使用独立测试库，每个用例前 `create_all`、用例后 `TRUNCATE`；
 - SSE 断言事件顺序与 `event:` 名称，不只断言最终文本；
-- 取消/并发等场景绕过 httpx `ASGITransport`（它会缓冲整个响应），用真实 uvicorn 或服务层验证。
+- **ASGITransport 会缓冲整个 SSE 响应**：HITL 审批的实时交互（审批决定、取消）绕过 HTTP 层，
+  用服务层 `start_chat` + `collect_run_events_live`（`tests/conftest.py`）验证；真实 uvicorn 下 SSE 实时流式；
+- MCP 集成测试用 `register_test_transport(url, httpx.MockTransport)` 注入假服务器，
+  `MCP_ALLOWED_HOSTS` 由 conftest 预置（`mcp.example.com,mcp.test`）；审批超时由 `APPROVAL_TIMEOUT_SECONDS=3` 缩短。

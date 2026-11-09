@@ -94,25 +94,45 @@ Authorization: Bearer <access_token>
 | POST | `/api/v1/runs/{run_id}/cancel` | 取消运行 |
 | POST | `/api/v1/runs/{run_id}/resume` | 恢复 `input-required` 的运行 |
 
-### 2.4 远程智能体
+### 2.4 远程智能体（M2 已实现）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/v1/agents` | 已注册 Agent 列表 |
-| POST | `/api/v1/agents` | 注册远程 Agent（拉取 Agent Card） |
-| GET | `/api/v1/agents/{id}` | Agent 详情（含原始 Card） |
-| PATCH | `/api/v1/agents/{id}` | 启用/禁用、更新鉴权配置 |
-| DELETE | `/api/v1/agents/{id}` | 删除注册 |
-| POST | `/api/v1/agents/{id}/refresh` | 重新拉取 Agent Card |
-| POST | `/api/v1/agents/{id}/health` | 主动健康检查 |
+| POST | `/api/v1/agents/preview` | 拉取并校验 Agent Card，不落库（`{valid, card, normalized, warnings}`） |
+| POST | `/api/v1/agents` | 注册远程 Agent（拉取 Agent Card；同 url+slug 幂等返回已有） |
+| GET | `/api/v1/agents` | 已注册 Agent 列表：`health_status`、`enabled`、`q`、`limit`、`cursor` + `stats` |
+| GET | `/api/v1/agents/{id}` | Agent 详情（含原始 Card、skills、auth_hint、last_*、recent_tasks） |
+| PATCH | `/api/v1/agents/{id}` | 修改 `{enabled?, name?, auth?{type,secret_ref}, headers?}`（headers 敏感头只存引用/密文） |
+| DELETE | `/api/v1/agents/{id}` | 软删除（有运行中任务 409 `agent_has_active_tasks`） |
+| POST | `/api/v1/agents/{id}/refresh` | 重新拉取 Agent Card，返回 `{agent, changed, changed_fields}`；失败保留旧 Card 标 unhealthy |
+| POST | `/api/v1/agents/{id}/health` | 主动健康检查（拉 Card + tasks/get 探测），返回 `{health_status, latency_ms, checked_at, error}` |
 
-### 2.5 任务
+字段与错误码：
+
+- 列表项：`id/slug/name/description/url/protocol_version/skills[{id,name,description}]/skill_count/auth_type(none|api_key|oauth2)/auth_scheme(bearer|header|oauth2|none)/auth_hint/capabilities{streaming,push_notifications}/health_status(unknown|healthy|degraded|unhealthy)/enabled/last_checked_at/last_latency_ms/last_error/recent_task{id,a2a_task_id,state,duration_ms,finished_at}|null/created_at/updated_at`；
+- `stats`：`{total, healthy, degraded, unhealthy, disabled, enabled}`；
+- 注册/预览失败：422 `agent_card_invalid`（Card 非法/不可达/超时/跨源重定向）或 `agent_url_not_allowed`（协议/内网/凭据 URL）；
+- 健康阈值：成功且延迟 <2s → healthy，≥2s → degraded；连续失败 ≥3 → unhealthy；`A2A_ALLOW_LOOPBACK` 仅 dev/test 默认放行回环（本地假 Agent 联调），prod 默认拒绝。
+
+### 2.5 任务（M2 已实现）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/v1/tasks` | A2A 任务列表（按 run/agent/状态过滤） |
-| GET | `/api/v1/tasks/{id}` | 任务详情与结果 |
-| POST | `/api/v1/tasks/{id}/cancel` | 取消任务 |
+| GET | `/api/v1/tasks` | A2A 任务列表：`state`（可重复/逗号）、`agent_id`、`run_id`、`conversation_id`、`q`、`from`、`to`、`limit`、`cursor` + `stats` |
+| GET | `/api/v1/tasks/{id}` | 任务详情（request/result/error/input_request/auth_request/timeline） |
+| POST | `/api/v1/tasks/{id}/cancel` | 取消（submitted/working/input_required/auth_required；尽力远程 tasks/cancel） |
+| POST | `/api/v1/tasks/{id}/resume` | 补充输入（仅 input_required；`{input}` → `{task, run:{id,status}|null}`，同一 a2a_task_id 继续） |
+| POST | `/api/v1/tasks/{id}/authorize` | 授权重试（仅 auth_required；`{scopes?, note?}`） |
+| POST | `/api/v1/tasks/{id}/reject` | 拒绝（auth_required 或 input_required；`{reason?}`，state=rejected） |
+
+字段与错误码：
+
+- 列表项：`id/a2a_task_id/agent{id,slug,name}/run_id/conversation{id,title}|null/state/progress/duration_ms/request_summary/error_summary/available_actions/created_at/updated_at`；
+- `stats`：`{total, submitted, working, input_required, auth_required, completed, failed, canceled, rejected}`；
+- 详情补：`tool_call_id/request{tool,args,summary}/result{artifact{type,summary,parts,data},summary}/error{code,message,retryable,at}/input_request{question,input_schema,expires_at}/auth_request{scopes,authorization_url,expires_at}/timeline[{state,at,duration_ms,note}]/started_at/finished_at`；
+- `available_actions` 只含后端可执行动作（cancel/resume/authorize/reject），由 state 推导；
+- 动作错误 409：`task_not_cancelable` / `task_not_resumable` / `task_not_authorizable` / `task_not_rejectable`；
+- 等待态 `expires_at` 到期懒过期置 canceled（timeline 追加「等待超时」，审计 `task.expired`）；`A2A_INPUT_TIMEOUT_SECONDS` 默认 30 分钟。
 
 ### 2.6 知识库
 
@@ -262,10 +282,10 @@ data: <单行 JSON>
 | `message.delta` | 模型增量 token | `message_id`、`delta` |
 | `tool.start` | 工具开始执行 | `tool_call_id`、`tool`、`args`、`source`、`server`（MCP 时） |
 | `tool.result` | 工具执行结束 | `tool_call_id`、`status`、`summary`、`source` |
-| `a2a.task` | 远程任务状态变化 | `task_id`、`agent`、`state`、`progress` |
-| `a2a.artifact` | 远程产出片段 | `task_id`、`artifact` |
-| `a2a.input_required` | 远程要求补充信息 | `task_id`、`question` |
-| `a2a.auth_required` | 远程要求授权 | `task_id`、`agent` |
+| `a2a.task` | 远程任务状态变化 | `task_id`（本地）、`a2a_task_id`、`agent`（slug）、`agent_detail{id,slug,name}`、`state`、`progress`、`request_summary`、`result_summary`、`duration_ms`、`error` |
+| `a2a.artifact` | 远程产出片段 | `task_id`、`a2a_task_id`、`artifact{type,summary,parts,data}` |
+| `a2a.input_required` | 远程要求补充信息 | `task_id`、`a2a_task_id`、`agent`、`agent_detail`、`question`、`input_schema`、`expires_at` |
+| `a2a.auth_required` | 远程要求授权 | `task_id`、`a2a_task_id`、`agent`、`agent_detail`、`scopes`、`authorization_url`、`expires_at` |
 | `approval.required` | 需要人工确认 | `approval_id`、`tool`、`reason`、`payload` |
 | `skill.activated` | 本轮技能激活 | `skill_id`、`slug`、`name`、`scope`、`estimated_tokens` |
 | `memory.saved` | 记忆保存成功 | `memory_id`、`kind`、`action`、`preview` |
@@ -495,8 +515,8 @@ GET /api/v1/instructions
 
 | 接口 | 默认限制 | 说明 |
 |---|---|---|
-| `POST /auth/login` | 10 次/5 分钟/IP | 防爆破 |
-| `POST /auth/register` | 5 次/小时/IP | |
+| `POST /auth/login` | 10 次/5 分钟/IP（`RATE_LIMIT_LOGIN_*` 可调） | 防爆破 |
+| `POST /auth/register` | 5 次/小时/IP（`RATE_LIMIT_REGISTER_*` 可调） | 防批量注册；本地联调用 `scripts/seed_dev_account.py` |
 | `POST /chat/stream` | 20 次/分钟/用户，同时 1 个运行 | 超出返回 429 |
 | `POST /agents` | 30 次/小时/用户 | 管理操作 |
 | `POST /mcp/servers` | 30 次/小时/用户 | 管理操作 |
@@ -526,7 +546,7 @@ GET /api/v1/instructions
 | 认证 | `POST /auth/register`、`POST /auth/login`、`POST /auth/refresh`、`POST /auth/logout`、`GET /auth/me`、`PATCH /auth/me`、`POST /auth/change-password` | refresh token 落库、旋转、吊销；access 15 分钟、refresh 7 天 |
 | 会话 | `GET/POST /conversations`、`GET/PATCH/DELETE /conversations/{id}`、`GET /conversations/{id}/messages` | 标题搜索、状态筛选、cursor 分页、`stats` |
 | 聊天 | `POST /chat/stream` | SSE + `X-Run-ID`；单会话并发 409 |
-| 运行 | `GET /runs/{id}`、`GET /runs/{id}/events`、`POST /runs/{id}/cancel`、`POST /runs/{id}/resume` | 事件回放支持 `after_seq`、`types`、`q`；`resume` 在 M1 返回 409 |
+| 运行 | `GET /runs/{id}`、`GET /runs/{id}/events`、`POST /runs/{id}/cancel`、`POST /runs/{id}/resume` | 事件回放支持 `after_seq`、`types`、`q`；`resume` 在 M1 返回 409 `run_not_resumable`（见 7.8） |
 | 审批 | `GET /approvals`、`GET /approvals/{id}`、`POST /approvals/{id}/decision` | M1 无工具触发，仅数据模型与接口 |
 | 系统 | `GET /healthz`、`GET /readyz`、`GET /system/info` | 能力开关、模型白名单、限额 |
 
@@ -554,19 +574,20 @@ GET /api/v1/instructions
 
 ### 7.4 能力开关
 
-`GET /system/info.capabilities` 在 M1 返回：
+`GET /system/info.capabilities` 在 M1.5 返回：
 
 ```json
 {
-  "instructions": false, "memories": false, "skills": false, "mcp": false,
-  "knowledge": false, "attachments": false, "workflows": false,
+  "instructions": true, "memories": true, "skills": true, "mcp": true,
+  "knowledge": false, "attachments": true, "workflows": false,
   "approvals": true, "agents": false, "tasks": false
 }
 ```
 
 - 请求携带未启用的能力字段时返回 403 `capability_disabled`；
 - 携带 `workflow_id` 返回 409 `workflow_disabled`；
-- `reasoning_efforts` 默认空数组（模型不支持时），`default_reasoning_effort` 仍返回 `low`。
+- `knowledge_categories` 仍为 403（M4 再开）；`agents`/`tasks` 保持 false（M2 再开）；
+- `reasoning_efforts` 默认空数组（模型不支持或 `LLM_REASONING_EFFORT_SUPPORTED=false` 时），`default_reasoning_effort` 仍返回 `low`；打开该开关后返回 `low/medium/high` 三项。
 
 ### 7.5 数据层差异
 
@@ -575,3 +596,133 @@ GET /api/v1/instructions
 - `messages` 增加 `updated_at`；`runs` 按交接包补齐用量、首 token、时长、工作流占位列；
 - 同一会话未结束 run 由部分唯一索引 `uq_runs_active_conversation` 保证唯一；
 - `messages.run_id` 与 `runs.user_message_id/assistant_message_id` 互相引用，迁移中用 `ALTER TABLE` 补外键。
+
+### 7.6 分页契约（M1 实测）
+
+四个分页端点共用同一套不透明游标：`GET /conversations`、`GET /conversations/{id}/messages`、
+`GET /approvals`、`GET /runs/{id}/events`。
+
+- `next_cursor` 是 urlsafe base64 编码的排序键，前端不得解析、拼接或当作 UUID；
+- `has_more=false` 时 `next_cursor=null`，不要继续请求；
+- 非法游标返回 422 `validation_error`，不会 500；
+- `stats` 是「当前筛选条件下的全量计数」，不是当前页计数；
+- 会话排序 `last_message_at DESC NULLS LAST, id DESC`；消息与审批 `created_at DESC, id DESC`；
+  运行事件 `seq ASC`；
+- 消息历史 `before` 与 `cursor` 二选一，同时传以 `cursor` 为准；
+- 所有时间统一 UTC、序列化以 `Z` 结尾。
+
+> 2026-11-09 热修：此前 cursor 编码把 ORM 的 `UUID` 对象直接交给 `json.dumps`，
+> 只要 `has_more=true` 需要生成 `next_cursor` 就会 500。现在编码层统一把
+> `UUID` / `datetime` 归一化为字符串，并新增会话/消息/审批分页回归测试。
+
+### 7.7 运行事件回放（`GET /runs/{id}/events`）
+
+| 字段 | 实际行为 |
+|---|---|
+| `id` | 形如 `<run_id>:<seq>` 的不透明字符串，不是 UUID |
+| `seq` | 运行内递增，允许跳号（`message.delta` 不落库） |
+| `tokens` | 对象或 `null`，键始终存在 |
+| `error` | 字符串摘要或 `null`，不是对象；结构化错误在 `message.done`/`error` 事件里 |
+| `payload` | 已剔除内部字段 `_event` |
+| 过滤 | `after_seq`、`types`（逗号分隔）、`q`（标题/副标题模糊匹配）、`cursor` |
+| 分页 | `after_seq` 与 `cursor` 可同时递增；`has_more=false` 即取完 |
+
+### 7.8 运行恢复端点
+
+`POST /runs/{id}/resume` 在 M1 始终拒绝，错误码统一为 `409 run_not_resumable`：
+
+- 运行不是 `interrupted` → 409 `run_not_resumable`；
+- 运行是 `interrupted` 但 M1 尚未接入 interrupt 工具 → 409 `run_not_resumable`；
+- 前端按「恢复能力未上线」展示，不要当致命错误反复重试。
+
+### 7.9 `message.done` 的实际字段
+
+除 §3.3 已列字段，M1 的 `message.done.data` 还携带：
+
+- `conversation_id`：本次运行所属会话，便于断线后定位；
+- `model`、`first_token_ms`、`duration_ms`、`active_duration_ms`；
+- `citations`、`artifacts`（M1 均为空数组）；
+- `reasoning`（可为 `null`）。
+
+前端把 `conversation_id` 当可选字段消费即可；其余未知键按「忽略」处理。
+
+### 7.10 错误可观测性
+
+- 所有 4xx/5xx 都返回 §1.3 的错误信封；
+- 500 响应体 `request_id` 与响应头 `X-Request-ID` 一致（此前 500 会退化为 `"unknown"`）；
+- 客户端可自带 `X-Request-ID`，服务端原样回显，便于前后端日志串联。
+
+### 7.11 限流与本地联调
+
+注册/登录按 IP 限流，默认值可通过环境变量调整：
+
+| 配置 | 默认 | 说明 |
+|---|---|---|
+| `RATE_LIMIT_ENABLED` | `true` | 测试环境由 conftest 关闭 |
+| `RATE_LIMIT_REGISTER_MAX` / `RATE_LIMIT_REGISTER_WINDOW_SECONDS` | 5 / 3600 | 注册 |
+| `RATE_LIMIT_LOGIN_MAX` / `RATE_LIMIT_LOGIN_WINDOW_SECONDS` | 10 / 300 | 登录 |
+
+前端自动化请复用固定账号：`scripts/seed_dev_account.py` 可幂等创建/重置开发账号
+（默认 `dev@example.com` / `dev-password-123`），避免反复注册触发限流。
+
+### 7.12 M1 热修记录（2026-11-09）
+
+| 问题 | 状态 | 处理 |
+|---|---|---|
+| `has_more=true` 时列表/历史/审批 500 | 已修复 | `encode_cursor` 统一 JSON-safe；补 3 条分页回归测试 |
+| 500 响应 `request_id="unknown"` | 已修复 | 中间件写 `request.state`，500 处理器回填真实 ID 与响应头 |
+| `chat/stream` 的 403/409/422 未进 OpenAPI | 已补 | 声明错误信封、`X-Run-ID`/`X-Request-ID`、SSE 事件说明 |
+| `error.details` 未建模 | 已补 | 新增 `ErrorBodyOut` / `ErrorEnvelopeOut` |
+| `RunEventOut.tokens/error` 非必填 | 已改 | 改为 required + nullable，并补字段说明 |
+| `message.done.conversation_id` 未写入契约 | 已补 | 见 §7.9 |
+| `resume` 只写「返回 409」 | 已补 | 明确错误码 `run_not_resumable`，见 §7.8 |
+| 注册限流固定 5 次/小时 | 已改 | 配置化 + 开发账号 seed 脚本，见 §7.11 |
+
+## 8. M1.5 实现状态（2026-11-09）
+
+> 本节记录 M1.5「个人能力层」相对 §2 设计稿的落地差异；机器可读契约见 [`openapi.json`](openapi.json)。
+
+### 8.1 已实现端点
+
+| 模块 | 端点 | 备注 |
+|---|---|---|
+| 附件 | `POST /attachments`、`GET /attachments`、`GET/DELETE /attachments/{id}`、`GET /attachments/{id}/download` | multipart 上传；sha256 去重（`duplicate=true`）；MIME 白名单 + 20MB 上限（413）；非所有者 404；被消息引用删除走软删 |
+| 指令 | `GET/PUT /instructions` | 覆盖式；`content=null` 恢复默认；超长 422 `instruction_too_long`；修改写审计 |
+| 记忆 | `GET/POST /memories`、`GET/PATCH/DELETE /memories/{id}`、`DELETE /memories?confirm=true`、`GET /memories/export` | `q` 走 ILIKE（语义检索 M4）；stats 形状 `{total,profile,preference,fact,active,archived}` |
+| 技能 | `GET/POST /skills`、`POST /skills/import`、`GET/PATCH/DELETE /skills/{id}`、`PUT /skills/{id}/enabled`、`GET /skills/{id}/files`、`GET /skills/{id}/files/{path}`、`GET /skills/catalog` | 系统技能仓库同步（`app/agents/skills/`）；zip 校验（路径穿越/大小/数量/frontmatter）；系统项只读，用户覆盖写 `user_capability_overrides` |
+| MCP | `GET/POST /mcp/servers`、`GET/PATCH/DELETE /mcp/servers/{id}`、`PUT /mcp/servers/{id}/enabled`、`POST /mcp/servers/{id}/check`、`POST /mcp/servers/{id}/refresh-tools`、`GET /mcp/servers/{id}/tools`、`PATCH /mcp/tools/{id}`、`GET /mcp/available` | 自研 JSON-RPC 2.0 客户端（Streamable HTTP/SSE/stdio）；SSRF 主机校验；敏感请求头 AES-GCM 加密或 `env:` secret_ref；普通用户 stdio 422 `mcp_transport_not_allowed` |
+| 审批 | `GET /approvals`、`GET /approvals/{id}`、`POST /approvals/{id}/decision` | HITL 全链路：`approval.required` → 决定唤醒运行 → 继续/拒绝；重复决定 409 `approval_already_decided`、过期 409 `approval_expired`；取消运行清理 pending |
+| 系统 | `GET /system/info` | `capabilities` 见 §7.4 |
+
+### 8.2 聊天请求与 SSE 扩展
+
+- 请求新增可选字段：`attachments`（≤5）、`skills`（≤3）、`mcp_servers`（≤5）、`mcp_tools`（≤10）；
+- 选择不存在/他人的资源 404；已停用资源 422；`knowledge_categories`/`workflow_id` 仍禁用；
+- 新事件：`skill.activated`（首个 `message.delta` 之前）、`memory.saved`、`notice`、`tool.start`/`tool.result`（`source` ∈ native/skill/mcp，MCP 带 `server`）、`approval.required`；
+- `approval.required.data`：`approval_id`、`tool_call_id`、`tool`、`source`、`risk`、`reason`、`payload`、`expires_at`；
+- 审批超时后 `message.done.finish_reason=interrupted`（`reason=approval_timeout`），run 状态 `interrupted`；
+- `message.done` 保持 M1 字段，新增 `reason`（仅 interrupted 时出现）。
+
+### 8.3 与设计稿的偏差（M1.5 实测）
+
+| 项 | 设计稿 | M1.5 落地 | 原因 |
+|---|---|---|---|
+| 记忆存储 | LangGraph `AsyncPostgresStore` | 业务表 `memories`（ILike 检索） | 任务口径；避免 store/embedding 初始化复杂度，语义检索 M4 接 embedding 时再迁移或双写 |
+| 记忆去重 | 语义检索 top3 阈值 0.92 | 内容完全一致的 active 条目合并（`action=updated`） | 语义检索依赖 embedding（M4） |
+| MCP 协议库 | 官方 `mcp` SDK | 自研 JSON-RPC 2.0 over httpx（initialize → notifications/initialized → tools/list → tools/call） | 任务口径；少一个重依赖，测试可注入 transport |
+| 系统 MCP 写工具 | 动态过滤 | `mcp_tools.admin_only/user_allowed` 落库字段 | 列表接口需展示置灰原因，前端友好 |
+| stdio | 管理员全功能 | 支持创建/校验/客户端实现；命令白名单 `MCP_STDIO_ALLOWED_COMMANDS` | v1 无隔离保证，默认关闭 |
+| 管理端 | `/api/v1/admin/…` 全套 | M1.5 未实现管理端路由；`users.role` 与数据模型已就绪，系统项可直接写库 | 任务范围仅用户侧；M2 会话补管理端 |
+| 附件删除 | 未定义 | 被消息引用 → 软删（status=deleted + 移除磁盘文件）；未引用 → 物理删除 | 历史消息快照仍可展示元数据 |
+
+### 8.4 数据层差异
+
+- 新增表：`attachments`、`skills`、`skill_files`、`mcp_servers`、`mcp_tools`、`user_capability_overrides`、`memories`、`tool_invocations`（迁移 `7f3a9c21b4d6`，可逆）；
+- `mcp_servers.headers` 只存 secret_ref / AES-GCM 密文，绝不落明文；响应只回 `credentials_hint`；
+- `tool_invocations`：`source ∈ native/mcp/a2a/knowledge/skill`、`source_id=server_id`、args/result 截断脱敏；
+- `runs.capabilities` 增加 `attachments` 键（`MessageCapabilitiesOut` 不感知，忽略即可）。
+
+### 8.5 测试与本地联调
+
+- 集成测试见 `tests/README.md`；MCP 测试用 `httpx.MockTransport` 注入 + `MCP_ALLOWED_HOSTS` 白名单；
+- **注意**：`httpx.ASGITransport` 会缓冲整个 SSE 响应，HITL 实时交互测试走服务层（`collect_run_events_live`）；真实 uvicorn（8000）下 SSE 为实时流式，前端联调不受影响。

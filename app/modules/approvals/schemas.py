@@ -57,4 +57,6 @@ class ApprovalDecisionResult(BaseModel):
     status: ApprovalStatus
     run_id: uuid.UUID
     resumed: bool
-    resume_error: str | None = None
+    resume_error: str | None = Field(
+        description="未自动恢复运行的原因；resumed=true 时为 null。该键始终存在，前端不应把它当成失败"
+    )

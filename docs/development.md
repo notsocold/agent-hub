@@ -55,6 +55,8 @@ psql "${DATABASE_URL/postgresql+psycopg/postgresql}" -c "SELECT extname FROM pg_
 | `uv run pytest` | pytest |
 | `uv run alembic current` | 当前迁移版本 |
 | `uv run alembic history` | 迁移历史 |
+| `uv run python scripts/seed_dev_account.py` | 幂等创建/重置开发账号（默认 `dev@example.com`），绕开注册限流 |
+| `uv run python scripts/export_openapi.py` | 导出 `docs/openapi.json` 契约 |
 
 ## 4. 配置管理
 
@@ -182,7 +184,7 @@ curl -s http://localhost:8000/a2a/.well-known/agent-card.json | python3 -m json.
 | `psycopg` 连接串报 driver 错误 | 把 `postgresql+psycopg://` 直接给了 psycopg | 用 `settings.checkpoint_dsn`（已去掉驱动后缀） |
 | checkpoint 表找不到 | search_path 未指向 `langgraph` | 连接参数 `options=-csearch_path=langgraph` |
 | embedding 维度不匹配 | 模型维度与 `EMBEDDING_DIM` 不一致 | 改配置并重建向量表，不能原地 ALTER |
-| `429 Too Many Requests` | 限流 | 调整限流配置或等待窗口 |
+| `429 Too Many Requests` | 限流（默认注册 5 次/小时/IP、登录 10 次/5 分钟/IP） | 调 `RATE_LIMIT_*` 配置，或直接用 `scripts/seed_dev_account.py` 复用固定账号 |
 | SSE 无输出 | 反向代理缓冲 | Nginx `proxy_buffering off`、`X-Accel-Buffering: no` |
 
 ## 11. Git 约定

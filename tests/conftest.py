@@ -9,8 +9,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import uuid
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 os.environ.setdefault("ENV", "test")
 os.environ.setdefault("JWT_SECRET", "pytest-secret-123456789012345678901234567890")
@@ -19,22 +21,36 @@ os.environ.setdefault("LLM_PROVIDER", "fake")
 os.environ.setdefault("FAKE_LLM_DELAY_MS", "20")
 os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 os.environ.setdefault("DATABASE_URL", os.environ.get("TEST_DATABASE_URL", ""))
+# M1.5：MCP 测试用白名单放行 mock 主机；凭据加密密钥；附件目录隔离到测试库临时区。
+os.environ.setdefault("MCP_ALLOWED_HOSTS", "mcp.example.com,mcp.test")
+os.environ.setdefault("CAPABILITY_SECRET_KEY", "pytest-capability-secret-key-0123456789abcdef")
+os.environ.setdefault("ATTACHMENT_DIR", "data/test-attachments")
+os.environ.setdefault("APPROVAL_TIMEOUT_SECONDS", "3")
+# M2：A2A 测试用白名单放行 mock 主机；缩短客户端超时便于超时场景测试。
+os.environ.setdefault("A2A_ALLOWED_HOSTS", "a2a.example.com,a2a.test,a2a-slow.test")
+os.environ.setdefault("A2A_CLIENT_TIMEOUT_SECONDS", "5")
+os.environ.setdefault("A2A_INPUT_TIMEOUT_SECONDS", "30")
 
 import httpx
 import pytest
 from sqlalchemy import text
 
 from app.agents.checkpointer import reset_memory_checkpointer
+from app.core.config import reset_settings_cache
 from app.core.rate_limit import limiter
 from app.db import models  # noqa: F401  # 注册全部模型
 from app.db.base import Base
 from app.db.session import dispose_engine, get_engine
 from app.main import app
 from app.modules.chat.registry import registry
+from app.modules.mcp.service import clear_test_transports
+
+reset_settings_cache()
 
 _TABLES = (
-    "run_events, approvals, runs, messages, conversations, "
-    "refresh_tokens, system_settings, user_settings, users, audit_logs"
+    "a2a_tasks, remote_agents, skill_files, mcp_tools, user_capability_overrides, skills, "
+    "mcp_servers, attachments, memories, tool_invocations, run_events, approvals, runs, "
+    "messages, conversations, refresh_tokens, system_settings, user_settings, users, audit_logs"
 )
 
 
@@ -52,7 +68,12 @@ async def db() -> AsyncIterator[None]:
         await conn.execute(text(f"TRUNCATE {_TABLES} RESTART IDENTITY CASCADE"))
     reset_memory_checkpointer()
     limiter.reset()
+    clear_test_transports()
+    from app.modules.a2a.client import clear_test_transports as clear_a2a_transports
+
+    clear_a2a_transports()
     await registry.shutdown()
+    shutil.rmtree(Path("data/test-attachments"), ignore_errors=True)
 
 
 @pytest.fixture
@@ -140,3 +161,35 @@ async def wait_for_event(
                     if event_name == wanted:
                         return run_id, events, response
     return run_id, events, None
+
+
+async def collect_run_events_live(
+    run_id: str,
+    *,
+    stop_on: set[str] | None = None,
+    on_event=None,
+    timeout: float = 30.0,
+) -> list[tuple[str, dict]]:
+    """服务层实时读取运行事件（绕过 ASGITransport 的整段缓冲）。
+
+    ``on_event(name, data)`` 在读到每个事件后调用，可用于审批决定等中途交互；
+    返回读到的事件列表（遇到 stop_on 中的事件即停止）。
+    """
+    from app.modules.chat.service import stream_run_events
+
+    stop_on = stop_on or {"message.done", "error"}
+    events: list[tuple[str, dict]] = []
+    async with asyncio.timeout(timeout):
+        async for frame in stream_run_events(uuid.UUID(run_id)):
+            event_name: str | None = None
+            for line in frame.strip().split("\n"):
+                if line.startswith("event:"):
+                    event_name = line.split(":", 1)[1].strip()
+                elif line.startswith("data:") and event_name:
+                    data = json.loads(line.split(":", 1)[1].strip())
+                    events.append((event_name, data))
+                    if on_event is not None:
+                        await on_event(event_name, data)
+                    if event_name in stop_on:
+                        return events
+    return events

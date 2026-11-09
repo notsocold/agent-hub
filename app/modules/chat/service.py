@@ -9,7 +9,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from langchain_core.messages import AIMessageChunk, HumanMessage
+from langchain_core.messages import HumanMessage
 from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,9 +31,12 @@ from app.core.errors import (
 from app.db.models.approval import Approval
 from app.db.models.chat import Run, RunEvent
 from app.db.models.conversation import Conversation, Message
+from app.db.models.remote import A2aTask, RemoteAgent
 from app.db.models.user import User
 from app.db.session import get_session_factory
+from app.modules.chat import capabilities as capabilities_module
 from app.modules.chat.bus import bus
+from app.modules.chat.capabilities import validate_chat_selections
 from app.modules.chat.events import (
     TERMINAL_EVENTS,
     RunEventPublisher,
@@ -52,6 +55,13 @@ from app.modules.chat.schemas import (
     RunOut,
     RunPendingOut,
     RunResumeResult,
+)
+from app.modules.chat.tools import (
+    ApprovalTimeoutError,
+    ToolRunner,
+    build_mcp_tools,
+    build_native_tools,
+    build_send_message_tool,
 )
 from app.modules.conversations.schemas import (
     MessageCapabilitiesOut,
@@ -128,14 +138,10 @@ def _content_text(content: Any) -> str:
     return ""
 
 
-def _check_m1_capabilities(payload: ChatStreamRequest) -> None:
-    """M1 尚未实现的能力显式拒绝，避免前端出现“点了没效果”。"""
-    if payload.skills or payload.mcp_servers or payload.mcp_tools:
-        raise CapabilityDisabledError("技能与 MCP 能力将在 M1.5 提供")
+def _check_capabilities(payload: ChatStreamRequest) -> None:
+    """尚未实现的能力显式拒绝；M1.5 已实现的能力走归属/启用校验。"""
     if payload.knowledge_categories:
         raise CapabilityDisabledError("知识库检索将在 M4 提供")
-    if payload.attachments:
-        raise CapabilityDisabledError("附件上传尚未启用")
     if payload.workflow_id is not None:
         raise ConflictError("工作流能力尚未启用", code="workflow_disabled")
 
@@ -175,13 +181,15 @@ async def start_chat(db: AsyncSession, user: User, payload: ChatStreamRequest) -
         raise ValidationFailedError("workflow_version 不能脱离 workflow_id 使用")
     if payload.reasoning_effort not in {None, "low", "medium", "high"}:
         raise ValidationFailedError("推理等级不合法", code="reasoning_effort_invalid")
-    _check_m1_capabilities(payload)
+    _check_capabilities(payload)
+    await validate_chat_selections(db, user, payload)
 
     reasoning_effort = payload.reasoning_effort or "low"
     capabilities = {
         "skills": [str(item) for item in payload.skills],
         "mcp_servers": [str(item) for item in payload.mcp_servers],
         "mcp_tools": [str(item) for item in payload.mcp_tools],
+        "attachments": [str(item) for item in payload.attachments],
         "knowledge_categories": list(payload.knowledge_categories),
         "workflow_id": str(payload.workflow_id) if payload.workflow_id else None,
     }
@@ -231,6 +239,9 @@ async def start_chat(db: AsyncSession, user: User, payload: ChatStreamRequest) -
         content_type="text",
         client_message_id=payload.client_message_id,
         status="completed",
+        # 与助手消息一致：用户消息同样落 capabilities，历史时间线依赖它展示
+        # 「本轮：技能 ×N · MCP ×N」；附件另有 attachments 快照字段。
+        capabilities=capabilities,
         created_at=now,
     )
     assistant_message = Message(
@@ -344,6 +355,9 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
             )
             if conversation is None or user_message is None or assistant_message is None:
                 _raise_missing_run_data()
+            user = await db.get(User, conversation.user_id)
+            if user is None:
+                _raise_missing_run_data()
             started_at = run.started_at or started_wall
             conversation_id = conversation.id
             conversation_title = conversation.title
@@ -354,6 +368,41 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
             client_message_id = user_message.client_message_id or ""
             requested_effort = run.reasoning_effort or "low"
             model_name = run.model
+            run_capabilities = run.capabilities or {}
+
+            # 能力装配：附件快照、指令、记忆、技能与 MCP 工具目录。
+            assembled = await capabilities_module.assemble(
+                db,
+                user,
+                attachment_ids=[uuid.UUID(item) for item in run_capabilities.get("attachments", [])],
+                skill_ids=[uuid.UUID(item) for item in run_capabilities.get("skills", [])],
+                mcp_server_ids=[uuid.UUID(item) for item in run_capabilities.get("mcp_servers", [])],
+                mcp_tool_ids=[uuid.UUID(item) for item in run_capabilities.get("mcp_tools", [])],
+            )
+            if assembled.attachment_snapshot:
+                user_message.attachments = assembled.attachment_snapshot
+                await db.commit()
+
+            runner = ToolRunner(
+                run_id=run_id,
+                publisher=publisher,
+                user_id=user.id,
+                user_role=user.role,
+                mcp_tools=assembled.mcp_tool_map,
+                active_skill_ids=assembled.active_skill_ids,
+                a2a_agents=assembled.a2a_agent_map,
+                conversation_id=conversation_id,
+            )
+            tools = [
+                *build_native_tools(runner),
+                *build_mcp_tools(runner, assembled.mcp_tool_map),
+            ]
+            send_message_tool = build_send_message_tool(runner, assembled.a2a_agent_map)
+            if send_message_tool is not None:
+                tools.append(send_message_tool)
+            model_input = user_text
+            if assembled.attachment_text:
+                model_input = f"{user_text}\n\n{assembled.attachment_text}"
 
         if is_new_conversation:
             await publisher.emit(
@@ -400,13 +449,37 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
             status="running",
             title="助手消息",
         )
+        for activation in assembled.skill_activations:
+            await publisher.emit(
+                "skill.activated",
+                activation,
+                event_type="tool",
+                title=f"技能已激活：{activation['name']}",
+                subtitle=activation["slug"],
+            )
+        for notice in assembled.notices:
+            await publisher.emit(
+                "notice",
+                notice,
+                event_type="notice",
+                status="warning" if notice.get("level") == "warning" else "ok",
+                title=notice.get("code") or "提示",
+                subtitle=notice.get("message") or "",
+            )
 
         model = build_chat_model(settings)
         async with open_checkpointer() as saver:
-            graph = build_graph(model, saver)
+            graph = build_graph(
+                model,
+                saver,
+                system_prompt=assembled.system_prompt,
+                tools=tools,
+                tool_executor=runner.execute,
+                max_tool_rounds=settings.max_tool_rounds,
+            )
             config = {"configurable": {"thread_id": str(conversation_id)}}
             async for chunk, metadata in graph.astream(
-                {"messages": [HumanMessage(content=user_text)]},
+                {"messages": [HumanMessage(content=model_input)]},
                 config,
                 stream_mode="messages",
             ):
@@ -414,7 +487,9 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                     raise asyncio.CancelledError  # noqa: TRY301 - 取消信号需要冒泡到外层
                 if metadata.get("langgraph_node") != "model":
                     continue
-                if not isinstance(chunk, AIMessageChunk):
+                # stream_mode="messages" 下 ainvoke 节点可能给出完整 AIMessage
+                # 或 AIMessageChunk；两者都带 content/additional_kwargs/usage_metadata。
+                if not hasattr(chunk, "content"):
                     continue
 
                 reasoning = chunk.additional_kwargs.get("reasoning_content")
@@ -530,6 +605,17 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
         logger.info("运行被取消 run_id=%s", run_id)
         await asyncio.shield(
             _finalize_canceled(
+                context=context,
+                content="".join(content_parts),
+                usage=_usage_dict(usage),
+                first_token_ms=first_token_ms,
+                started_at=started_at or started_wall,
+            )
+        )
+    except ApprovalTimeoutError as exc:
+        logger.info("审批超时 run_id=%s approval_id=%s", run_id, exc.approval_id)
+        await asyncio.shield(
+            _finalize_interrupted(
                 context=context,
                 content="".join(content_parts),
                 usage=_usage_dict(usage),
@@ -657,6 +743,76 @@ async def _finalize_canceled(
     )
 
 
+async def _finalize_interrupted(
+    *,
+    context: RunContext,
+    content: str,
+    usage: dict[str, int],
+    first_token_ms: int | None,
+    started_at: datetime,
+) -> None:
+    """审批超时：pending 审批置 expired，run 置 interrupted，流结束。"""
+    if context.terminal_emitted:
+        return
+    context.terminal_emitted = True
+    run_id = context.run_id
+    publisher = context.publisher
+    now = _now()
+    duration_ms = int((now - started_at).total_seconds() * 1000)
+    async with get_session_factory()() as db:
+        run = await db.get(Run, run_id)
+        if run is None:
+            return
+        assistant = (
+            await db.get(Message, run.assistant_message_id) if run.assistant_message_id else None
+        )
+        if assistant is not None:
+            assistant.content = content
+            assistant.status = "completed"
+            assistant.usage = usage
+        run.status = "interrupted"
+        run.duration_ms = duration_ms
+        run.active_duration_ms = duration_ms
+        run.first_token_ms = first_token_ms
+        run.input_tokens = usage["input_tokens"]
+        run.output_tokens = usage["output_tokens"]
+        run.reasoning_tokens = usage["reasoning_tokens"]
+        await db.execute(
+            update(Approval)
+            .where(Approval.run_id == run_id, Approval.status == "pending")
+            .values(status="expired")
+        )
+        conversation = await db.get(Conversation, run.conversation_id)
+        if conversation is not None:
+            conversation.last_message_at = now
+            conversation.last_message_preview = content[:80] or "（等待审批超时）"
+            conversation.message_count += 1
+        await db.commit()
+        message_id = run.assistant_message_id
+        model_name = run.model
+
+    await publisher.emit(
+        "message.done",
+        {
+            "message_id": str(message_id) if message_id else "",
+            "usage": usage,
+            "finish_reason": "interrupted",
+            "model": model_name,
+            "first_token_ms": first_token_ms,
+            "duration_ms": duration_ms,
+            "active_duration_ms": duration_ms,
+            "citations": [],
+            "artifacts": [],
+            "reason": "approval_timeout",
+        },
+        event_type="message",
+        status="interrupted",
+        title="等待审批超时",
+        duration_ms=duration_ms,
+        tokens=usage,
+    )
+
+
 async def _finalize_failed(
     *,
     context: RunContext,
@@ -745,6 +901,53 @@ async def get_run(db: AsyncSession, user: User, run_id: uuid.UUID) -> RunOut:
     pending_out = RunPendingOut()
     if pending is not None:
         pending_out = RunPendingOut(kind="approval", approval_id=pending.id)
+
+    # A2A 等待：run 内存在 input_required / auth_required 任务时暴露 pending。
+    a2a_rows = list(
+        (
+            await db.execute(
+                select(A2aTask).where(A2aTask.run_id == run.id).order_by(A2aTask.created_at.asc())
+            )
+        ).scalars()
+    )
+    waiting = [
+        item for item in a2a_rows if item.state in {"input_required", "auth_required"}
+    ]
+    if waiting and pending_out.kind is None:
+        latest = waiting[-1]
+        pending_out = RunPendingOut(
+            kind="input_required" if latest.state == "input_required" else "auth_required",
+            task_id=latest.id,
+        )
+    agents: list[RunAgentOut] = [
+        RunAgentOut(
+            kind="local",
+            id="main-agent",
+            name="main-agent",
+            model=run.model or None,
+            state="online" if run.status == "running" else "idle",
+        )
+    ] if run.model else []
+    if a2a_rows:
+        agent_ids = {item.remote_agent_id for item in a2a_rows}
+        remote_rows = (
+            await db.execute(
+                select(RemoteAgent).where(RemoteAgent.id.in_(agent_ids))
+            )
+        ).scalars()
+        by_state: dict[uuid.UUID, str] = {}
+        for item in a2a_rows:
+            by_state[item.remote_agent_id] = item.state
+        for remote in remote_rows:
+            agents.append(
+                RunAgentOut(
+                    kind="a2a",
+                    id=str(remote.id),
+                    slug=remote.slug,
+                    name=remote.name,
+                    state=by_state.get(remote.id, "idle"),
+                )
+            )
     error = (
         MessageErrorOut(code=run.error_code, message=run.error_message, retryable=True)
         if run.error_code
@@ -767,19 +970,7 @@ async def get_run(db: AsyncSession, user: User, run_id: uuid.UUID) -> RunOut:
         first_token_ms=run.first_token_ms,
         pending=pending_out,
         message_ids=RunMessageIdsOut(user=run.user_message_id, assistant=run.assistant_message_id),
-        agents=(
-            [
-                RunAgentOut(
-                    kind="local",
-                    id="main-agent",
-                    name="main-agent",
-                    model=run.model or None,
-                    state="online" if run.status == "running" else "idle",
-                )
-            ]
-            if run.model
-            else []
-        ),
+        agents=agents,
         error=error,
     )
 

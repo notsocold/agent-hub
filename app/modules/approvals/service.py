@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import write_audit
 from app.core.cursor import decode_cursor, encode_cursor
 from app.core.errors import (
     ApprovalAlreadyDecidedError,
@@ -187,14 +188,27 @@ async def decide(
     approval.decided_at = now
     approval.decision_note = payload.note
     run = await db.get(Run, approval.run_id)
+    await write_audit(
+        db,
+        actor_type="user",
+        actor_id=str(user.id),
+        action="approval.decide",
+        resource_type="approval",
+        resource_id=str(approval.id),
+        detail={"decision": payload.decision, "tool": approval.tool_name},
+    )
+    await db.commit()
     resumed = False
     resume_error: str | None = None
-    if payload.decision == "approve":
-        if run is not None and run.status == "interrupted":
-            resume_error = "当前版本尚未接入可恢复工具，请在 M2 后重试"
-        else:
-            resume_error = "运行不处于等待审批状态"
-    await db.commit()
+    # 唤醒同一进程内正在等待审批的运行；跨进程/断线场景由 SSE 心跳与事件回放兜底。
+    from app.modules.chat.registry import registry
+
+    context = registry.get(approval.run_id)
+    if context is not None and (run is None or run.status == "running"):
+        context.resolve_approval(approval.id, payload.decision)
+        resumed = True
+    else:
+        resume_error = "运行已不在本实例等待审批（可能已结束或跨实例）"
     return ApprovalDecisionResult(
         id=approval.id,
         status=approval.status,  # type: ignore[arg-type]

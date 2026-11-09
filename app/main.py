@@ -17,9 +17,10 @@ from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
-from app.db.session import dispose_engine
+from app.db.session import dispose_engine, get_session_factory
 from app.modules.approvals.service import expire_pending
 from app.modules.chat.registry import registry
+from app.modules.skills.service import sync_builtin_skills
 from app.modules.system.health import router as health_router
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_logging(settings.debug)
     settings.validate_runtime()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    settings.attachment_dir.mkdir(parents=True, exist_ok=True)
     await ensure_checkpoint_ready(settings)
+    try:
+        async with get_session_factory()() as db:
+            changed = await sync_builtin_skills(db)
+            if changed:
+                logger.info("系统技能同步：%s 项变更", changed)
+    except Exception:
+        logger.exception("系统技能同步失败（不阻塞启动）")
     sweeper = asyncio.create_task(_approval_sweeper(), name="approval-sweeper")
     logger.info("agent-hub 启动完成 env=%s", settings.env)
     try:

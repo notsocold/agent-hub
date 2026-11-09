@@ -7,6 +7,7 @@ HTTP 边界只做一件事：把 ``DomainError`` 转成
 from __future__ import annotations
 
 import logging
+import uuid
 from contextvars import ContextVar
 from typing import Any
 
@@ -23,6 +24,17 @@ request_id_ctx: ContextVar[str] = ContextVar("request_id", default="")
 
 def current_request_id() -> str:
     return request_id_ctx.get() or "unknown"
+
+
+def request_id_from(request: Request) -> str:
+    """读取当前请求 ID。
+
+    ``contextvar`` 在正常请求链路中最快，但未处理异常会越过
+    ``RequestContextMiddleware``（其 ``finally`` 已复位 contextvar）后才由最外层
+    ``ServerErrorMiddleware`` 处理，此时只能从 ``request.state`` 取。
+    """
+    value = getattr(request.state, "request_id", "")
+    return value or current_request_id()
 
 
 class DomainError(Exception):
@@ -47,11 +59,11 @@ class DomainError(Exception):
             self.status_code = status_code
         self.details = details or {}
 
-    def to_envelope(self) -> dict[str, Any]:
+    def to_envelope(self, request_id: str | None = None) -> dict[str, Any]:
         error: dict[str, Any] = {
             "code": self.code,
             "message": self.message,
-            "request_id": current_request_id(),
+            "request_id": request_id or current_request_id(),
         }
         # details 是向后兼容的扩展字段：前端契约只读 code/message/request_id，
         # 需要携带 run_id 等结构化信息时放在 details 里，避免破坏信封形状。
@@ -136,12 +148,17 @@ class ApprovalExpiredError(ConflictError):
 
 
 def _envelope(
-    status_code: int, code: str, message: str, details: dict[str, Any] | None = None
+    status_code: int,
+    code: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+    *,
+    request_id: str | None = None,
 ) -> JSONResponse:
     error: dict[str, Any] = {
         "code": code,
         "message": message,
-        "request_id": current_request_id(),
+        "request_id": request_id or current_request_id(),
     }
     if details:
         error["details"] = details
@@ -163,19 +180,29 @@ def register_exception_handlers(app: FastAPI) -> None:
     """注册全局异常处理；所有 4xx/5xx 都返回统一信封。"""
 
     @app.exception_handler(DomainError)
-    async def _domain_error(_: Request, exc: DomainError) -> JSONResponse:
+    async def _domain_error(request: Request, exc: DomainError) -> JSONResponse:
+        request_id = request_id_from(request)
         if exc.status_code >= 500:
-            logger.exception("业务异常：%s", exc.message)
+            logger.exception("业务异常：%s", exc.message, extra={"request_id": request_id})
         else:
-            logger.info("业务异常：%s code=%s", exc.message, exc.code)
-        return JSONResponse(status_code=exc.status_code, content=exc.to_envelope())
+            logger.info(
+                "业务异常：%s code=%s", exc.message, exc.code, extra={"request_id": request_id}
+            )
+        return JSONResponse(
+            status_code=exc.status_code, content=exc.to_envelope(request_id=request_id)
+        )
 
     @app.exception_handler(RequestValidationError)
-    async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
-        return _envelope(422, "validation_error", _validation_message(exc))
+    async def _validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+        return _envelope(
+            422,
+            "validation_error",
+            _validation_message(exc),
+            request_id=request_id_from(request),
+        )
 
     @app.exception_handler(StarletteHTTPException)
-    async def _http_error(_: Request, exc: StarletteHTTPException) -> JSONResponse:
+    async def _http_error(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         code_map = {
             400: "bad_request",
             401: "unauthorized",
@@ -190,9 +217,21 @@ def register_exception_handlers(app: FastAPI) -> None:
         }
         code = code_map.get(exc.status_code, "http_error")
         message = str(exc.detail) if exc.detail else "请求失败"
-        return _envelope(exc.status_code, code, message)
+        return _envelope(exc.status_code, code, message, request_id=request_id_from(request))
 
     @app.exception_handler(Exception)
-    async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
-        logger.exception("未处理异常：%s", exc)
-        return _envelope(500, "internal_error", "服务器内部错误，请稍后重试")
+    async def _unhandled(request: Request, exc: Exception) -> JSONResponse:
+        # ServerErrorMiddleware 位于最外层，RequestContextMiddleware 无法再给这个
+        # 响应补 X-Request-ID；这里显式回填，保证前端上报的 ID 与后端日志一致。
+        request_id = request_id_from(request)
+        if request_id == "unknown":
+            request_id = uuid.uuid4().hex
+        logger.exception("未处理异常：%s", exc, extra={"request_id": request_id})
+        response = _envelope(
+            500,
+            "internal_error",
+            "服务器内部错误，请稍后重试",
+            request_id=request_id,
+        )
+        response.headers["X-Request-ID"] = request_id
+        return response

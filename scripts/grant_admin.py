@@ -12,6 +12,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from pathlib import Path
+
+# 支持 ``python scripts/grant_admin.py <email>`` 直接运行。
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sqlalchemy import func, select
 

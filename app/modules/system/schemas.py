@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ModelCapabilitiesOut(BaseModel):
@@ -35,9 +35,15 @@ class SystemCapabilitiesOut(BaseModel):
     attachments: bool
     workflows: bool
     approvals: bool
-    # 前端导航门禁：M1 未实现智能体与任务页，显式返回 false 供页面置灰。
-    agents: bool = False
-    tasks: bool = False
+    # 前端导航门禁：M1.5 未实现智能体与任务页，显式返回 false 供页面置灰。
+    agents: bool = Field(
+        default=False,
+        description="远程智能体能力是否启用；M2 前恒为 false。该键始终返回，前端按可选布尔消费",
+    )
+    tasks: bool = Field(
+        default=False,
+        description="A2A 任务能力是否启用；M2 前恒为 false。该键始终返回，前端按可选布尔消费",
+    )
 
 
 class SystemLimitsOut(BaseModel):

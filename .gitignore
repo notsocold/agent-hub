@@ -45,3 +45,9 @@ logs/
 
 # 本地附件存储
 data/attachments/
+
+# DSH workspace-session (managed by dsh-workspace-session)
+.dsh/workspace-session.json
+.dsh/sessions/**/session.lock
+.dsh/sessions/**/*.tmp
+.dsh/sessions/.backup/

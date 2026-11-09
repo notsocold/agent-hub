@@ -17,7 +17,10 @@ from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResu
 
 
 class FakeStreamingChatModel(BaseChatModel):
-    """按固定节奏逐段吐字的假模型，支持取消与用量统计。"""
+    """按固定节奏逐段吐字的假模型，支持取消与用量统计。
+
+    不真正执行工具调用；``bind_tools`` 返回自身，保证无工具环境下的图可用。
+    """
 
     model_name: str = "fake-chat"
     delay_ms: int = 15
@@ -30,6 +33,14 @@ class FakeStreamingChatModel(BaseChatModel):
     @property
     def _identifying_params(self) -> dict[str, Any]:
         return {"model_name": self.model_name}
+
+    def bind_tools(
+        self,
+        tools: list[Any],
+        **kwargs: Any,
+    ) -> FakeStreamingChatModel:
+        """假模型不支持工具调用：返回自身，忽略工具定义。"""
+        return self
 
     def _reply_text(self, messages: list[BaseMessage]) -> str:
         last_human = next(

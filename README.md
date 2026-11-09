@@ -4,10 +4,12 @@
 
 配套前端：[agent-hub-web](../../NodeJsProjects/agent-hub-web)（Vue 3 + TypeScript + Vite）。
 
-> **当前状态：M1 对话最小闭环已实现（2026-11-09）。**
-> 已包含认证、会话/消息、聊天 SSE、运行与事件回放、审批最小接口、系统信息；
-> 依赖已安装并通过 17 个契约测试，迁移已通过 `upgrade → downgrade → upgrade`。
-> M1.5（Skill/记忆/Instruction/MCP/附件）与 M2–M6 仍未实现，能力开关会明确返回 `false`。
+> **当前状态：M2 A2A 出站已实现（2026-11-10）。**
+> 已包含认证、会话/消息、聊天 SSE、运行与事件回放、审批、系统信息、个人能力层
+> （指令/记忆/技能/MCP/附件），以及 M2 的远程 Agent 注册表（Card 拉取/校验/健康检查）、
+> 统一 `send_message` 委派工具（含 HITL 等待与 SSE 事件）与任务查询/动作 API。
+> 测试 101 个全绿；迁移 `8a2f7c31e9d5` 已应用到 agent_hub。
+> M3 入站 Server（A2A_ENABLED）与 M4–M6 仍未实现，对应能力开关明确返回 `false`。
 
 ## 1. 项目定位
 
@@ -145,30 +147,38 @@ curl http://localhost:8000/healthz
 curl http://localhost:8000/api/v1/system/info   # 需要先登录拿 Bearer token
 ```
 
-## 6. 当前状态（M1 · 对话最小闭环）
+## 6. 当前状态（M2 · A2A 出站）
 
-已完成：
+M1（2026-11-09）与 M1.5「个人能力层」（2026-11-09）已完成，M2「A2A 出站」已实现（2026-11-10）：
 
-- [x] 配置、日志、统一错误信封、`X-Request-ID`、CORS、限流
-- [x] `users` / `refresh_tokens` / `conversations` / `messages` / `runs` / `run_events` / `approvals` / `audit_logs` / `system_settings` / `user_settings` 模型
-- [x] Alembic `env.py` + M1 初始迁移（含 downgrade）
-- [x] 注册、登录、刷新轮换、登出、`GET/PATCH /auth/me`、改密
-- [x] 会话 CRUD、标题搜索、归档/软删、消息历史游标分页
-- [x] LangGraph 主图 + PostgresSaver/InMemorySaver + 假流式模型
-- [x] `POST /chat/stream` SSE（`run.started`、`message.*`、`X-Run-ID`、心跳、取消）
-- [x] `GET /runs/{id}`、`GET /runs/{id}/events`、`POST /runs/{id}/cancel`
-- [x] 审批列表/详情/决定（M1 无工具触发 interrupt）
-- [x] `/healthz`、`/readyz`、`GET /system/info` 能力开关
-- [x] `scripts/grant_admin.py`、`scripts/export_openapi.py`
-- [x] 17 个 pytest 契约用例；真实 HTTP 流式与 Postgres checkpoint 验证
+- [x] M1 全部：认证、会话、聊天 SSE、运行、审批数据层、系统信息
+- [x] M1.5 全部：附件/指令/记忆/技能/MCP/HITL 审批/工具轨迹与审计
+- [x] `remote_agents`/`a2a_tasks` 模型 + 可逆迁移（`8a2f7c31e9d5`，测试库 upgrade/downgrade/upgrade 通过）
+- [x] Agent Card 拉取/校验（SSRF 防护、同源校验、协议版本/技能校验，dev 可放行回环）
+- [x] `/agents` 全端点：preview/create（幂等）/list（stats）/detail/patch/delete（软删）/refresh/health
+- [x] A2A 客户端（自研 JSON-RPC 2.0：message/send、message/stream SSE、tasks/get、tasks/cancel，超时与错误映射）
+- [x] 统一 `send_message` 工具：仅注入 enabled Agent，HITL 等待（input_required/auth_required）复用审批式进程内 waiter
+- [x] SSE 事件：`a2a.task` / `a2a.artifact` / `a2a.input_required` / `a2a.auth_required`
+- [x] `/tasks` 全端点：列表（多状态过滤 + stats）/详情/取消/补充输入/授权/拒绝 + 等待超时懒过期
+- [x] `system/info.capabilities.agents/tasks = true`；`GET /runs/{id}` 的 pending/agents 支持 A2A
+- [x] 101 个 pytest 用例（85 基线 + 16 新增）；ruff 通过；8000 实例真实联调通过（注册→预览→健康→对话委派→任务查询）
 
 明确未包含（按路线图后续交付）：
 
-- [ ] M1.5：Skill / 长期记忆 / Instruction / MCP / 附件（能力开关为 false）
-- [ ] M2/M3：A2A 出站/入站、智能体页、任务页
-- [ ] M4：知识库 + pgvector
+- [ ] M1.5 管理端路由（`/api/v1/admin/…`，数据模型已就绪）
+- [ ] M3：A2A 入站 Server（Agent Card 发布 + JSON-RPC 端点，`A2A_ENABLED` 仍为 false）
+- [ ] M4：知识库 + pgvector（记忆语义检索、`q` 升级为向量检索）
 - [ ] M5+：工作流、管理控制台、RBAC
 - [ ] CI、Dockerfile、生产可观测性
+
+本地假 Agent 联调（详见 [M2 交付报告](docs/feedback/2026-11-09-m2-backend-report.md)）：
+
+```bash
+uv run python scripts/mock_a2a_agent.py                      # 127.0.0.1:9100
+curl -X POST http://127.0.0.1:8000/api/v1/agents \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"url": "http://127.0.0.1:9100"}'
+```
 
 ## 7. 与 customer-service 的结构差异
 
@@ -195,6 +205,8 @@ curl http://localhost:8000/api/v1/system/info   # 需要先登录拿 Bearer toke
 | [初始化设计稿](docs/superpowers/specs/2026-11-04-agent-hub-init-design.md) | 本次初始化的决策记录 |
 | [个人能力层设计](docs/superpowers/specs/2026-11-05-agent-capabilities-design.md) | MCP / Skill / 长期记忆 / Instruction 的设计与决策 |
 | [M1 前端契约反馈](docs/feedback/2026-11-09-frontend-contract-feedback.md) | 与前端交接包的差异、待拍板决策、联调步骤 |
+| [前端联调反馈](docs/feedback/2026-11-09-frontend-integration-response.md) | 前端真实联调结果、12 个契约点逐项回复、后端待处理问题 |
+| [后端热修响应](docs/feedback/2026-11-09-backend-hotfix-response.md) | 分页 500 修复、OpenAPI/文档补齐、500 request_id、限流配置与复验结果 |
 | [OpenAPI](docs/openapi.json) | M1 实际接口契约（由 FastAPI 导出） |
 
 ## 9. 下一步

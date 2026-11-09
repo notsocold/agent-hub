@@ -80,7 +80,12 @@ async def register(
     ip: str,
     user_agent: str,
 ) -> TokenResponse:
-    limiter.check(f"register:{ip}", limit=5, window_seconds=3600)
+    settings = get_settings()
+    limiter.check(
+        f"register:{ip}",
+        limit=settings.rate_limit_register_max,
+        window_seconds=settings.rate_limit_register_window_seconds,
+    )
     if await _find_user_by_email(db, payload.email):
         raise ConflictError("该邮箱已注册")
     user = User(
@@ -103,7 +108,12 @@ async def login(
     ip: str,
     user_agent: str,
 ) -> TokenResponse:
-    limiter.check(f"login:{ip}", limit=10, window_seconds=300)
+    settings = get_settings()
+    limiter.check(
+        f"login:{ip}",
+        limit=settings.rate_limit_login_max,
+        window_seconds=settings.rate_limit_login_window_seconds,
+    )
     user = await _find_user_by_email(db, payload.email)
     if user is None or not verify_password(payload.password, user.password_hash):
         raise UnauthorizedError("邮箱或密码错误")

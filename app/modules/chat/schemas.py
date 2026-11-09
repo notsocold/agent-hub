@@ -92,17 +92,21 @@ class RunOut(BaseModel):
 
 
 class RunEventOut(BaseModel):
-    id: str
-    seq: int
+    id: str = Field(description="不透明事件 ID，格式为 `<run_id>:<seq>`，前端不得解析")
+    seq: int = Field(description="运行内单调递增序号；事件回放时允许跳号")
     ts: datetime
     type: str
     status: str
     title: str
     subtitle: str
     duration_ms: int | None
-    tokens: dict[str, Any] | None = None
-    payload: dict[str, Any]
-    error: str | None = None
+    tokens: dict[str, Any] | None = Field(
+        description="该事件的 token 用量；没有 token 的事件返回 null。该键始终存在"
+    )
+    payload: dict[str, Any] = Field(description="事件负载；内部字段 `_event` 已剔除")
+    error: str | None = Field(
+        description="错误摘要字符串；无错误返回 null。结构化错误在 message.done/error 事件里"
+    )
 
 
 class RunEventPage(BaseModel):

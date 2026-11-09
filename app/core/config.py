@@ -77,6 +77,66 @@ class Settings(BaseSettings):
     a2a_agent_path: str = "/a2a"
     a2a_client_timeout_seconds: int = 60
     a2a_allowed_hosts: str = ""
+    # None 表示跟随环境：dev/test 允许回环（本地假 Agent 联调），prod 默认拒绝。
+    a2a_allow_loopback: bool | None = None
+    a2a_card_timeout_seconds: int = 10
+    a2a_max_skills: int = 50
+    a2a_skill_description_max_chars: int = 2000
+    a2a_input_timeout_seconds: int = 30 * 60
+    a2a_max_response_bytes: int = 1024 * 1024
+
+    # ------------------------------------------------------------------ 能力总开关（M1.5）
+    instructions_enabled: bool = True
+    memories_enabled: bool = True
+    skills_enabled: bool = True
+    mcp_enabled: bool = True
+    attachments_enabled: bool = True
+    approvals_enabled: bool = True
+
+    # ------------------------------------------------------------------ MCP（M1.5）
+    mcp_user_stdio_enabled: bool = False
+    mcp_allowed_hosts: str = ""
+    mcp_stdio_allowed_commands: str = ""
+    mcp_client_timeout_seconds: int = 30
+    mcp_max_servers_per_user: int = 20
+    mcp_max_tools_per_server: int = 50
+    mcp_max_auto_tools: int = 60
+    mcp_max_response_bytes: int = 262144
+    mcp_tool_cache_ttl_seconds: int = 86400
+    max_tool_rounds: int = 8
+    capability_secret_key: str = ""
+
+    # ------------------------------------------------------------------ 技能（M1.5）
+    skill_max_upload_bytes: int = 5 * 1024 * 1024
+    skill_max_files: int = 50
+    skill_max_file_bytes: int = 1024 * 1024
+    skill_max_skill_md_bytes: int = 200 * 1024
+    skill_max_body_tokens: int = 8000
+    skill_file_read_max_bytes: int = 32768
+    skill_catalog_max_items: int = 100
+
+    # ------------------------------------------------------------------ 记忆（M1.5）
+    memory_top_k: int = 5
+    memory_max_tokens: int = 1200
+    memory_max_item_chars: int = 1000
+    memory_max_title_chars: int = 200
+    memory_pinned_max: int = 10
+    memory_max_saves_per_run: int = 5
+
+    # ------------------------------------------------------------------ 附件（M1.5）
+    attachment_allowed_mime_types: str = (
+        "text/plain,text/markdown,text/csv,text/html,application/json,application/pdf,"
+        "application/zip,application/msword,application/vnd.ms-excel,"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document,"
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,"
+        "image/png,image/jpeg,image/gif,image/webp,audio/mpeg,audio/wav,"
+        "video/mp4,application/x-yaml,application/xml"
+    )
+    attachment_text_max_chars: int = 12000
+    attachment_retention_hours: int = 24 * 30
+
+    # ------------------------------------------------------------------ 提示词预算（M1.5）
+    prompt_budget_tokens: int = 16000
 
     # ------------------------------------------------------------------ 认证
     jwt_secret: str = ""
@@ -95,7 +155,14 @@ class Settings(BaseSettings):
     attachment_max_bytes: int = 20 * 1024 * 1024
     approval_timeout_seconds: int = 30 * 60
     hitl_stream_timeout_seconds: int = 15 * 60
+
+    # ------------------------------------------------------------------ 限流
+    # 默认值即生产建议值；本地联调可通过环境变量放宽（例如注册 100 次/小时）。
     rate_limit_enabled: bool = True
+    rate_limit_register_max: int = 5
+    rate_limit_register_window_seconds: int = 3600
+    rate_limit_login_max: int = 10
+    rate_limit_login_window_seconds: int = 300
 
     # ------------------------------------------------------------------ 路径
     data_dir: Path = Path("data")
@@ -153,6 +220,38 @@ class Settings(BaseSettings):
     @property
     def build_label(self) -> str:
         return self.app_build or "dev"
+
+    @property
+    def allowed_mime_type_list(self) -> list[str]:
+        return [
+            item.strip().lower()
+            for item in self.attachment_allowed_mime_types.split(",")
+            if item.strip()
+        ]
+
+    @property
+    def mcp_host_allowlist(self) -> list[str]:
+        """MCP SSRF 主机白名单；未配置时回退到 A2A 白名单。"""
+        raw = self.mcp_allowed_hosts.strip() or self.a2a_allowed_hosts.strip()
+        return [item.strip().lower() for item in raw.split(",") if item.strip()]
+
+    @property
+    def mcp_stdio_command_allowlist(self) -> list[str]:
+        return [
+            item.strip() for item in self.mcp_stdio_allowed_commands.split(",") if item.strip()
+        ]
+
+    @property
+    def a2a_allow_loopback_resolved(self) -> bool:
+        """loopback 放行：未显式配置时 dev/test 允许（本地假 Agent 联调），prod 拒绝。"""
+        if self.a2a_allow_loopback is None:
+            return self.env != "prod"
+        return self.a2a_allow_loopback
+
+    @property
+    def a2a_host_allowlist(self) -> list[str]:
+        """A2A SSRF 主机白名单：主机名、IP 或 CIDR。"""
+        return [item.strip().lower() for item in self.a2a_allowed_hosts.split(",") if item.strip()]
 
 
 @lru_cache
