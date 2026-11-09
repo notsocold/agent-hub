@@ -51,3 +51,4 @@ data/attachments/
 .dsh/sessions/**/session.lock
 .dsh/sessions/**/*.tmp
 .dsh/sessions/.backup/
+.dsh/workspace-session.json
