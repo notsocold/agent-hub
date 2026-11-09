@@ -34,12 +34,6 @@ logs/
 .vscode/
 .idea/
 
-# DSH workspace-session machine-local index (safe to ignore)
-.dsh/workspace-session.json
-
-# DSH session locks and conflict backups
-.dsh/sessions/**/session.lock
-.dsh/sessions/.backup/
 
 # 本地 uv 缓存与 Python 解释器（体积大，不进仓库）
 .uv-cache/

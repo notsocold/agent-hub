@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "sessions": {
+    "00772df3-2936-4f71-92c4-99891117d881": {
+      "originCwd": "/home/zhaodan/work/PythonProjects/agent-hub",
+      "eventCount": 120,
+      "lastEventHash": "sha256:be8eae66cd918f608a9e78988e24053c6fe2b67a52819f9398adbc6fd8db2afe",
+      "exportedAt": "2026-11-09T09:42:31.365Z",
+      "lastWriter": "XIAOXIN-a990abc1"
+    },
+    "session-fcf98997-64ab-41d5-8e3e-08b306e565f6": {
+      "originCwd": "/home/zhaodan/work/PythonProjects/agent-hub",
+      "eventCount": 838,
+      "lastEventHash": "sha256:ea1c4f235d4827875ff9d49df6c517ce2a738d10fabb5ca71f5b58f5be9b8115",
+      "exportedAt": "2026-11-09T09:42:35.571Z",
+      "lastWriter": "XIAOXIN-a990abc1"
+    },
+    "session-ca2ef162-8077-4b24-bdde-e8e74222aa25": {
+      "originCwd": "/home/zhaodan/work/PythonProjects/agent-hub",
+      "eventCount": 1412,
+      "lastEventHash": "sha256:66a28e388f4de6cd365151d2ebfe3c7894d5783a48478d65ac23d631f3e885fc",
+      "exportedAt": "2026-11-09T09:42:35.432Z",
+      "lastWriter": "XIAOXIN-a990abc1"
+    },
+    "01884c56-f659-48c7-8022-74acfb72c41f": {
+      "originCwd": "/home/zhaodan/work/PythonProjects/agent-hub",
+      "eventCount": 27,
+      "lastEventHash": "sha256:c6cf476d7a8504c3accae52973ab85edf66200dae63f84844dc3c79d00695636",
+      "exportedAt": "2026-11-09T09:42:31.401Z",
+      "lastWriter": "XIAOXIN-a990abc1"
+    },
+    "0a86083c-9a37-4c17-9669-c05486200b83": {
+      "originCwd": "/home/zhaodan/work/PythonProjects/agent-hub",
+      "eventCount": 35,
+      "lastEventHash": "sha256:27964a87b9ae38f42b16852e29f07c37cd8c6835871b15bdb7c2f3b582932c74",
+      "exportedAt": "2026-11-09T09:42:31.445Z",
+      "lastWriter": "XIAOXIN-a990abc1"
+    },
+    "a4dbf095-77dc-4dc9-ad38-df78e6ee4211": {
+      "originCwd": "/home/zhaodan/work/PythonProjects/agent-hub",
+      "eventCount": 49,
+      "lastEventHash": "sha256:a19e7624314c8d3bcd64a70aa8515c0b3dcbbdbb15e0f830e7ace15a5dc04faa",
+      "exportedAt": "2026-11-09T09:42:31.539Z",
+      "lastWriter": "XIAOXIN-a990abc1"
+    },
+    "3cf07a83-6607-4029-a1b9-27e4e637662f": {
+      "originCwd": "/home/zhaodan/work/PythonProjects/agent-hub",
+      "eventCount": 49,
+      "lastEventHash": "sha256:9cdbc66840257be41d8bb5e3f6b0bd539fd70c9a756c08d59696ebe83da161a0",
+      "exportedAt": "2026-11-09T09:42:31.512Z",
+      "lastWriter": "XIAOXIN-a990abc1"
+    }
+  }
+}
