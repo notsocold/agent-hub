@@ -12,6 +12,7 @@ from app.db.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from app.db.models.mcp import McpServer, McpTool, UserCapabilityOverride
 from app.db.models.memory import Memory, ToolInvocation
 from app.db.models.remote import A2aTask, RemoteAgent
+from app.db.models.secret import PlatformSecret
 from app.db.models.skill import Skill, SkillFile
 from app.db.models.system import SystemSetting, UserSetting
 from app.db.models.user import RefreshToken, User
@@ -27,6 +28,7 @@ __all__ = [
     "McpServer",
     "McpTool",
     "Memory",
+    "PlatformSecret",
     "Message",
     "RefreshToken",
     "RemoteAgent",
