@@ -40,17 +40,30 @@ class _Body:
         return self._payload
 
 
-def _client_error(code: str, operation: str = "GetObject") -> ClientError:
-    return ClientError({"Error": {"Code": code}}, operation)
+def _client_error(
+    code: str, operation: str = "GetObject", *, http_status: int | None = None
+) -> ClientError:
+    response: dict = {"Error": {"Code": code}}
+    if http_status is not None:
+        response["ResponseMetadata"] = {"HTTPStatusCode": http_status}
+    return ClientError(response, operation)
 
 
 class _StubS3Client:
     """记录调用参数的 S3 stub；``found=False`` 时模拟对象不存在。"""
 
-    def __init__(self, payload: bytes = b"x", *, found: bool = True, error_code: str = "") -> None:
+    def __init__(
+        self,
+        payload: bytes = b"x",
+        *,
+        found: bool = True,
+        error_code: str = "",
+        http_status: int | None = None,
+    ) -> None:
         self.payload = payload
         self.found = found
         self.error_code = error_code
+        self.http_status = http_status
         self.calls: dict[str, dict] = {}
         self.thread_names: list[str] = []
 
@@ -64,7 +77,9 @@ class _StubS3Client:
     def get_object(self, **kwargs) -> dict:
         self._record("get", kwargs)
         if not self.found:
-            raise _client_error(self.error_code or "NoSuchKey")
+            raise _client_error(
+                self.error_code or "NoSuchKey", "GetObject", http_status=self.http_status
+            )
         return {"Body": _Body(self.payload)}
 
     def delete_object(self, **kwargs) -> None:
@@ -73,7 +88,9 @@ class _StubS3Client:
     def head_object(self, **kwargs) -> dict:
         self._record("head", kwargs)
         if not self.found:
-            raise _client_error(self.error_code or "404", "HeadObject")
+            raise _client_error(
+                self.error_code or "404", "HeadObject", http_status=self.http_status
+            )
         return {}
 
 
@@ -97,6 +114,15 @@ async def test_local_put_is_atomic_and_leaves_no_tmp(tmp_path: Path) -> None:
     # 真实文件内容正确，且 tmp 文件已被 replace 掉。
     assert (tmp_path / "kb" / "a.txt").read_bytes() == b"hello"
     assert list(tmp_path.rglob("*.tmp")) == []
+
+
+async def test_local_put_failure_cleans_tmp(tmp_path: Path) -> None:
+    s = LocalFileStorage(tmp_path)
+    # 故意传错类型让 write_bytes 在创建临时文件后失败，验证 finally 清理残留。
+    with pytest.raises(TypeError):
+        await s.put("kb/a.txt", "not-bytes")  # type: ignore[arg-type]
+    assert not (tmp_path / "kb" / "a.txt").exists()
+    assert [p for p in (tmp_path / "kb").iterdir() if p.is_file()] == []
 
 
 async def test_local_delete_missing_is_noop(tmp_path: Path) -> None:
@@ -168,6 +194,16 @@ async def test_s3_other_client_error_propagates() -> None:
     s3 = S3FileStorage(stub, "bucket")
     with pytest.raises(ClientError):
         await s3.get("a.md")
+
+
+async def test_s3_bucket_error_with_404_is_not_treated_as_missing() -> None:
+    # NoSuchBucket（bucket 名写错/被删）也返回 HTTP 404，但不能当成「对象不存在」吞掉。
+    stub = _StubS3Client(found=False, error_code="NoSuchBucket", http_status=404)
+    s3 = S3FileStorage(stub, "bucket")
+    with pytest.raises(ClientError):
+        await s3.get("a.md")
+    with pytest.raises(ClientError):
+        await s3.exists("a.md")
 
 
 def test_get_storage_local_is_cached(tmp_path: Path) -> None:

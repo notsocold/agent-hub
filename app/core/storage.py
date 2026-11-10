@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -76,9 +77,13 @@ class LocalFileStorage:
         # content_type 只对对象存储有意义，本地实现忽略。
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f"{path.name}.tmp")
-        tmp.write_bytes(data)
-        tmp.replace(path)
+        # 随机 tmp 名避免同 key 并发写互相覆盖；失败时清理残留。
+        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp.write_bytes(data)
+            tmp.replace(path)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     async def get(self, key: str) -> bytes:
         path = self._path(key)
@@ -95,13 +100,14 @@ class LocalFileStorage:
 
 
 def _is_s3_not_found(exc: ClientError) -> bool:
-    """判断 boto3 ``ClientError`` 是否表示对象不存在。"""
+    """仅按 ``Error.Code`` 判断对象不存在。
+
+    不能退化为「HTTP 404 即不存在」：``NoSuchBucket`` 等存储故障同样返回 404，
+    误判会让上层把配置错误当成「原始文件缺失」。其他 ``ClientError`` 一律上抛。
+    """
     response = getattr(exc, "response", None) or {}
     code = str(response.get("Error", {}).get("Code", ""))
-    if code in _S3_NOT_FOUND_CODES:
-        return True
-    # 部分实现只给 HTTP 404 而不带 Error.Code。
-    return response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404
+    return code in _S3_NOT_FOUND_CODES
 
 
 class S3FileStorage:
@@ -114,6 +120,7 @@ class S3FileStorage:
         self._prefix = prefix.strip("/")
 
     def _object_key(self, key: str) -> str:
+        # S3 键是扁平字面量，不存在路径穿越语义，因此只去斜杠、不做 ``..`` 校验。
         cleaned = key.strip().lstrip("/")
         if not cleaned:
             raise ValueError("存储 key 不能为空")
