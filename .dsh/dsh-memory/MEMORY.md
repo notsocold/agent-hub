@@ -5,8 +5,14 @@
 
 Project: `/home/zhaodan/work/PythonProjects/agent-hub`
 
-Active topics: 15
+Active topics: 23
 
+- [agent-hub A2A：1.0 为主路径，0.3 兼容层有意保留，不清退](m_9591dea5-agent-hub-a2a-1-0-为主路径-0-3-兼容层有意保留-不清退.md) — 项目里残留的 0.3 相关内容属于显式、受测试覆盖的兼容能力（官方 a2a.compat.v0_3），目标是新功能默认走 1.0、0.3 仅做兼容，因此不做 1.0-only 清理。 · `decision` · importance 4 · 2026-11-10
+- [agent-hub 选型准则：官方 SDK + 薄封装为默认，自研仅为例外](m_8346c8de-agent-hub-选型准则-官方-sdk-薄封装为默认-自研仅为例外.md) — A2A/MCP 一类协议选型默认采用官方 SDK 做协议层、自研只保留安全层薄封装；自研完整协议栈仅在 SDK 不满足硬约束时例外。 · `decision` · importance 4 · 2026-11-10
+- [agent-hub A2A Card 拉取保留自研 httpx，SDK 仅做 schema 校验与传输](m_c5312293-agent-hub-a2a-card-拉取保留自研-httpx-sdk-仅做-s.md) — Card 拉取的安全边界（SSRF/同源/重定向/大小上限）由自有 httpx 实现负责，SDK 的 parse_agent_card 只用于规范 schema 校验。 · `decision` · importance 4 · 2026-11-10
+- [agent-hub A2A 出站已迁移到 a2a-sdk 1.3.0 并消除版本偏离](m_d5e5b9b9-agent-hub-a2a-出站已迁移到-a2a-sdk-1-3-0-并消除版本.md) — 2026-11-10 出站协议层改用 a2a-sdk 1.3.0，并完成一轮全项目优化彻底清除文档/实现中的版本偏离残留。 · `decision` · importance 4 · 2026-11-10
+- [agent-hub 仅做 A2A 出站：M3 入站取消、M4 顺延](m_f1716c7a-agent-hub-仅做-a2a-出站-m3-入站取消-m4-顺延.md) — 2026-11-10 需求变更：本服务只做 A2A 出站 Client，不发布 Agent Card、不提供 JSON-RPC 入站；M3 入站作废，M4 顺延；已完成收尾并提交。 · `decision` · importance 4 · 2026-11-10
+- [agent-hub 前后端里程碑语义错位与跨仓库路线对照结论](m_e7a7259f-agent-hub-前后端里程碑语义错位与跨仓库路线对照结论.md) — 后端 agent-hub 与前端 agent-hub-web 的里程碑编号在 M3/M5 上语义冲突，工作流与管理台双方悬空，但接口契约本身已对齐。 · `project` · importance 4 · 2026-11-10
 - [agent-hub 分页契约：cursor 编码层做 JSON-safe 归一化，cursor 优先于 before](m_a0c1601b-agent-hub-分页契约-cursor-编码层做-json-safe-归一化.md) — 分页 500 的根因是 encode_cursor 直接 json.dumps ORM UUID，修复定在编码层统一归一化，并明确 cursor 与 before 同时传入时 cursor 优先。 · `decision` · importance 4 · 2026-11-09
 - [agent-hub 前端交接/联调文档与契约修复要点](m_62b3826d-agent-hub-前端交接-联调文档与契约修复要点.md) — agent-hub 与 agent-hub-web 的交接/反馈/热修文档位置，以及已对齐的契约要点（cursor 分页、错误信封、seed 账号、OpenAPI 声明）。 · `reference` · importance 4 · 2026-11-09
 - [agent-hub 后端 M1 关键实现约束：SSE 解耦、幂等回放、并发 409](m_11494769-agent-hub-后端-m1-关键实现约束-sse-解耦-幂等回放-并发-40.md) — SSE 与图执行解耦、client_message_id 幂等回放、未结束 run 用部分唯一索引兜底，是 M1 后端的既定实现约束。 · `decision` · importance 4 · 2026-11-09
@@ -19,6 +25,8 @@ Active topics: 15
 - [agent-hub Skill v1 定为纯指令包，可执行脚本列为后续方案](m_638f250d-agent-hub-skill-v1-定为纯指令包-可执行脚本列为后续方案.md) — agent-hub 的 Skill 能力第一阶段只做纯指令包，可执行脚本（含沙箱、资源限制、网络隔离等前置条件）单列为后续第二方案，不混入 v1 范围。 · `decision` · importance 4 · 2026-11-05
 - [agent-hub MCP 接入边界：内置可 stdio，用户自建仅远程 URL](m_c9d2ab0a-agent-hub-mcp-接入边界-内置可-stdio-用户自建仅远程-url.md) — agent-hub 的 MCP 支持定为：系统内置 MCP 允许 stdio 传输，用户自建 MCP 只允许远程 URL，stdio 开关默认关闭。 · `decision` · importance 4 · 2026-11-05
 - [agent-hub 需求：MCP、Skill、长期记忆、Instruction 四大能力 + 两层配置模型](m_869f2af8-agent-hub-需求-mcp-skill-长期记忆-instruction-.md) — agent-hub 本阶段做四大能力（MCP、Skill、长期记忆、Instruction），配置为账号级并由「系统默认 + 用户自定义」两层在运行时合并，会话内可显式点名使用 Skill/MCP。 · `project` · importance 4 · 2026-11-05
+- [agent-hub 路线图里程碑状态的标记规范与证据口径](m_1d16a11e-agent-hub-路线图里程碑状态的标记规范与证据口径.md) — docs/roadmap.md 用总览表+标题内联状态+checkbox 标记里程碑，勾选必须有实测证据，不虚报。 · `project` · importance 3 · 2026-11-10
+- [agent-hub 仓库 .dsh 运行时文件被 Git 追踪的遗留状况](m_602c394b-agent-hub-仓库-dsh-运行时文件被-git-追踪的遗留状况.md) — agent-hub 曾把 .dsh 运行时数据（会话记录、项目记忆）提交进 Git，导致 .gitignore 对它们无效，且 .dsh/sessions/ 整目录未被忽略。 · `project` · importance 3 · 2026-11-10
 - [agent-hub 500 request_id 走 request.state，注册/登录限流可配置并用 seed 脚本绕开](m_47794f6a-agent-hub-500-request-id-走-request-state.md) — 未处理异常会越过中间件的 contextvar 清理，因此 request_id 同时写入 request.state；注册/登录限流改为可配置，并用幂等脚本创建开发账号。 · `decision` · importance 3 · 2026-11-09
 - [agent-hub 使用用户本机 PostgreSQL，不依赖 Docker](m_bf4efbaa-agent-hub-使用用户本机-postgresql-不依赖-docker.md) — agent-hub 后端默认使用用户本机已有 PostgreSQL、不自启任何容器；docker-compose 仅作为可选项保留。 · `project` · importance 3 · 2026-11-09
 - [agent-hub 长度口径：API 用字符（指令 4000 字符），token 用保守系数做预算](m_0464a21e-agent-hub-长度口径-api-用字符-指令-4000-字符-token-.md) — 对外 API 一律以字符为单位（如指令上限 4000 字符），内部预算用保守系数估算 token，技能在导入时即校验 ≤8000 tokens。 · `decision` · importance 3 · 2026-11-05
