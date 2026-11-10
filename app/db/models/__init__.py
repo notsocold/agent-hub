@@ -8,6 +8,7 @@ from app.db.models.attachment import Attachment
 from app.db.models.audit import AuditLog
 from app.db.models.chat import Run, RunEvent
 from app.db.models.conversation import Conversation, Message
+from app.db.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from app.db.models.mcp import McpServer, McpTool, UserCapabilityOverride
 from app.db.models.memory import Memory, ToolInvocation
 from app.db.models.remote import A2aTask, RemoteAgent
@@ -21,6 +22,8 @@ __all__ = [
     "Attachment",
     "AuditLog",
     "Conversation",
+    "KnowledgeChunk",
+    "KnowledgeDocument",
     "McpServer",
     "McpTool",
     "Memory",

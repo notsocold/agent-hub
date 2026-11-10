@@ -30,6 +30,11 @@ os.environ.setdefault("APPROVAL_TIMEOUT_SECONDS", "3")
 os.environ.setdefault("A2A_ALLOWED_HOSTS", "a2a.example.com,a2a.test,a2a-slow.test")
 os.environ.setdefault("A2A_CLIENT_TIMEOUT_SECONDS", "5")
 os.environ.setdefault("A2A_INPUT_TIMEOUT_SECONDS", "30")
+# M4：知识库测试强制本地存储与假向量，避免读到本机 .env 的真实存储/Embedding 配置。
+os.environ.setdefault("STORAGE_BACKEND", "local")
+os.environ.setdefault("EMBEDDING_PROVIDER", "fake")
+os.environ.setdefault("EMBEDDING_API_KEY", "")
+os.environ.setdefault("KNOWLEDGE_DIR", "data/test-knowledge")
 
 import httpx
 import pytest
@@ -48,7 +53,8 @@ from app.modules.mcp.service import clear_test_transports
 reset_settings_cache()
 
 _TABLES = (
-    "a2a_tasks, remote_agents, skill_files, mcp_tools, user_capability_overrides, skills, "
+    "knowledge_chunks, knowledge_documents, a2a_tasks, remote_agents, skill_files, "
+    "mcp_tools, user_capability_overrides, skills, "
     "mcp_servers, attachments, memories, tool_invocations, run_events, approvals, runs, "
     "messages, conversations, refresh_tokens, system_settings, user_settings, users, audit_logs"
 )
