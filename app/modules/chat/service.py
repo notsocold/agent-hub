@@ -61,6 +61,7 @@ from app.modules.chat.tools import (
     ToolRunner,
     build_mcp_tools,
     build_native_tools,
+    build_search_knowledge_tool,
     build_send_message_tool,
 )
 from app.modules.conversations.schemas import (
@@ -336,7 +337,7 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                             "first_token_ms": None,
                             "duration_ms": 0,
                             "active_duration_ms": 0,
-                            "citations": [],
+                            "citations": context.citations,
                             "artifacts": [],
                         },
                         event_type="message",
@@ -392,9 +393,15 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                 active_skill_ids=assembled.active_skill_ids,
                 a2a_agents=assembled.a2a_agent_map,
                 conversation_id=conversation_id,
+                # 与 RunContext 共享同一个 list：工具追加，终态读取。
+                citations=context.citations,
+                knowledge_categories=[
+                    str(item) for item in run_capabilities.get("knowledge_categories", [])
+                ],
             )
             tools = [
                 *build_native_tools(runner),
+                build_search_knowledge_tool(runner),
                 *build_mcp_tools(runner, assembled.mcp_tool_map),
             ]
             send_message_tool = build_send_message_tool(runner, assembled.a2a_agent_map)
@@ -555,6 +562,7 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
             first_token_ms=first_token_ms,
             duration_ms=duration_ms,
             finished_at=now,
+            citations=context.citations,
         )
         if not completed:
             await asyncio.shield(
@@ -581,7 +589,7 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                 "first_token_ms": first_token_ms,
                 "duration_ms": duration_ms,
                 "active_duration_ms": duration_ms,
-                "citations": [],
+                "citations": context.citations,
                 "artifacts": [],
                 "reasoning": (
                     {
@@ -645,6 +653,7 @@ async def _finalize_success(
     first_token_ms: int | None,
     duration_ms: int,
     finished_at: datetime,
+    citations: list[dict],
 ) -> bool:
     async with get_session_factory()() as db:
         assistant = await db.get(Message, assistant_message_id)
@@ -654,12 +663,14 @@ async def _finalize_success(
                 assistant.content = content
                 assistant.status = "canceled"
                 assistant.usage = usage
+                assistant.citations = citations
             await db.commit()
             return False
         if assistant is not None:
             assistant.content = content
             assistant.status = "completed"
             assistant.usage = usage
+            assistant.citations = citations
         if run is not None:
             run.status = "succeeded"
             run.input_tokens = usage["input_tokens"]
@@ -704,6 +715,7 @@ async def _finalize_canceled(
             assistant.content = content
             assistant.status = "canceled"
             assistant.usage = usage
+            assistant.citations = context.citations
         run.status = "canceled"
         run.canceled_at = now
         run.finished_at = now
@@ -732,7 +744,7 @@ async def _finalize_canceled(
             "first_token_ms": first_token_ms,
             "duration_ms": duration_ms,
             "active_duration_ms": duration_ms,
-            "citations": [],
+            "citations": context.citations,
             "artifacts": [],
         },
         event_type="message",
@@ -770,6 +782,7 @@ async def _finalize_interrupted(
             assistant.content = content
             assistant.status = "completed"
             assistant.usage = usage
+            assistant.citations = context.citations
         run.status = "interrupted"
         run.duration_ms = duration_ms
         run.active_duration_ms = duration_ms
@@ -801,7 +814,7 @@ async def _finalize_interrupted(
             "first_token_ms": first_token_ms,
             "duration_ms": duration_ms,
             "active_duration_ms": duration_ms,
-            "citations": [],
+            "citations": context.citations,
             "artifacts": [],
             "reason": "approval_timeout",
         },
@@ -840,6 +853,7 @@ async def _finalize_failed(
             assistant.content = content
             assistant.status = "failed"
             assistant.usage = usage
+            assistant.citations = context.citations
             assistant.error = {"code": "llm_error", "message": message, "retryable": True}
         run.status = "failed"
         run.error_code = "llm_error"

@@ -20,6 +20,9 @@ class RunContext:
     cancel_requested: bool = field(default=False)
     # 终态事件只能发一次：成功/取消/失败竞态时避免重复 message.done。
     terminal_emitted: bool = field(default=False)
+    # 本轮已产出的引用（CitationOut 形状的 dict）；与 ToolRunner.citations 是同一对象，
+    # 由工具追加、由终态统一去重编号后随 message.done 发出并落库。
+    citations: list[dict] = field(default_factory=list)
     # HITL：按 approval_id 注册 waiter；decision 接口写入决定并 set 对应事件。
     # waiter 在 approval.required 发出前注册，decision 先到时也会落在 decisions 里，
     # 消除「决定先于等待注册」的竞态。
