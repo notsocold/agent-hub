@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -18,6 +19,14 @@ logger = logging.getLogger(__name__)
 
 # 开发环境缺少 JWT_SECRET 时使用的兜底值，生产环境会拒绝启动。
 _DEV_JWT_SECRET = "agent-hub-dev-insecure-secret-change-me"
+
+# 占位/过短的 Embedding 密钥视为不可用：开发环境自动回退到假向量，避免请求必然失败。
+_PLACEHOLDER_KEY = re.compile(r"^sk-(x+|your.*|test.*|placeholder.*)$", re.IGNORECASE)
+
+
+def is_placeholder_api_key(key: str) -> bool:
+    """判断密钥是否只是占位符（空、过短或典型示例值）。"""
+    return len(key.strip()) < 20 or bool(_PLACEHOLDER_KEY.match(key.strip()))
 
 
 class Settings(BaseSettings):
@@ -68,8 +77,29 @@ class Settings(BaseSettings):
     embedding_base_url: str = "https://api.openai.com/v1"
     embedding_model: str = "text-embedding-3-small"
     embedding_dim: int = 1536
+    # auto：有可用密钥走 OpenAI 兼容接口，否则回退假向量；fake/openai 强制指定
+    embedding_provider: Literal["auto", "fake", "openai"] = "auto"
+    embedding_timeout_seconds: int = 30
+    embedding_batch_size: int = 32
     vector_top_k: int = 6
     vector_score_threshold: float = 0.30
+
+    # ------------------------------------------------------------------ 知识库 / 存储（M4）
+    knowledge_enabled: bool = True
+    knowledge_dir: Path = Path("data/knowledge")
+    knowledge_max_upload_bytes: int = 10 * 1024 * 1024
+    knowledge_chunk_size: int = 800
+    knowledge_chunk_overlap: int = 80
+    knowledge_max_chunks_per_document: int = 5000
+    knowledge_max_pdf_pages: int = 500
+    # local：本地磁盘；s3：任意 S3 兼容对象存储（endpoint_url 可指向 MinIO 等）
+    storage_backend: Literal["local", "s3"] = "local"
+    s3_endpoint_url: str = ""
+    s3_bucket: str = ""
+    s3_access_key: str = ""
+    s3_secret_key: str = ""
+    s3_region: str = "us-east-1"
+    s3_prefix: str = "knowledge/"
 
     # ------------------------------------------------------------------ A2A（仅出站）
     # 2026-11-10 需求变更：本服务只做 A2A Client，不提供入站 Server。
@@ -205,6 +235,11 @@ class Settings(BaseSettings):
             return True
         return not self.llm_api_key and self.env in {"dev", "test"}
 
+    @property
+    def embedding_key_usable(self) -> bool:
+        """Embedding 密钥是否可用；占位符或过短时由上层回退到假向量。"""
+        return not is_placeholder_api_key(self.embedding_api_key)
+
     def validate_runtime(self) -> None:
         """启动期的安全校验；生产环境不提供任何兜底密钥。"""
         if not self.database_url:
@@ -268,4 +303,4 @@ def reset_settings_cache() -> None:
     get_settings.cache_clear()
 
 
-__all__ = ["Settings", "get_settings", "reset_settings_cache"]
+__all__ = ["Settings", "get_settings", "is_placeholder_api_key", "reset_settings_cache"]

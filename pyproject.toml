@@ -29,6 +29,9 @@ dependencies = [
     # 认证
     "pyjwt>=2.14.0",
     "pwdlib[argon2]>=0.3.1",
+    # 知识库（M4）：PDF 解析与 S3 兼容对象存储
+    "pypdf>=7.0.0",
+    "boto3>=1.43.127",
 ]
 
 [[tool.uv.index]]
