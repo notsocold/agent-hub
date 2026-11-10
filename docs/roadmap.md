@@ -15,7 +15,7 @@
 | M2 A2A 出站 | 已完成（2026-11-10） | Agent Card/客户端/`send_message`/任务 API；101 个测试 + 假 Agent 真实联调；同日出站客户端迁移到 `a2a-sdk` 1.3.0（108 测试） |
 | M3 A2A 入站 | 已取消（2026-11-10 需求变更） | 本服务只做 A2A 出站 Client，不发布 Agent Card、不提供 JSON-RPC 入站；原范围/验收不适用，M4 顺延 |
 | M4 知识库 RAG | 后端已完成（2026-11-10）；前端待做 | 模型/pgvector 迁移/解析/切分/双通道 Embedding/7 个 API/`search_knowledge`/引用落库/`build_kb.py`/离线评测；323 测试通过、修复时钟抖动后全量 10 连跑 0 失败；语义召回率因无真实 Embedding key **未取得证据** |
-| M5 审批与安全加固 | 未开始（部分切片已提前落地） | `approvals`/`audit_logs` 与审批端点已在 M1.5 落地；聊天限流、`interrupt()`/`Command(resume=...)`、注入防护、密钥管理未做 |
+| M5 审批与安全加固 | 后端已完成（2026-11-10） | HITL 迁移到 `interrupt()`/`Command(resume=...)`；超时取消、聊天限流、注入检测/输出打码、平台密钥、审计检索；389 测试通过；跨实例启动保活与前端留后续（见 M5 报告） |
 | M6 生产化与可观测 | 未开始 | OTel/指标/CI/Dockerfile/容量基线未做 |
 
 > 注：M1.5 是追加的中间里程碑，排在 M1 之后、M2 之前，不改动原 M2–M6 的编号含义。
@@ -158,28 +158,32 @@
 - [x] 回答包含来源文档与片段定位：真实 HTTP 抓包 `tool.result` / `message.done` 均带 `citations`，`GET /conversations/{id}/messages` 回读一致（刷新后仍在）；
 - [x] 检索 P95 < 200ms：实测**服务端 P95 = 2ms、端到端 P95 = 7.8ms**（50 次采样）。**样本仅 3 文档 / 6 分块，百万级规模未验证**，容量基线并入 M6。
 
-## M5 审批与安全加固（未开始，部分切片已提前落地）
+## M5 审批与安全加固（后端已完成，2026-11-10）
 
 **目标**：高风险动作可控、可审计。
 
-> M1.5 已提前落地 `audit_logs` / `approvals` 最小切片与审批端点，M5 在其上补全管理/审计界面与安全加固。
+> 交付证据见 [M5 后端交付报告](feedback/2026-11-10-m5-backend-report.md)，设计见
+> [M5 审批与安全加固设计](superpowers/specs/2026-11-10-m5-approval-security-design.md)。
+> M1.5 已提前落地 `audit_logs` / `approvals` 最小切片与审批端点，M5 在其上完成 interrupt 迁移与安全加固。
+> 遗留：启动时扫描 interrupted run 保活、流式输出实时过滤留 M6；管理控制台前端与前端事件适配待前端 M5。
 
 范围：
 
 - [x] `approvals` / `audit_logs` 模型与迁移（M1.5 已提前落地）
-- [ ] 工具 `requires_approval` 声明与 `interrupt()`——当前 HITL 用进程内 waiter，未接 `interrupt()`
+- [x] 工具 `requires_approval` 声明与 `interrupt()`（独立 `approval_gate` 节点，一轮多审批只挂起一次）
 - [x] 审批端点（M1.5 已落地 `GET /approvals`、`POST /approvals/{id}/decision`）
-- [ ] 审批恢复改走 `Command(resume=...)`（当前为进程内 waiter；跨实例恢复留 M6）
-- [ ] 登录/注册/聊天限流——登录/注册限流已在 M1 落地；聊天限流未做
-- [ ] 提示词注入防护、输出过滤
-- [ ] 密钥引用管理——MCP 凭据已支持 AES-GCM / `env:VAR`；平台级密钥管理未做
+- [x] 审批恢复改走 `Command(resume=...)`（决定接口自动调度；同进程/同线程 checkpoint 均可恢复）
+- [x] 登录/注册/聊天限流（聊天 30 次/60s 可配，429 `rate_limited`）
+- [x] 提示词注入防护、输出过滤（检测+审计+系统提示加固；外部内容 `<untrusted>`；输出密钥打码）
+- [x] 密钥引用管理（`platform_secrets` + `/admin/secrets` + `secret:NAME` 引用）
+- [x] 审计检索（`GET /audit-logs`、`GET /admin/audit-logs`）
 
 验收：
 
-- [ ] 高风险工具调用前必须审批，拒绝后不执行（对话内审批最小闭环已在 M1.5 覆盖）；
-- [ ] 审批超时自动过期，run 进入 canceled；
-- [ ] 审计日志可按用户/动作/时间检索；
-- [ ] 安全用例（SSRF、越权、注入）测试通过。
+- [x] 高风险工具调用前必须审批，拒绝后不执行（`test_hitl_interrupt.py`：拒绝后 MCP 未收到调用）；
+- [x] 审批超时自动过期，run 进入 canceled（`test_hitl_interrupt` / `test_mcp`：expired + canceled + `message.done.reason=approval_timeout`）；
+- [x] 审计日志可按用户/动作/时间检索（`test_audit_api.py`：范围、过滤、游标）；
+- [x] 安全用例（SSRF、越权、注入）测试通过（`test_security_hardening.py` + 既有 SSRF/越权用例，全量 389 通过）。
 
 ## M6 生产化与可观测（未开始）
 

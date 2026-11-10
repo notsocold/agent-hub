@@ -184,7 +184,7 @@ async def test_decision_before_suspend_still_completes(
 async def test_interrupted_run_persists_partial_content(
     client: httpx.AsyncClient, monkeypatch
 ) -> None:
-    registered, headers, _ = await _setup(client, monkeypatch, first_text="先思考一下")
+    registered, _headers, _ = await _setup(client, monkeypatch, first_text="先思考一下")
     result = await _start_run(registered, "创建工单")
     interrupted: dict = {}
 

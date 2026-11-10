@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from app.core.prompt_guard import (
     SUSPICIOUS_INPUT_NOTE,
-    scan_injection,
     sanitize_output,
+    scan_injection,
     wrap_untrusted,
 )
 

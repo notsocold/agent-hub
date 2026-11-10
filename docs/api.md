@@ -159,7 +159,14 @@ Authorization: Bearer <access_token>
 |---|---|---|
 | GET | `/api/v1/approvals` | 审批列表（默认 pending） |
 | GET | `/api/v1/approvals/{id}` | 审批详情 |
-| POST | `/api/v1/approvals/{id}/decision` | 批准/拒绝并恢复运行 |
+| POST | `/api/v1/approvals/{id}/decision` | 批准/拒绝；该 run 无其他 pending 审批时调度恢复 |
+
+M5 起审批恢复走 LangGraph `Command(resume=...)`，决定接口的 `resumed` 语义：
+
+- `resumed=true`：审批已全部处理完，恢复任务已调度；运行会继续发 `run.resumed` 与后续 `message.delta`；
+- 该 run 仍有其他 `pending` 审批：`resumed=false`、`resume_error="本轮还有其他审批待处理"`，最后一个决定后才恢复；
+- run 已结束：`resumed=false`，前端按「审批已记录」处理，不要当致命错误；
+- 重复决定 409 `approval_already_decided`；过期 409 `approval_expired`。
 
 ### 2.8 MCP
 
@@ -218,12 +225,14 @@ Authorization: Bearer <access_token>
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET/PUT | `/api/v1/admin/settings/instruction` | 平台默认指令 |
-| GET/POST/PATCH/DELETE | `/api/v1/admin/mcp/servers[...]` | 系统 MCP（允许 stdio） |
-| PUT | `/api/v1/admin/mcp/servers/{id}/enabled` | 系统 MCP 启停 |
-| PUT | `/api/v1/admin/mcp/servers/{id}/force-disable` | 强制停用（压过用户覆盖） |
+| GET | `/api/v1/admin/audit-logs` | 全局审计检索（M5） |
+| GET/POST/PATCH/DELETE | `/api/v1/admin/secrets[...]` | 平台密钥管理（M5，永不回显明文） |
 | GET | `/api/v1/admin/skills` | 系统技能列表 |
 | PUT | `/api/v1/admin/skills/{id}/enabled` | 系统技能启停 |
 | PUT | `/api/v1/admin/skills/{id}/force-disable` | 强制停用（压过用户覆盖） |
+
+> 系统 MCP 的 `/admin/mcp/servers*` 接口**当前未实现**（旧文档误列）；M5 只提供密钥本体管理，
+> 系统 MCP 的 `secret:` 引用通过运维脚本/数据库配置，管理员自建 MCP 可直接使用。
 
 > 管理端接口要求 `users.role='admin'`，越权返回 403。管理员由运维脚本 `scripts/grant_admin.py` 设置，注册流程不自动提权。
 
@@ -240,6 +249,28 @@ Authorization: Bearer <access_token>
 - 本服务只做 A2A 出站 Client，不提供入站 Server；
 - `enabled` 恒 `false`，`card_url` / `jsonrpc_url` 恒为空字符串，`auth_type` / `card_security` 恒 `none`；
 - 五个字段保留只为兼容前端契约，不表示可被调用的 A2A 地址。
+
+### 2.14 审计日志
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/audit-logs` | 当前用户的审计记录（固定 `actor_type=user` + 自己），支持 `action`、`resource_type`、`start`、`end`、`cursor` |
+| GET | `/api/v1/admin/audit-logs` | 管理员全局检索，额外支持 `actor_type`、`actor_id`、`resource_id` |
+
+响应：`{items, next_cursor, has_more}`，按 `created_at DESC, id DESC` 排序；游标不透明。
+普通用户访问 `/admin/*` 返回 403。
+
+### 2.15 平台密钥
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/v1/admin/secrets` | 列表（`enabled` 可过滤；只回 name/description/enabled/时间） |
+| POST | `/api/v1/admin/secrets` | 创建 `{name,value,description}`；无 `CAPABILITY_SECRET_KEY` → 503 `secret_store_unavailable` |
+| PATCH | `/api/v1/admin/secrets/{name}` | 轮换 `value`、改描述或启停 |
+| DELETE | `/api/v1/admin/secrets/{name}` | 204；不检查引用 |
+
+`secret:NAME` 引用只允许管理员写入（普通用户 → 422 `secret_ref_not_allowed`），运行时无条件解析；
+接口与审计永不回显明文或密文。
 
 ## 3. 聊天 SSE 契约
 
@@ -302,11 +333,13 @@ data: <单行 JSON>
 | `a2a.artifact` | 远程产出片段 | `task_id`、`a2a_task_id`、`artifact{type,summary,parts,data}` |
 | `a2a.input_required` | 远程要求补充信息 | `task_id`、`a2a_task_id`、`agent`、`agent_detail`、`question`、`input_schema`、`expires_at` |
 | `a2a.auth_required` | 远程要求授权 | `task_id`、`a2a_task_id`、`agent`、`agent_detail`、`scopes`、`authorization_url`、`expires_at` |
-| `approval.required` | 需要人工确认 | `approval_id`、`tool`、`reason`、`payload` |
+| `approval.required` | 需要人工确认（gate 创建审批时） | `approval_id`、`tool_call_id`、`tool`、`source`、`risk`、`reason`、`payload`、`expires_at` |
+| `run.interrupted` | 图停在审批 gate（M5） | `run_id`、`conversation_id`、`message_id`、`status="interrupted"`、`approvals`（pending 审批 id 列表） |
+| `run.resumed` | 审批决定后恢复执行（M5） | `run_id`、`conversation_id`、`status="running"` |
 | `skill.activated` | 本轮技能激活 | `skill_id`、`slug`、`name`、`scope`、`estimated_tokens` |
 | `memory.saved` | 记忆保存成功 | `memory_id`、`kind`、`action`、`preview` |
 | `notice` | 能力降级/提示 | `level`、`code`、`message` |
-| `message.done` | 本轮结束 | `run_id`、`message_id`、`usage`、`finish_reason` |
+| `message.done` | 本轮结束 | `run_id`、`message_id`、`usage`、`finish_reason`；审批超时取消时 `finish_reason="canceled"`、`reason="approval_timeout"` |
 | `error` | 流内错误 | `code`、`message`、`request_id` |
 | `ping` | 心跳（也可用注释） | — |
 
@@ -549,7 +582,7 @@ GET /api/v1/instructions
 |---|---|---|
 | `POST /auth/login` | 10 次/5 分钟/IP（`RATE_LIMIT_LOGIN_*` 可调） | 防爆破 |
 | `POST /auth/register` | 5 次/小时/IP（`RATE_LIMIT_REGISTER_*` 可调） | 防批量注册；本地联调用 `scripts/seed_dev_account.py` |
-| `POST /chat/stream` | 20 次/分钟/用户，同时 1 个运行 | 超出返回 429 |
+| `POST /chat/stream` | 30 次/60 秒/用户（`RATE_LIMIT_CHAT_*` 可调），同时 1 个运行 | 超出返回 429 `rate_limited`，`details.retry_after_seconds` 为建议重试秒数 |
 | `POST /agents` | 30 次/小时/用户 | 管理操作 |
 | `POST /mcp/servers` | 30 次/小时/用户 | 管理操作 |
 | `POST /mcp/servers/{id}/check` | 10 次/小时/用户 | 连接测试 |
@@ -660,11 +693,11 @@ GET /api/v1/instructions
 
 ### 7.8 运行恢复端点
 
-`POST /runs/{id}/resume` 在 M1 始终拒绝，错误码统一为 `409 run_not_resumable`：
+`POST /runs/{id}/resume` 仍保留占位，恒返回 `409 run_not_resumable`：
 
-- 运行不是 `interrupted` → 409 `run_not_resumable`；
-- 运行是 `interrupted` 但 M1 尚未接入 interrupt 工具 → 409 `run_not_resumable`；
-- 前端按「恢复能力未上线」展示，不要当致命错误反复重试。
+- M5 的审批恢复由 `POST /approvals/{id}/decision` 自动调度 `Command(resume=...)`，不需要前端点击恢复；
+- `GET /runs/{id}` 的 `pending` 字段会给出待处理审批/远程任务；
+- 通用 resume（ask_user 类工具）留待后续里程碑。
 
 ### 7.9 `message.done` 的实际字段
 
@@ -765,3 +798,43 @@ GET /api/v1/instructions
 - **出站（M2，已实现）**：`/api/v1/agents*` 注册/刷新/健康检查、`send_message` 工具、`/api/v1/tasks*` 任务查询与动作、SSE `a2a.*` 事件；协议层已迁移到 `a2a-sdk` 1.3.0，对外契约不变；
 - **入站（M3，已取消）**：本服务不发布 Agent Card、不暴露 JSON-RPC 端点；`/a2a` 与 `/a2a/.well-known/agent-card.json` 返回 404；
 - 需求变更记录见 [feedback/2026-11-10-requirement-change-outbound-only.md](feedback/2026-11-10-requirement-change-outbound-only.md)。
+
+## 10. M5 审批与安全加固实现状态（2026-11-10）
+
+### 10.1 审批链路（行为变化）
+
+- 审批由图的独立 `approval_gate` 节点创建并 `interrupt()` 挂起；一轮多个待审工具只挂起一次；
+- `POST /approvals/{id}/decision` 在「该 run 已无 pending 审批」时调度 `Command(resume=...)`，
+  `resumed=true` 表示恢复任务已调度（不是同步完成）；
+- 图挂起时 run → `interrupted`，内容已落库但 `messages.status` 保持 `streaming`（未终态）；
+- 审批超时：approval → `expired`，run → `canceled`，发
+  `message.done(finish_reason="canceled", reason="approval_timeout")`；
+- 取消 interrupted run → 终态 canceled，并用专用 halt gate 清理 checkpoint，同一会话可继续发消息。
+
+### 10.2 新事件与 SSE 生命周期
+
+- `run.interrupted`（非终态）：`run_id`、`conversation_id`、`message_id`、`status`、`approvals`；
+  收到后 **SSE 保持连接**（按 D8，空闲 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭）；
+- `run.resumed`（非终态）：审批决定后恢复执行；
+- 断线后 `GET /runs/{id}/events?after_seq=` 回放并继续跟随；
+- `POST /runs/{id}/resume` 仍为占位（409），审批恢复无需调用它。
+
+### 10.3 安全能力
+
+| 能力 | 行为 |
+|---|---|
+| 聊天限流 | 30 次/60s/用户（可配），429 `rate_limited` + `details.retry_after_seconds` |
+| 注入检测 | 命中规则写审计 `security.injection_suspected`，并在本轮 system prompt 追加安全提醒；不硬拦输入 |
+| 外部内容包裹 | MCP/A2A/知识库/技能文件结果包 `<untrusted source="...">`；知识库「未找到/错误」系统文案不包 |
+| 输出过滤 | 高置信密钥打码为 `***`、剥离危险 HTML；命中写审计 `security.output_redacted`；已发出的 delta 不回溯 |
+| 平台密钥 | `/admin/secrets` CRUD；`secret:NAME` 仅管理员可写、运行时无条件解析；接口/审计无明文 |
+
+### 10.4 前端契约变更清单（M5）
+
+1. 收到 `approval.required` 后，等待 `run.interrupted`（run=`interrupted`），**不会**再收到
+   `message.done(finish_reason="interrupted")`；
+2. 审批决定后监听 `run.resumed` 与后续 `message.delta`/`message.done`；断线用事件回放续接；
+3. 审批超时：`message.done.finish_reason="canceled"`、`reason="approval_timeout"`；
+4. 新端点：`GET /audit-logs`、`GET /admin/audit-logs`、`/admin/secrets` CRUD；
+5. 聊天 429：`rate_limited`，`details.retry_after_seconds`；
+6. 多审批：每次决定可能返回 `resumed=false` + `resume_error="本轮还有其他审批待处理"`，属正常。

@@ -369,17 +369,20 @@ CREATE INDEX ix_knowledge_chunks_metadata
 |---|---|---|---|
 | `id` | uuid | PK | |
 | `run_id` | uuid | FK runs, cascade | 关联执行 |
+| `tool_call_id` | varchar(128) | null | M5：模型 tool_call id，恢复重放幂等键 |
 | `a2a_task_id` | uuid | FK a2a_tasks (set null) | 若审批针对远程调用 |
 | `tool_name` | varchar(128) | not null | 待执行工具 |
 | `reason` | text | not null | 为什么需要审批 |
 | `payload` | jsonb | not null | 待确认的调用参数 |
-| `status` | varchar(16) | not null default 'pending' | `pending` / `approved` / `rejected` / `expired` |
+| `status` | varchar(16) | not null default 'pending' | `pending` / `approved` / `rejected` / `expired` / `canceled` |
 | `decided_by` | uuid | FK users (set null) | 审批人 |
 | `decision_note` | text | not null default '' | 审批意见 |
 | `expires_at` | timestamptz | null | 超时时间 |
 | `created_at` / `decided_at` | timestamptz | not null / null | |
 
-索引：`(status, created_at)`、`(run_id)`。
+索引：`(status, created_at)`、`(run_id)`；M5 部分唯一索引
+`ux_approvals_run_tool_call (run_id, tool_call_id) WHERE tool_call_id IS NOT NULL`
+（恢复重放时复用同一条审批）。
 
 ### 4.11 `audit_logs`
 
@@ -528,8 +531,24 @@ CREATE INDEX ix_mcp_servers_owner ON mcp_servers (owner_user_id, enabled);
 | `users` | 新增 `role varchar(16) not null default 'user' check ('user','admin')` | 管理端鉴权 |
 | `runs` | 新增 `capabilities jsonb not null default '{}'` | 本轮显式选择的技能/MCP，供审计与回放 |
 | `tool_invocations` | 新增 `source varchar(16) not null default 'native'`、`source_id varchar(128) null` | `source ∈ native/mcp/a2a/knowledge/skill` |
+| `approvals` | 新增 `tool_call_id varchar(128) null` + 部分唯一索引 `(run_id, tool_call_id)` | M5 恢复幂等；`status` 增加 `canceled` |
 
 `tool_invocations` 补索引 `(source, created_at desc)`。
+
+### 4.19 `platform_secrets`（M5 平台密钥）
+
+| 字段 | 类型 | 约束 | 说明 |
+|---|---|---|---|
+| `id` | uuid | PK | |
+| `name` | varchar(64) | unique, not null | `^[A-Za-z_][A-Za-z0-9_]{0,63}$`，`secret:NAME` 引用 |
+| `description` | varchar(200) | not null default '' | |
+| `ciphertext` | text | not null | AES-GCM `v1:<base64>`，接口永不回显 |
+| `enabled` | boolean | not null default true | 禁用后解析返回空 |
+| `created_by` | uuid | FK users (set null) | |
+| `created_at` / `updated_at` | timestamptz | not null | |
+
+M5 只存本表，管理员通过 `/api/v1/admin/secrets` 管理；运行时 `secret:NAME` 无条件解析
+（写入时按提交者角色限制，普通用户只能用 `env:`）。
 
 ## 5. 向量检索设计
 
@@ -644,7 +663,12 @@ uv run alembic current
 uv run alembic history
 ```
 
-> 当前仓库尚未包含 `alembic/env.py` 与迁移脚本，以上命令在 M1 编码阶段补齐后可用。
+M5 新增迁移：
+
+| revision | 内容 |
+|---|---|
+| `9c1d4e7a2b60` | `platform_secrets` 表 |
+| `2d8f6a1c3e70` | `approvals.tool_call_id` + 部分唯一索引 |
 
 ## 9. 数据生命周期
 

@@ -1894,7 +1894,7 @@
         },
         "responses": {
           "200": {
-            "description": "Server-Sent Events 流，`Content-Type: text/event-stream`。\n\n**事件顺序**：`conversation.created`（仅新会话）→ `run.started` → `message.created` → `message.started` → `message.delta`（0..n）→ `message.done`；致命错误只发送 `error` 并关闭流。\n\n**帧格式**：`id: <seq>`、`event: <事件名>`、`data: <JSON>`，心跳为注释帧 `: ping`（每 15 秒，不占 `seq`）。`seq` 从 1 开始单调递增；`message.delta` 不落库，事件回放的 `seq` 允许跳号。\n\n**幂等**：相同 `conversation_id + client_message_id` 再次请求时返回同一 run 的事件回放（HTTP 200，`X-Run-ID` 不变，`seq` 从 1 开始），不会创建新消息。\n\n**断开**：客户端断开不会取消运行；用 `GET /runs/{id}` 与 `GET /runs/{id}/events?after_seq=` 恢复。M1 不保证 `message.delta` 的部分文本恢复。\n\n**事件 data 关键字段**：`conversation.created` → `conversation_id`、`title`；`run.started` → `run_id`、`conversation_id`、`user_message_id`、`client_message_id`、`model`、`reasoning_effort`；`message.created` → `message_id`、`role`；`message.started` → `message_id`；`message.delta` → `message_id`、`delta`；`message.done` → `run_id`、`message_id`、`conversation_id`、`usage`、`finish_reason`、`model`、`first_token_ms`、`duration_ms`、`active_duration_ms`、`citations`、`artifacts`、`reasoning`；`error` → `code`、`message`、`request_id`。完整字段与示例见 `docs/api.md` §3.3、§7.3、§7.9。",
+            "description": "Server-Sent Events 流，`Content-Type: text/event-stream`。\n\n**事件顺序**：`conversation.created`（仅新会话）→ `run.started` → `message.created` → `message.started` → `message.delta`（0..n）→ `message.done`；致命错误只发送 `error` 并关闭流。\n\n**HITL（M5）**：需要审批时插入 `approval.required` → `run.interrupted`（非终态，SSE 保持连接，空闲 15 分钟后关闭）；审批决定后 `run.resumed` → 后续 `message.delta` → `message.done`。审批超时取消时 `message.done.finish_reason=canceled`、`reason=approval_timeout`。\n\n**帧格式**：`id: <seq>`、`event: <事件名>`、`data: <JSON>`，心跳为注释帧 `: ping`（每 15 秒，不占 `seq`）。`seq` 从 1 开始单调递增；`message.delta` 不落库，事件回放的 `seq` 允许跳号。\n\n**幂等**：相同 `conversation_id + client_message_id` 再次请求时返回同一 run 的事件回放（HTTP 200，`X-Run-ID` 不变，`seq` 从 1 开始），不会创建新消息。\n\n**断开**：客户端断开不会取消运行；用 `GET /runs/{id}` 与 `GET /runs/{id}/events?after_seq=` 回放并续接（含审批挂起前后的全部事件）；已发出的 delta 不回溯，挂起时已产出的内容会落库。\n\n**事件 data 关键字段**：`conversation.created` → `conversation_id`、`title`；`run.started` → `run_id`、`conversation_id`、`user_message_id`、`client_message_id`、`model`、`reasoning_effort`；`message.created` → `message_id`、`role`；`message.started` → `message_id`；`message.delta` → `message_id`、`delta`；`message.done` → `run_id`、`message_id`、`conversation_id`、`usage`、`finish_reason`、`model`、`first_token_ms`、`duration_ms`、`active_duration_ms`、`citations`、`artifacts`、`reasoning`；`error` → `code`、`message`、`request_id`。完整字段与示例见 `docs/api.md` §3.3、§7.3、§7.9。",
             "headers": {
               "X-Run-ID": {
                 "description": "本次（或幂等重放命中的）运行 ID，建连时即返回",
@@ -3055,6 +3055,515 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApprovalDecisionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/audit-logs": {
+      "get": {
+        "tags": [
+          "审计日志"
+        ],
+        "summary": "查询当前用户的审计日志",
+        "description": "固定返回 `actor_type=user` 且 `actor_id` 为当前用户的记录；支持 action、resource_type、时间范围与游标分页。",
+        "operationId": "list_own_audit_logs_api_v1_audit_logs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Type"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "起始时间（含）",
+              "title": "Start"
+            },
+            "description": "起始时间（含）"
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "结束时间（不含）",
+              "title": "End"
+            },
+            "description": "结束时间（不含）"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit-logs": {
+      "get": {
+        "tags": [
+          "审计日志"
+        ],
+        "summary": "管理员查询全局审计日志",
+        "description": "按 actor、action、资源与时间范围检索全部用户的操作记录。",
+        "operationId": "list_all_audit_logs_api_v1_admin_audit_logs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "actor_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 16
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor Type"
+            }
+          },
+          {
+            "name": "actor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Actor Id"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Action"
+            }
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Type"
+            }
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Id"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "起始时间（含）",
+              "title": "Start"
+            },
+            "description": "起始时间（含）"
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "结束时间（不含）",
+              "title": "End"
+            },
+            "description": "结束时间（不含）"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogPage"
                 }
               }
             }
@@ -6083,6 +6592,563 @@
               "type": "string",
               "format": "uuid",
               "title": "Memory Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/secrets": {
+      "get": {
+        "tags": [
+          "平台密钥"
+        ],
+        "summary": "列出平台密钥",
+        "description": "只返回名称、描述、启用状态与时间；永不返回明文或密文。",
+        "operationId": "list_secrets_api_v1_admin_secrets_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "enabled",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretListOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "平台密钥"
+        ],
+        "summary": "创建平台密钥",
+        "description": "写入时用 `CAPABILITY_SECRET_KEY` 做 AES-GCM 加密；未配置该密钥返回 503 `secret_store_unavailable`。响应不含明文。",
+        "operationId": "create_secret_api_v1_admin_secrets_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/secrets/{name}": {
+      "patch": {
+        "tags": [
+          "平台密钥"
+        ],
+        "summary": "更新平台密钥",
+        "description": "`value` 用于轮换密钥；也可修改描述或启停。",
+        "operationId": "update_secret_api_v1_admin_secrets__name__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SecretUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "平台密钥"
+        ],
+        "summary": "删除平台密钥",
+        "description": "删除不检查引用；引用方解析失败时跳过该凭据头。",
+        "operationId": "delete_secret_api_v1_admin_secrets__name__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
             }
           }
         ],
@@ -12958,6 +14024,94 @@
         ],
         "title": "AttachmentPage"
       },
+      "AuditLogOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "actor_type": {
+            "type": "string",
+            "title": "Actor Type"
+          },
+          "actor_id": {
+            "type": "string",
+            "title": "Actor Id"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "resource_type": {
+            "type": "string",
+            "title": "Resource Type"
+          },
+          "resource_id": {
+            "type": "string",
+            "title": "Resource Id"
+          },
+          "detail": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Detail"
+          },
+          "request_id": {
+            "type": "string",
+            "title": "Request Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "actor_type",
+          "actor_id",
+          "action",
+          "resource_type",
+          "resource_id",
+          "detail",
+          "request_id",
+          "created_at"
+        ],
+        "title": "AuditLogOut"
+      },
+      "AuditLogPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AuditLogOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor",
+            "description": "下一页游标；`has_more=false` 时为 null"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "has_more"
+        ],
+        "title": "AuditLogPage"
+      },
       "Body_import_skill_api_v1_skills_import_post": {
         "properties": {
           "file": {
@@ -15957,6 +17111,129 @@
           "version"
         ],
         "title": "RunWorkflowOut"
+      },
+      "SecretCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+            "title": "Name"
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Value",
+            "description": "明文只用于写入，不回显"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Description",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "value"
+        ],
+        "title": "SecretCreateRequest"
+      },
+      "SecretListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SecretOut"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "SecretListOut"
+      },
+      "SecretOut": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "enabled",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "SecretOut"
+      },
+      "SecretUpdateRequest": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "title": "SecretUpdateRequest"
       },
       "SkillCatalogListOut": {
         "properties": {

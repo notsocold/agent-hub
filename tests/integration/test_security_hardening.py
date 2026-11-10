@@ -122,7 +122,7 @@ async def test_output_redacted(client: httpx.AsyncClient, monkeypatch) -> None:
     headers = auth_headers(registered["access_token"])
     model = make_scripted_model([{"text": "你的 key 是 sk-abcdefghijklmnop1234 请保管"}])
     monkeypatch.setattr(chat_service, "build_chat_model", lambda settings: model)
-    run_id, events = await collect_sse(client, headers=headers, payload={"message": "给我密钥"})
+    _run_id, events = await collect_sse(client, headers=headers, payload={"message": "给我密钥"})
     assert events[-1][0] == "message.done"
     done_text = events[-1][1]
     conversation_id = next(

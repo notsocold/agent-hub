@@ -152,13 +152,22 @@ sequenceDiagram
 - 入站任务与用户发起的 run 共用图，但通过 `source=user|a2a` 区分来源，避免审计混淆；
 - 入站默认只暴露只读/低风险技能；写操作技能需显式开启并走审批。
 
-### 4.4 审批（HITL）
+### 4.4 审批（HITL，M5 已实现）
 
 - 工具或远程 Agent 声明 `requires_approval=true`；
-- 图内调用 `interrupt()` 暂停，返回审批载荷；
-- `modules/approvals` 创建工单，前端展示 `approval.required` 事件；
-- 用户批准/拒绝后，服务端用 `Command(resume=...)` 恢复图执行；
-- 超时未处理的工单由定时任务标记 `expired`，并让 run 进入 `canceled`。
+- 模型带 `tool_calls` 后进入独立的 `approval_gate` 节点：按 `(run_id, tool_call_id)` 幂等创建审批记录，
+  发 `approval.required`，然后调用**一次** `interrupt()` 挂起（一轮多个待审工具只挂起一次，
+  全部决定后才恢复）；
+- 用户批准/拒绝后，`POST /approvals/{id}/decision` 落库决定；当该 run 已无 pending 审批时，
+  后台任务以 `Command(resume=...)` 恢复同一条 run（发 `run.resumed`），继续输出 `message.delta`；
+- 图挂起时 run → `interrupted`，发非终态 `run.interrupted`；SSE 按 D8 保持连接，
+  空闲 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭，前端用事件回放续接；
+- 超时未处理：定时巡检把审批置 `expired`，run → `canceled`，发
+  `message.done(finish_reason="canceled", reason="approval_timeout")`；
+- 取消/超时后用**专用 halt gate** 清理 checkpoint 挂起（补「已取消」ToolMessage），
+  同一会话线程可继续对话；
+- 审批 gate 独立成节点是为了避免工具节点因 `interrupt()` 恢复而重跑导致副作用重复
+  （M5 实测：gate 重跑 2 次、tools 只执行 1 次）。
 
 ## 5. 状态模型
 
@@ -245,15 +254,19 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 
 ### 8.3 取消
 
-- 用户取消 → 取消当前 run 的 asyncio task → 向 LangGraph 发送取消信号 → 对进行中的 A2A Task 调 `tasks/cancel`；
+- `running/queued`：取消当前 run 的 asyncio task，任务收尾时发终态；对进行中的 A2A Task 调 `tasks/cancel`；
+- `interrupted`（等待审批）：条件 `UPDATE` 抢占 `interrupted→canceled`，写 assistant 终态、清理 pending/approved 审批，
+  发 `message.done(finish_reason="canceled")`，再调度 halt gate 清理 checkpoint；
 - 远程不支持取消时，标记本地 `canceled` 并忽略后续结果；
 - 所有取消动作写审计日志。
 
 ### 8.4 断线恢复
 
 - 前端 SSE 断开不影响后端执行（默认策略）；
-- 前端重连后通过 `GET /api/v1/runs/{run_id}` 获取最终状态，或 `GET /api/v1/runs/{run_id}/events` 回放（规划）；
-- 图执行状态由 checkpointer 保证，进程崩溃后可基于 thread 恢复（需要 run 状态对账任务）。
+- 前端重连后用 `GET /api/v1/runs/{run_id}` 获取状态，或 `GET /api/v1/runs/{run_id}/events?after_seq=` 回放（已实现）；
+- 图执行状态由 checkpointer 保证；M5 的审批恢复不依赖进程内 waiter，决定接口即可触发
+  `Command(resume=...)`（同进程/同线程 checkpoint 均可恢复）；
+- 进程启动时扫描 interrupted run 并保活留 M6（当前需要用户重新触发决定/取消）。
 
 ## 9. 安全边界
 
@@ -267,9 +280,10 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 | 能力凭据 | MCP 请求头/Token 用 AES-GCM 加密存储，接口只回脱敏 hint；日志脱敏 |
 | 技能包 | 只接受文本文件；zip 路径穿越/符号链接/压缩炸弹校验；大小、数量、正文 token 上限 |
 | 长期记忆 | 按用户命名空间隔离；禁止保存敏感类别；用户可删除/清空/导出；管理员无正文读取接口 |
-| 工具执行 | 白名单工具；参数 schema 校验；高风险动作审批；超时 |
-| 提示词注入 | 检索内容与远程结果作为不可信数据，提示词明确隔离；输出过滤 |
-| 密钥管理 | `.env` 不进仓库；数据库只存密钥引用/加密值；日志脱敏 |
+| 工具执行 | 白名单工具；参数 schema 校验；高风险动作审批；gate 在执行前复查审批结果；超时 |
+| 聊天限流 | 按用户滑动窗口（默认 30 次/60s），429 `rate_limited`；进程内实现，多实例留 M6 |
+| 提示词注入 | 用户输入规则检测（审计 + 本轮系统提示加固，不硬拦）；MCP/A2A/知识库/技能文件结果包 `<untrusted>`；模型输出密钥打码与危险 HTML 剥离 |
+| 密钥管理 | `.env` 不进仓库；MCP/A2A 凭据 AES-GCM 或 `env:` 引用；M5 新增 `platform_secrets`（管理员 CRUD，`secret:NAME` 引用，接口永不回显明文/密文）；日志脱敏 |
 | 数据 | 消息内容可能含隐私，按保留策略清理；审计只存摘要 |
 
 ## 10. 可观测性
