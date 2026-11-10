@@ -34,10 +34,10 @@
 ```
 TEST_DATABASE_URL=postgresql+psycopg://devuser:devpass@localhost:54321/agent_hub_test \
   .venv/bin/python -m pytest -q
-→ 323 passed, 1 skipped in ~50s
+→ 339 passed, 1 skipped in ~46s
 ```
 
-- 基线 M1.5/M2 时期 108 项 → 现在 323 项通过；
+- 基线 M1.5/M2 时期 108 项 → 现在 **339 项通过**；
 - 唯一的 skip 是语义评测组（需真实 Embedding key，见 §4.1）；
 - **连续 10 次全量运行 0 失败**（修复时钟回退问题后，见 §5）。
 
@@ -134,6 +134,27 @@ assistant.citations = [同上]      ← 刷新后仍在（落库生效）
 - S3 的 `404` 状态码兜底会吞掉 `NoSuchBucket` 等存储故障，已收窄为仅按 `Error.Code` 判定；
 - `tool.result` 在工具异常分支存在未绑定变量风险（`UnboundLocalError` 会打断整轮），已初始化并加回归用例。
 
+### 5.3 最终整分支审查的修复轮（commit `82bfade`）
+
+全分支审查给出 0 Critical / 6 Important，全部在同一轮修复：
+
+| # | 问题 | 修复 |
+|---|---|---|
+| 1 | `auto` 模式在**生产**也会静默回退 fake embedding，违反 spec §8.1 | `validate_runtime()` 在 prod 缺可用 key 时拒绝启动（`EMBEDDING_PROVIDER=fake` 是运维显式选择，仍然允许）；`auto` 分支 prod 不再回退 fake |
+| 2 | 上传先 `read()` 整个请求体再判长度，超大文件可打满内存 | 改为 `read(max_bytes + 1)`，与附件模块一致，超限立即 413 |
+| 3 | 超长 `filename` / 派生 `title` 触发 `DataError` → **500** | `_validate_upload` 增加 255/200 字符校验，返回 422 |
+| 4 | 非法 `EMBEDDING_BASE_URL`（`httpx.InvalidURL` 非 `HTTPError` 子类）与缺 key 的 `ValueError` 在检索上变成 **500** | 一并包装/映射为 503 `service_unavailable` |
+| 5 | 时钟修复漏了两处 reasoning 耗时 | 改用 `elapsed_ms()`；全仓 grep 只剩 `timeutil.py` 与 `a2a/taskstate.py` |
+| 6 | `docs/openapi.json` 仍是 M2 版本，缺全部 M4 端点 | 重新导出并提交；`grep -c '"/api/v1/knowledge'` = 5 |
+
+并入的两个低成本项：`retry_document` 加行锁（消除与 rebuild 的写冲突窗口）；`_failure_message` 只透传中文文案，英文 `ValueError` 走通用中文兜底。
+
+修复后：**339 passed, 1 skipped**（新增 16 例）、连续 2 次全量稳定；`ruff check app/ tests/ scripts/` 通过。
+
+复审残留 2 个 Low（已记录，未在本轮处理）：
+- 派生 `title` 校验对「显式短 title + 201–255 字符 filename」过度拦截（该组合修复前可成功）；
+- `except (EmbeddingUnavailableError, ValueError)` 恰好包住 `provider.embed`，未来若 `embed` 内部出现编程性 `ValueError` 会被误报成 503。
+
 ## 6. 给前端的契约说明
 
 ### 6.1 端点
@@ -169,7 +190,7 @@ assistant.citations = [同上]      ← 刷新后仍在（落库生效）
 1. **必须执行迁移**：`alembic upgrade head`。开发库没跑迁移时，上传会 500（`relation "knowledge_documents" does not exist`）——本次联调就踩到了这一点，测试用 `create_all` 建表所以掩盖了它。
 2. pgvector 扩展：`CREATE EXTENSION IF NOT EXISTS vector`（迁移里会执行，需要 superuser 或已预装 `postgresql-18-pgvector`）。
 3. 存储后端：`STORAGE_BACKEND=local`（默认，`KNOWLEDGE_DIR`）或 `s3`（`S3_*` 六项）。
-4. Embedding：`EMBEDDING_PROVIDER=auto` 时，key 为空或命中占位符规则都会回退 fake；生产务必配置真实 key，否则检索是词面匹配。
+4. Embedding：`EMBEDDING_PROVIDER=auto` 时，**dev/test** 下 key 为空或命中占位符规则会回退 fake；**prod 下不会静默降级**——缺少可用 key 会在启动时直接报错（`RuntimeError`）。若生产确实要跑 fake（例如纯演示环境），必须显式设置 `EMBEDDING_PROVIDER=fake`。
 
 ## 8. 已知限制
 
@@ -180,3 +201,5 @@ assistant.citations = [同上]      ← 刷新后仍在（落库生效）
 | PDF 只提取文本层 | 扫描件报「可能是扫描件」，中文 CID 字体提取质量取决于 pypdf | 不做 OCR（M4 非目标） |
 | 检索的 owner 过滤是 join 后过滤 | 数据量增大后 HNSW 可能返回少于 top_k | 已记录，容量优化列入 M6 |
 | 重建会让历史 `chunk_id` 失效 | 旧引用的精确跳转失效 | `Citation` 是快照，前端按 title 跳页，展示不受影响 |
+| 派生 title 长度校验对「短显式 title + 长 filename」过度拦截 | 该组合返回 422（修复前可入库） | 复审残留 Low，后续改为「仅未显式提供 title 时校验派生值」 |
+| `search` 的 `except (EmbeddingUnavailableError, ValueError)` 覆盖面略宽 | 未来若 `embed` 内部抛编程性 `ValueError` 会被误报成 503 | 复审残留 Low，当前无实际触发路径 |
