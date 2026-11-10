@@ -61,7 +61,7 @@ _RULES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
         "role_override",
         "medium",
         re.compile(
-            r"(你现在是|从现在开始你是|从此你是|扮演|pretend\s+(to\s+be|you\s+are)|act\s+as)",
+            r"(扮演|pretend\s+(to\s+be|you\s+are)|act\s+as)",
             re.IGNORECASE,
         ),
     ),
@@ -83,7 +83,8 @@ _RULES: tuple[tuple[str, str, re.Pattern[str]], ...] = (
         "tool_coercion",
         "high",
         re.compile(
-            r"(绕过|跳过|忽略|禁用|bypass|disable|skip).{0,16}(审批|确认|approval|confirm)",
+            r"(绕过|跳过|忽略|禁用|bypass|disable|skip).{0,16}(审批|确认|approval|confirm)"
+            r"|(直接|立即|马上).{0,12}(调用|执行|删除|运行|run|execute|delete)",
             re.IGNORECASE,
         ),
     ),
@@ -140,9 +141,8 @@ def scan_injection(text: str) -> list[Finding]:
 def wrap_untrusted(source: str, text: str) -> str:
     """把外部内容包成 ``<untrusted>``；转义内部伪造的闭合/开启标签。"""
     safe_source = re.sub(r"[^A-Za-z0-9_-]", "", source or "") or "external"
-    escaped = text.replace("</untrusted>", "&lt;/untrusted&gt;").replace(
-        "<untrusted", "&lt;untrusted"
-    )
+    escaped = re.sub(r"</untrusted\s*>", "&lt;/untrusted&gt;", text, flags=re.IGNORECASE)
+    escaped = re.sub(r"<untrusted", "&lt;untrusted", escaped, flags=re.IGNORECASE)
     return f'<untrusted source="{safe_source}">\n{escaped}\n</untrusted>'
 
 

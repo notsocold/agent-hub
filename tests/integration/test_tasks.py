@@ -574,3 +574,51 @@ async def test_chat_approval_for_requires_approval(client: httpx.AsyncClient, mo
     # 审批拒绝：不产生 a2a 调用与任务行。
     listing = await client.get("/api/v1/tasks", headers=headers)
     assert listing.json()["stats"]["total"] == 0
+
+
+async def test_cancel_working_task_resolves_headers(
+    client: httpx.AsyncClient, monkeypatch
+) -> None:
+    """取消进行中的远程任务：headers 必须是已解析的 dict（回归 _resolved_headers async 化）。"""
+    from sqlalchemy import select
+
+    from app.db.models.remote import A2aTask, RemoteAgent
+    from app.db.models.user import User
+    from app.db.session import get_session_factory
+    from app.modules.tasks import service as tasks_service
+
+    _register_fake()
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    await _create_agent(client, headers, slug="fake")
+
+    captured: dict = {}
+
+    class FakeClient:
+        def __init__(self, url: str, headers: dict, card: dict | None = None) -> None:
+            captured["headers"] = headers
+
+        async def cancel_task(self, task_id: str) -> None:
+            captured["task_id"] = task_id
+
+    monkeypatch.setattr(tasks_service, "A2aClient", FakeClient)
+
+    async with get_session_factory()() as session:
+        user = await session.scalar(
+            select(User).where(User.id == uuid.UUID(registered["user"]["id"]))
+        )
+        agent = await session.scalar(select(RemoteAgent).where(RemoteAgent.slug == "fake"))
+        assert user is not None and agent is not None
+        task = A2aTask(
+            a2a_task_id="remote-1",
+            remote_agent_id=agent.id,
+            state="working",
+            request={"tool": "send_message", "args": {}, "summary": "进行中"},
+        )
+        session.add(task)
+        await session.commit()
+        await session.refresh(task)
+        detail = await tasks_service.cancel_task_action(session, user, task.id)
+    assert detail.state == "canceled"
+    assert captured["task_id"] == "remote-1"
+    assert isinstance(captured["headers"], dict)

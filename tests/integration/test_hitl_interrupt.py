@@ -122,6 +122,14 @@ async def test_interrupt_then_approve_resumes_and_executes_once(
     assert names[-1] == "message.done"
     assert events[-1][1]["finish_reason"] == "stop"
     assert approvals
+    seqs = [data["seq"] for _, data in events if "seq" in data]
+    assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)
+    resumed_seq = next(data["seq"] for name, data in events if name == "run.resumed")
+    interrupted_seq = next(
+        data["seq"] for name, data in events if name == "run.interrupted"
+    )
+    assert resumed_seq > interrupted_seq
+    assert sum(1 for name, _ in events if name == "message.done") == 1
     # 工具只执行一次（审批通过后），且整轮成功
     assert calls["tools_call"] >= 1
     async with get_session_factory()() as session:
@@ -169,6 +177,10 @@ async def test_decision_before_suspend_still_completes(
     events = await _wait_terminal(str(result.run_id), on_event=on_event)
     assert events[-1][0] == "message.done"
     assert events[-1][1]["finish_reason"] == "stop"
+    seqs = [data["seq"] for _, data in events if "seq" in data]
+    assert seqs == sorted(seqs)
+    assert len(set(seqs)) == len(seqs)
+    assert sum(1 for name, _ in events if name == "message.done") == 1
     async with get_session_factory()() as session:
         rows = list(
             (

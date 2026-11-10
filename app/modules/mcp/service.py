@@ -317,8 +317,8 @@ async def update_server(
         server.auto_inject = payload.auto_inject
     if payload.headers is not None:
         stored_headers, hint = normalize_headers(
-        payload.headers, allow_platform_secret=user.role == "admin"
-    )
+            payload.headers, allow_platform_secret=user.role == "admin"
+        )
         server.headers = stored_headers
         server.credentials_hint = hint
     await write_audit(

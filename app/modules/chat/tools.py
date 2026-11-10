@@ -191,7 +191,8 @@ class ToolRunner:
             status = "error"
             error = str(exc)[:500]
             summary = error[:200]
-            content = f"工具 {name} 执行失败：{error}"
+            # 远程错误文本同样是外部数据，必须与成功结果一样包裹。
+            content = self._wrap_external(name, source, f"工具 {name} 执行失败：{error}")
         await self._finish_invocation(invocation, status, error, started)
         result_payload: dict[str, Any] = {
             "tool_call_id": tool_call_id,
@@ -539,7 +540,7 @@ class ToolRunner:
                 return content
             label = "knowledge"
         elif name == "read_skill_file":
-            label = "skill"
+            label = "skill_file"
         if label is None or not content:
             return content
         return wrap_untrusted(label, content)

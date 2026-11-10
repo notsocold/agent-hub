@@ -187,7 +187,6 @@ async def decide(
     approval.decided_by = user.id
     approval.decided_at = now
     approval.decision_note = payload.note
-    run = await db.get(Run, approval.run_id)
     await write_audit(
         db,
         actor_type="user",
@@ -201,6 +200,9 @@ async def decide(
     resumed = False
     resume_error: str | None = None
     run = await db.get(Run, approval.run_id)
+    if run is not None:
+        # session 配置 expire_on_commit=False，显式刷新以读取决定后的真实状态。
+        await db.refresh(run)
     if run is None:
         resume_error = "运行不存在"
     elif run.status in {"succeeded", "failed", "canceled"}:
@@ -255,20 +257,18 @@ async def expire_pending(limit: int = 200) -> list[uuid.UUID]:
         )
         if not ids:
             return []
-        await db.execute(
+        result = await db.execute(
             update(Approval)
             .where(Approval.id.in_(ids), Approval.status == "pending")
             .values(status="expired")
+            .returning(Approval.id, Approval.run_id)
         )
-        run_ids = list(
-            (
-                await db.execute(select(Approval.run_id).where(Approval.id.in_(ids)))
-            ).scalars()
-        )
+        expired_pairs = [(row[0], row[1]) for row in result.all()]
         await db.commit()
     canceled: list[uuid.UUID] = []
     from app.modules.chat import service as chat_service
 
+    run_ids = [run_id for _, run_id in expired_pairs]
     for run_id in dict.fromkeys(run_ids):
         async with get_session_factory()() as db:
             remaining = await db.scalar(
@@ -280,6 +280,9 @@ async def expire_pending(limit: int = 200) -> list[uuid.UUID]:
             continue
         if await chat_service.cancel_interrupted_run(run_id, reason="approval_timeout"):
             canceled.append(run_id)
+            approval_id = next(
+                (str(aid) for aid, rid in expired_pairs if rid == run_id), ""
+            )
             async with get_session_factory()() as db:
                 await write_audit(
                     db,
@@ -288,7 +291,11 @@ async def expire_pending(limit: int = 200) -> list[uuid.UUID]:
                     action="approval.timeout_canceled",
                     resource_type="run",
                     resource_id=str(run_id),
-                    detail={"reason": "approval_timeout"},
+                    detail={
+                        "reason": "approval_timeout",
+                        "approval_id": approval_id,
+                        "run_id": str(run_id),
+                    },
                 )
                 await db.commit()
     return canceled

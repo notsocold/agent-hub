@@ -385,7 +385,7 @@ async def cancel_task_action(db: AsyncSession, user: User, task_id: uuid.UUID) -
     if task.a2a_task_id and agent is not None:
         try:
             client = A2aClient(
-                agent.url, headers=_resolved_headers(agent), card=agent.card
+                agent.url, headers=await _resolved_headers(db, agent), card=agent.card
             )
             await client.cancel_task(task.a2a_task_id)
         except A2aError as exc:

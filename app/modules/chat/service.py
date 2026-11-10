@@ -381,6 +381,36 @@ async def _write_security_audit(
         )
 
 
+async def _redact_before_store(run_id: uuid.UUID, content: str) -> str:
+    """落库前统一打码；命中时写安全审计。"""
+    if not get_settings().prompt_guard_redact_output or not content:
+        return content
+    redacted, rules = sanitize_output(content)
+    if not rules:
+        return content
+    async with get_session_factory()() as db:
+        run = await db.get(Run, run_id)
+        conversation = (
+            await db.get(Conversation, run.conversation_id) if run is not None else None
+        )
+    if conversation is not None:
+        await _write_security_audit(
+            actor_id=conversation.user_id,
+            action="security.output_redacted",
+            resource_id=str(run_id),
+            detail={"rules": rules, "fingerprint": content_fingerprint(content)},
+        )
+    return redacted
+
+
+async def _wait_run_task(run_id: uuid.UUID, timeout: float = 10.0) -> None:
+    """等待同一 run 的旧任务收尾（避免跨任务事件 seq 冲突）。"""
+    existing = registry.get(run_id)
+    task = existing.task if existing is not None else None
+    if task is not None and not task.done():
+        await asyncio.wait({task}, timeout=timeout)
+
+
 async def _event_start_seq(run_id: uuid.UUID) -> int:
     async with get_session_factory()() as db:
         value = await db.scalar(select(func.max(RunEvent.seq)).where(RunEvent.run_id == run_id))
@@ -494,7 +524,7 @@ async def prepare_runtime(
         model_input=model_input,
         started_at=run.started_at or _now(),
         started_wall=_now(),
-        first_token_ms=None,
+        first_token_ms=run.first_token_ms if resumed else None,
         content_parts=content_parts,
         reasoning_parts=reasoning_parts,
         usage=usage,
@@ -671,7 +701,7 @@ async def _stream_graph(
                 )
             if chunk.usage_metadata:
                 usage = (
-                    _add_usage(runtime.usage, dict(chunk.usage_metadata))
+                    _add_usage(usage, dict(chunk.usage_metadata))
                     if resumed
                     else dict(chunk.usage_metadata)
                 )
@@ -899,8 +929,7 @@ async def schedule_resume(run_id: uuid.UUID) -> bool:
         if existing is not None and existing.task is not None and not existing.task.done()
         else None
     )
-    start_seq = await _event_start_seq(run_id)
-    publisher = RunEventPublisher(run_id, get_session_factory(), bus, start_seq=start_seq)
+    publisher = RunEventPublisher(run_id, get_session_factory(), bus)
     context = RunContext(run_id=run_id, publisher=publisher)
     registry.start(context, _resume_after_wait(context, wait_task))
     return True
@@ -912,6 +941,8 @@ async def _resume_after_wait(
     """等待首轮任务结束（gate 挂起后 execute_run 返回），再走恢复。"""
     if wait_task is not None:
         await asyncio.wait({wait_task}, timeout=10)
+    # 旧任务已发完 run.interrupted；此时再取 max(seq)，避免 seq 冲突/倒序。
+    context.publisher.seq = await _event_start_seq(context.run_id)
     await resume_after_decision(context)
 
 
@@ -939,6 +970,7 @@ async def resume_after_decision(context: RunContext) -> None:
             snapshot = await graph.aget_state(config)
             if not snapshot.next:
                 # 决定先于挂起：gate 已按 DB 状态继续，回滚抢占即可。
+                logger.warning("恢复时 checkpoint 无挂起，回滚 running→interrupted run_id=%s", run_id)
                 async with get_session_factory()() as db:
                     await db.execute(
                         update(Run)
@@ -1011,7 +1043,7 @@ async def _finalize_waiting_approval(
     """图停在审批 gate：落库部分内容、run→interrupted、发非终态 run.interrupted。"""
     now = _now()
     duration_ms = elapsed_ms(runtime.started_at, now)
-    content = "".join(runtime.content_parts)
+    content = await _redact_before_store(runtime.run_id, "".join(runtime.content_parts))
     usage = _usage_dict(runtime.usage)
     async with get_session_factory()() as db:
         run = await db.get(Run, runtime.run_id)
@@ -1121,7 +1153,11 @@ async def _finalize_canceled(
 ) -> None:
     if context.terminal_emitted:
         return
+    if await _has_terminal_event(context.run_id):
+        context.terminal_emitted = True
+        return
     context.terminal_emitted = True
+    content = await _redact_before_store(context.run_id, content)
     run_id = context.run_id
     publisher = context.publisher
     now = _now()
@@ -1188,7 +1224,11 @@ async def _finalize_failed(
 ) -> None:
     if context.terminal_emitted:
         return
+    if await _has_terminal_event(context.run_id):
+        context.terminal_emitted = True
+        return
     context.terminal_emitted = True
+    content = await _redact_before_store(context.run_id, content)
     run_id = context.run_id
     publisher = context.publisher
     now = _now()
@@ -1462,6 +1502,7 @@ async def cancel_interrupted_run(
             }
         )
 
+    await _wait_run_task(run_id)
     if not await _has_terminal_event(run_id):
         publisher = RunEventPublisher(
             run_id, get_session_factory(), bus, start_seq=await _event_start_seq(run_id)
@@ -1486,7 +1527,10 @@ async def cancel_interrupted_run(
             duration_ms=duration_ms,
             tokens=usage,
         )
-    await halt_run(run_id)
+    try:
+        await halt_run(run_id)
+    except Exception:
+        logger.exception("清理挂起线程失败 run_id=%s", run_id)
     return True
 
 
