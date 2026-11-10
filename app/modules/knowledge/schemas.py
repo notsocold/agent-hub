@@ -38,6 +38,17 @@ class KnowledgeDocumentOut(BaseModel):
     updated_at: datetime
 
 
+class KnowledgeStats(BaseModel):
+    """列表统计（6 个键，可见范围内全量，不受 q/category/status 过滤影响）。"""
+
+    documents: int
+    chunks: int
+    ready: int
+    indexing: int
+    pending: int
+    failed: int
+
+
 class KnowledgeDocumentPage(BaseModel):
     """文档列表：游标分页 + 可见范围全量统计。"""
 
@@ -45,7 +56,7 @@ class KnowledgeDocumentPage(BaseModel):
     next_cursor: str | None
     has_more: bool
     # 6 个键：documents/chunks/ready/indexing/pending/failed。
-    stats: dict[str, int]
+    stats: KnowledgeStats
 
 
 class KnowledgeSearchHitOut(BaseModel):
@@ -104,4 +115,5 @@ __all__ = [
     "KnowledgeSearchHitOut",
     "KnowledgeSearchOut",
     "KnowledgeSearchRequest",
+    "KnowledgeStats",
 ]

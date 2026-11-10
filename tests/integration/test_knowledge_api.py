@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import reset_settings_cache
 from app.core.security import create_access_token
-from app.db.models.knowledge import KnowledgeDocument
+from app.db.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from app.db.models.user import User
 from app.modules.knowledge.embedding import EmbeddingUnavailableError
 from tests.conftest import auth_headers
@@ -168,6 +168,20 @@ async def test_list_stats_shape(
     }
 
 
+async def test_invalid_cursor_returns_422(
+    client: httpx.AsyncClient,
+    auth: dict[str, str],
+    fake_storage: Any,
+    fake_embedding: Any,
+) -> None:
+    response = await client.get(f"{DOCUMENTS_URL}?cursor=bogus", headers=auth)
+
+    assert response.status_code == 422, response.text
+    error = response.json()["error"]
+    assert error["code"] == "validation_error"
+    assert error["message"] == "分页游标无效"
+
+
 async def test_oversize_upload_returns_413(
     client: httpx.AsyncClient,
     auth: dict[str, str],
@@ -221,6 +235,27 @@ async def test_duplicate_upload_returns_200_with_same_id(
     assert first.status_code == 201, first.text
     assert second.status_code == 200, second.text
     assert first.json()["id"] == second.json()["id"]
+    assert await _document_count(db) == 1
+
+
+async def test_concurrent_duplicate_upload_creates_single_row(
+    client: httpx.AsyncClient,
+    auth: dict[str, str],
+    db: AsyncSession,
+    fake_storage: Any,
+    fake_embedding: Any,
+) -> None:
+    """3 并发上传同内容：唯一索引兜底，全部成功且只建一行。"""
+    same = "# 并发\n\n同一份内容只建一行。".encode()
+
+    responses = await asyncio.gather(
+        *[_upload(client, auth, content=same, filename="race.md") for _ in range(3)]
+    )
+
+    assert all(response.status_code in (200, 201) for response in responses), [
+        response.text for response in responses
+    ]
+    assert len({response.json()["id"] for response in responses}) == 1
     assert await _document_count(db) == 1
 
 
@@ -436,6 +471,18 @@ async def test_search_category_filter(
     assert all(hit["category"] == "物流" for hit in hits)
 
 
+async def test_search_excludes_other_users_private_documents(
+    client: httpx.AsyncClient, auth: dict[str, str], seeded_docs: dict
+) -> None:
+    # 检索范围恒为「系统 + 自己」；fake 模式下阈值 0，看 document_id 判断可见性。
+    response = await client.post(SEARCH_URL, json={"query": "私密暗号", "top_k": 5}, headers=auth)
+
+    assert response.status_code == 200, response.text
+    hits = response.json()["hits"]
+    assert hits
+    assert all(hit["document_id"] != str(seeded_docs["other"].id) for hit in hits)
+
+
 # ------------------------------------------------------------------ 重建
 async def test_rebuild_returns_admin_stats_contract(
     client: httpx.AsyncClient, admin_auth: dict[str, str], seeded_docs: dict
@@ -462,6 +509,34 @@ async def test_rebuild_scope_own_means_all_users_private_documents(
     assert response.json()["documents"] == 2
 
 
+async def test_concurrent_rebuild_keeps_chunk_count_consistent(
+    client: httpx.AsyncClient,
+    admin_auth: dict[str, str],
+    seeded_docs: dict,
+    db: AsyncSession,
+) -> None:
+    """两个并发重建：行锁串行化，返回 chunks 与库内实际分块行数一致、无半截数据。"""
+    responses = await asyncio.gather(
+        client.post(REBUILD_URL, json={"scope": "all"}, headers=admin_auth),
+        client.post(REBUILD_URL, json={"scope": "all"}, headers=admin_auth),
+    )
+
+    assert all(response.status_code == 200 for response in responses), [
+        response.text for response in responses
+    ]
+    payloads = [response.json() for response in responses]
+    assert all(payload["documents"] == 3 for payload in payloads)
+    assert all(payload["failed"] == 0 for payload in payloads)
+
+    documents = list((await db.execute(select(KnowledgeDocument))).scalars())
+    stored_chunk_rows = int(await db.scalar(select(func.count()).select_from(KnowledgeChunk)) or 0)
+    # 每个文档的 chunk_count 必须等于库内真实分块数，且与两次返回的 chunks 一致。
+    assert sum(document.chunk_count for document in documents) == stored_chunk_rows
+    assert stored_chunk_rows == sum(document.chunk_count for document in seeded_docs["documents"])
+    assert all(payload["chunks"] == stored_chunk_rows for payload in payloads)
+    assert all(document.status == "ready" for document in documents)
+
+
 async def test_openapi_documents_rebuild_rulings(client: httpx.AsyncClient) -> None:
     schema = (await client.get("/openapi.json")).json()
     operation = schema["paths"]["/api/v1/knowledge/rebuild"]["post"]
@@ -478,3 +553,6 @@ async def test_openapi_documents_rebuild_rulings(client: httpx.AsyncClient) -> N
     assert "chunks" in description
     # 503 是知识库检索的真实错误码，必须进 OpenAPI 响应声明。
     assert "503" in operation["responses"]
+    # stats 的 6 键契约必须在 OpenAPI 组件里可见（而不是退化成 dict[str, int]）。
+    stats_schema = schema["components"]["schemas"]["KnowledgeStats"]
+    assert set(stats_schema["properties"]) == STATS_KEYS
