@@ -8,6 +8,7 @@ from app.api.schemas import ErrorEnvelopeOut
 from app.modules.agents.router import router as agents_router
 from app.modules.approvals.router import router as approvals_router
 from app.modules.attachments.router import router as attachments_router
+from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
 from app.modules.chat.router import router as chat_router
 from app.modules.conversations.router import router as conversations_router
@@ -15,6 +16,7 @@ from app.modules.instructions.router import router as instructions_router
 from app.modules.knowledge.router import router as knowledge_router
 from app.modules.mcp.router import router as mcp_router
 from app.modules.memories.router import router as memories_router
+from app.modules.secrets.router import router as secrets_router
 from app.modules.skills.router import router as skills_router
 from app.modules.system.router import router as system_router
 from app.modules.tasks.router import router as tasks_router
@@ -57,10 +59,12 @@ api_router.include_router(auth_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(conversations_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(chat_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(approvals_router, responses=COMMON_ERROR_RESPONSES)
+api_router.include_router(audit_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(attachments_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(instructions_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(knowledge_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(memories_router, responses=COMMON_ERROR_RESPONSES)
+api_router.include_router(secrets_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(skills_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(mcp_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(agents_router, responses=COMMON_ERROR_RESPONSES)
