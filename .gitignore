@@ -58,3 +58,6 @@ data/test-knowledge/
 
 # SDD 计划工作区（scratch，git 忽略）
 .superpowers/
+
+# Agent 工作树目录（工具生成，避免误提交）
+.agents/
