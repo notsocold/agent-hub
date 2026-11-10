@@ -140,9 +140,13 @@ def _content_text(content: Any) -> str:
 
 
 def _check_capabilities(payload: ChatStreamRequest) -> None:
-    """尚未实现的能力显式拒绝；M1.5 已实现的能力走归属/启用校验。"""
-    if payload.knowledge_categories:
-        raise CapabilityDisabledError("知识库检索将在 M4 提供")
+    """尚未实现的能力显式拒绝；已实现的能力走归属/启用校验。
+
+    ``knowledge_categories`` 的启用门禁（唯一一处）：开关关闭时 403，
+    开启时直接放行（分类只作为 search_knowledge 的默认过滤条件）。
+    """
+    if payload.knowledge_categories and not get_settings().knowledge_enabled:
+        raise CapabilityDisabledError("知识库能力未启用")
     if payload.workflow_id is not None:
         raise ConflictError("工作流能力尚未启用", code="workflow_disabled")
 

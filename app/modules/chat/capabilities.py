@@ -20,10 +20,12 @@ from app.agents.prompts import (
 from app.core.config import get_settings
 from app.core.errors import CapabilityDisabledError, NotFoundError, ValidationFailedError
 from app.db.models.attachment import Attachment
+from app.db.models.knowledge import KnowledgeDocument
 from app.db.models.skill import Skill
 from app.db.models.user import User
 from app.modules.chat.schemas import ChatStreamRequest
 from app.modules.instructions import service as instructions_service
+from app.modules.knowledge.repository import visible_filter
 from app.modules.mcp.service import ChatMcpTool, collect_chat_tools
 from app.modules.memories import service as memories_service
 from app.modules.skills import service as skills_service
@@ -65,6 +67,22 @@ async def validate_chat_selections(db: AsyncSession, user: User, payload: ChatSt
             explicit_servers=list(payload.mcp_servers),
             explicit_tools=list(payload.mcp_tools),
         )
+    # knowledge_categories 不在此校验：启用门禁只有 start_chat 的 _check_capabilities
+    # 一处；开关开启时分类直接随请求写入 run.capabilities，作为 search_knowledge 的
+    # 默认过滤条件（显式工具参数优先）。
+
+
+async def _has_visible_ready_documents(db: AsyncSession, user: User) -> bool:
+    """当前用户是否可见至少一篇 ``ready`` 文档（系统文档 + 本人文档）。
+
+    可见性口径复用检索侧的 :func:`visible_filter`，避免提示词门禁与检索范围漂移。
+    """
+    stmt = (
+        select(KnowledgeDocument.id)
+        .where(KnowledgeDocument.status == "ready", *visible_filter(user))
+        .limit(1)
+    )
+    return await db.scalar(stmt) is not None
 
 
 async def load_attachments(
@@ -222,13 +240,19 @@ async def assemble(
             + "。"
         )
 
-    # 6. 静态提示词预算：先丢低分记忆，再截技能目录。
+    # 6. 知识库规则：能力开启 + 当前用户可见 ready 文档时才注入（空库不提示）。
+    knowledge_available = False
+    if settings.knowledge_enabled:
+        knowledge_available = await _has_visible_ready_documents(db, user)
+
+    # 7. 静态提示词预算：先丢低分记忆，再截技能目录。
     prompt = assemble_system_prompt(
         instruction=instruction,
         memory_lines=memory_lines,
         skill_catalog=catalog_text,
         active_skills=active_skills,
         tool_notes=tool_notes,
+        knowledge_available=knowledge_available,
     )
     if len(prompt) > settings.prompt_budget_tokens:
         while memory_lines and len(prompt) > settings.prompt_budget_tokens:
@@ -239,6 +263,7 @@ async def assemble(
                 skill_catalog=catalog_text,
                 active_skills=active_skills,
                 tool_notes=tool_notes,
+                knowledge_available=knowledge_available,
             )
     result.system_prompt = prompt
     return result

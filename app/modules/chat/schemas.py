@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.config import get_settings
 from app.modules.conversations.schemas import MessageCapabilitiesOut, MessageErrorOut, UsageOut
 
 RunStatus = Literal["queued", "running", "succeeded", "failed", "canceled", "interrupted"]
@@ -24,7 +25,7 @@ class ChatStreamRequest(BaseModel):
     mcp_tools: list[uuid.UUID] = Field(default_factory=list, max_length=10)
     model: str | None = Field(default=None, max_length=64)
     reasoning_effort: str | None = Field(default=None, max_length=16)
-    knowledge_categories: list[str] = Field(default_factory=list, max_length=5)
+    knowledge_categories: list[str] = Field(default_factory=list)
     workflow_id: uuid.UUID | None = None
     workflow_version: int | None = Field(default=None, ge=1)
 
@@ -34,6 +35,19 @@ class ChatStreamRequest(BaseModel):
         value = value.strip()
         if not value:
             raise ValueError("消息不能为空")
+        return value
+
+    @field_validator("knowledge_categories")
+    @classmethod
+    def _knowledge_categories_limit(cls, value: list[str]) -> list[str]:
+        """上限跟随 ``KNOWLEDGE_CATEGORIES_PER_MESSAGE``（默认 5）。
+
+        ``Field(max_length=...)`` 在类定义时求值，读不到运行时 Settings（测试还会改
+        环境变量），因此用字段校验器在读请求时读取配置；超限返回 422。
+        """
+        limit = get_settings().knowledge_categories_per_message
+        if len(value) > limit:
+            raise ValueError(f"知识库分类最多 {limit} 个")
         return value
 
 

@@ -172,13 +172,12 @@ async def test_validation_and_capability_errors(client: httpx.AsyncClient) -> No
     assert model_error.status_code == 422
     assert model_error.json()["error"]["code"] == "model_not_allowed"
 
-    capability_error = await client.post(
-        "/api/v1/chat/stream",
-        json={"message": "hi", "knowledge_categories": ["售后"]},
-        headers=headers,
+    # M4：知识库默认开启，请求级分类不再 403；关闭时的 403 见
+    # tests/integration/test_knowledge_capability.py。
+    _, knowledge_events = await collect_sse(
+        client, headers=headers, payload={"message": "hi", "knowledge_categories": ["售后"]}
     )
-    assert capability_error.status_code == 403
-    assert capability_error.json()["error"]["code"] == "capability_disabled"
+    assert knowledge_events[-1][0] == "message.done"
 
     # M1.5：技能/MCP/附件已启用，选择不存在的资源返回 404（不再是 capability_disabled）。
     skill_missing = await client.post(
@@ -237,7 +236,8 @@ async def test_system_info_and_readyz(client: httpx.AsyncClient) -> None:
     assert body["capabilities"]["memories"] is True
     assert body["capabilities"]["instructions"] is True
     assert body["capabilities"]["attachments"] is True
-    assert body["capabilities"]["knowledge"] is False
+    # M4 Task 11：知识库能力跟随 KNOWLEDGE_ENABLED，默认开启。
+    assert body["capabilities"]["knowledge"] is True
     # M2：A2A 出站已实现；2026-11-10 需求变更后本服务不再提供入站 Server。
     assert body["capabilities"]["agents"] is True
     assert body["capabilities"]["tasks"] is True

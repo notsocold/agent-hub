@@ -291,9 +291,8 @@ async def test_tool_default_category_filter_and_explicit_override(
 ) -> None:
     """分类优先级的补充覆盖（工具层）：默认取本轮 knowledge_categories，显式参数优先。
 
-    请求级 ``knowledge_categories`` 目前仍被 M1 的 ``_check_capabilities`` 拒绝，
-    无法走 HTTP 聊天路径（由 Task 11 放开）；这里只验证工具自身的优先级逻辑，
-    上面的用例已经证明工具在真实聊天链路里工作。
+    请求级 ``knowledge_categories`` 已由 Task 11 放开（默认开启），但这里仍只直接
+    驱动工具，避免依赖提示词/HTTP 装配；上面的用例已经证明工具在真实聊天链路里工作。
     """
     from app.modules.chat.tools import build_search_knowledge_tool
 
