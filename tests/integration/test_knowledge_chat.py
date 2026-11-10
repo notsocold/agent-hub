@@ -92,9 +92,11 @@ async def test_tool_call_emits_citations(
     )
     assert set(done["citations"][0]) == CITATION_KEYS
 
-    # 工具文本格式：[n] heading（filename / category / score）+ 换行正文。
+    # 工具文本格式：[n] heading（filename / category / score）+ 换行正文；
+    # M5 起外部检索片段包裹在 <untrusted> 内。
     content = _tool_message(model).content
-    assert content.startswith("[1] ")
+    assert content.startswith('<untrusted source="knowledge">')
+    assert "[1] " in content
     assert "（return-policy.md / 售后 / " in content
     assert "\n\n[2] " in content
 

@@ -1,10 +1,10 @@
-"""聊天工具执行器：原生工具（save_memory/read_skill_file）、MCP 工具与 HITL 审批。
+"""聊天工具执行器：原生工具（save_memory/read_skill_file）、MCP、A2A 与知识检索。
 
-- 工具调用统一写 ``tool_invocations``（source=native/skill/mcp）；
-- 需要审批的工具：落 Approval → 发 ``approval.required`` → 挂起等待
-  ``POST /approvals/{id}/decision`` 唤醒 → 决定后继续/拒绝；
-- 超时抛 ``ApprovalTimeoutError``，由 execute_run 统一收尾为 interrupted；
-- 工具错误作为 ToolMessage 返回模型，不中断整轮。
+- 工具调用统一写 ``tool_invocations``（source=native/skill/mcp/a2a）；
+- 审批由图的 ``approval_gate`` 节点创建并 ``interrupt()`` 挂起（M5）；
+  本模块执行前只读审批结果：approved/无记录才执行，其余返回 rejected ToolMessage；
+- 工具错误作为 ToolMessage 返回模型，不中断整轮；
+- MCP / A2A / 知识库 / 技能文件结果统一包 ``<untrusted>``（M5 注入防护）。
 """
 
 from __future__ import annotations
@@ -14,14 +14,16 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, create_model
+from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.prompt_guard import wrap_untrusted
 from app.core.timeutil import elapsed_ms
 from app.db.models.approval import Approval
 from app.db.models.mcp import McpServer
@@ -31,20 +33,14 @@ from app.db.models.user import User
 from app.db.session import get_session_factory
 from app.db.vector import SearchHit
 from app.modules.a2a.tool import execute_send_message
+from app.modules.chat.approvals import ApprovalSpec
 from app.modules.chat.events import RunEventPublisher, to_iso
-from app.modules.chat.registry import RunContext, registry
 from app.modules.knowledge import service as knowledge_service
 from app.modules.mcp.service import ChatMcpTool, _client_for
 from app.modules.memories import service as memories_service
 from app.modules.skills import service as skills_service
 
 logger = logging.getLogger(__name__)
-
-
-class ApprovalTimeoutError(Exception):
-    def __init__(self, approval_id: uuid.UUID) -> None:
-        super().__init__("审批等待超时")
-        self.approval_id = approval_id
 
 
 @dataclass
@@ -169,24 +165,26 @@ class ToolRunner:
         error: str | None = None
         outcome: ToolRunOutcome | None = None
         try:
-            if name == "save_memory":
-                outcome = await self._run_save_memory(args)
-            elif name == "read_skill_file":
-                outcome = await self._run_read_skill_file(args)
-            elif name == "search_knowledge":
-                outcome = await self._run_search_knowledge(args)
-            elif name == "send_message":
-                outcome = await self._run_send_message(tool_call_id, args)
-            else:
-                outcome = await self._run_mcp(tool_call_id, name, args)
+            # 审批由 gate 创建；这里只读结果：approved/无记录才执行。
+            outcome = await self._approval_guard(tool_call_id)
+            if outcome is None:
+                if name == "save_memory":
+                    outcome = await self._run_save_memory(args)
+                elif name == "read_skill_file":
+                    outcome = await self._run_read_skill_file(args)
+                elif name == "search_knowledge":
+                    outcome = await self._run_search_knowledge(args)
+                elif name == "send_message":
+                    outcome = await self._run_send_message(tool_call_id, args)
+                else:
+                    outcome = await self._run_mcp(tool_call_id, name, args)
             content, summary = outcome.content, outcome.summary
             if outcome.status == "rejected":
                 status = "rejected"
+            else:
+                content = self._wrap_external(name, source, content)
         except asyncio.CancelledError:
             await self._finish_invocation(invocation, "canceled", None, started)
-            raise
-        except ApprovalTimeoutError:
-            await self._finish_invocation(invocation, "canceled", "审批超时", started)
             raise
         except Exception as exc:
             logger.warning("工具执行失败 tool=%s：%s", name, exc)
@@ -416,25 +414,7 @@ class ToolRunner:
             server = await db.get(McpServer, context.server_id)
             if server is None or not server.enabled:
                 raise ValueError("MCP 服务器已不可用")
-            if context.requires_approval:
-                decision = await self._wait_approval(
-                    db=db,
-                    tool_call_id=tool_call_id,
-                    tool_name=name,
-                    display_name=name,
-                    risk=context.risk,
-                    args=args,
-                    source="mcp",
-                    executor=server.slug,
-                    target=server.url or "",
-                )
-                if decision != "approve":
-                    return ToolRunOutcome(
-                        content="用户拒绝了本次工具调用，未执行任何操作。",
-                        summary="rejected: 用户拒绝执行",
-                        status="rejected",
-                    )
-            client = _client_for(server)
+            client = await _client_for(db, server)
             result = await client.call_tool(context.exposed_name.split("__", 2)[-1], args)
             if isinstance(client, object) and hasattr(client, "close"):
                 await client.close()
@@ -476,25 +456,6 @@ class ToolRunner:
             if row is None or row.deleted_at is not None or not row.enabled:
                 raise ValueError("远程 Agent 已不可用")
             agent = row
-            if agent.requires_approval:
-                # 远程声明写操作：复用现有 HITL 审批链路，决定后继续/拒绝。
-                decision = await self._wait_approval(
-                    db=db,
-                    tool_call_id=tool_call_id,
-                    tool_name="send_message",
-                    display_name=f"委派给 {agent.name}",
-                    risk="unknown",
-                    args=args,
-                    source="a2a",
-                    executor=agent.slug,
-                    target=agent.url,
-                )
-                if decision != "approve":
-                    return ToolRunOutcome(
-                        content="用户拒绝了本次远程委派，未执行任何操作。",
-                        summary="rejected: 用户拒绝执行",
-                        status="rejected",
-                    )
 
         outcome = await execute_send_message(
             run_id=self.run_id,
@@ -509,95 +470,79 @@ class ToolRunner:
             content=outcome.content, summary=outcome.summary, status=outcome.status
         )
 
-    # ------------------------------------------------------------------ HITL
+    # ------------------------------------------------------------------ 审批与外部内容
 
-    async def _wait_approval(
-        self,
-        *,
-        db,
-        tool_call_id: str,
-        tool_name: str,
-        display_name: str,
-        risk: str,
-        args: dict[str, Any],
-        source: str,
-        executor: str,
-        target: str,
-    ) -> str:
-        settings = get_settings()
-        now = _now()
-        preview = _compact(args, 500)
-        approval = Approval(
-            run_id=self.run_id,
-            tool_name=tool_name,
-            tool_display_name=display_name,
-            source=source,
-            executor=executor,
-            target=target[:2000],
-            side_effect=self._side_effect(risk),
-            risk=risk if risk in {"read", "write", "destructive", "unknown"} else "unknown",
-            reason=f"工具「{tool_name}」需要人工确认后执行",
-            payload=self._sanitize_args(args),
-            payload_preview=preview,
-            status="pending",
-            expires_at=now + timedelta(seconds=settings.approval_timeout_seconds),
-        )
-        db.add(approval)
-        await db.commit()
-        await db.refresh(approval)
-
-        context: RunContext | None = registry.get(self.run_id)
-        if context is None:
-            raise RuntimeError("运行上下文不存在，无法等待审批")
-        waiter = context.wait_for_approval(approval.id)
-
-        await self.publisher.emit(
-            "approval.required",
-            {
-                "approval_id": str(approval.id),
-                "tool_call_id": tool_call_id,
-                "tool": tool_name,
-                "source": source,
-                "risk": approval.risk,
-                "reason": approval.reason,
-                "payload": approval.payload,
-                "expires_at": approval.expires_at.isoformat() if approval.expires_at else None,
-            },
-            event_type="approval",
-            title="等待人工确认",
-            subtitle=f"{tool_name}：{preview}",
-        )
-
-        try:
-            await asyncio.wait_for(
-                waiter.wait(),
-                timeout=settings.approval_timeout_seconds,
+    def approval_spec(self, call: dict[str, Any]) -> ApprovalSpec | None:
+        """判断一次 tool_call 是否需要审批，供图 gate 节点使用。"""
+        name = str(call.get("name") or "")
+        args = call.get("args") or {}
+        context = self.mcp_tools.get(name)
+        if context is not None and context.requires_approval:
+            return ApprovalSpec(
+                tool_name=name,
+                display_name=name,
+                risk=context.risk,
+                source="mcp",
+                executor=context.slug,
+                server_id=context.server_id,
             )
-        except TimeoutError:
-            await self._expire_approval(approval.id)
-            raise ApprovalTimeoutError(approval.id) from None
-        if context.cancel_requested:
-            raise asyncio.CancelledError
-        decision = context.take_approval_decision(approval.id)
-        if decision not in {"approve", "reject"}:
-            raise RuntimeError("审批状态异常")
-        return decision
+        if name == "send_message":
+            agent = self.a2a_agents.get(str(args.get("agent") or ""))
+            if agent is not None and agent.requires_approval:
+                return ApprovalSpec(
+                    tool_name=name,
+                    display_name=f"委派给 {agent.name}",
+                    risk="unknown",
+                    source="a2a",
+                    executor=agent.slug,
+                    target=agent.url,
+                )
+        return None
 
-    async def _expire_approval(self, approval_id: uuid.UUID) -> None:
+    async def _approval_guard(self, tool_call_id: str) -> ToolRunOutcome | None:
+        """执行前读审批结果：approved/无记录才执行，其余返回 rejected 结果。"""
         async with get_session_factory()() as db:
-            approval = await db.get(Approval, approval_id)
-            if approval is not None and approval.status == "pending":
-                approval.status = "expired"
-                await db.commit()
+            approval = await db.scalar(
+                select(Approval).where(
+                    Approval.run_id == self.run_id, Approval.tool_call_id == tool_call_id
+                )
+            )
+        if approval is None or approval.status == "approved":
+            return None
+        if approval.status == "pending":
+            # 正常流程 gate 会先挂起；走到这里说明恢复未按预期进行，兜底拦截。
+            logger.warning("审批未决却执行工具，已拦截 tool_call_id=%s", tool_call_id)
+        content = {
+            "rejected": "用户拒绝了本次工具调用，未执行任何操作。",
+            "expired": "审批已超时，本次工具调用未执行。",
+            "canceled": "审批已取消，本次工具调用未执行。",
+        }.get(approval.status, "审批未通过，本次工具调用未执行。")
+        return ToolRunOutcome(
+            content=content, summary=f"{approval.status}: 审批未通过", status="rejected"
+        )
 
     @staticmethod
-    def _side_effect(risk: str) -> str:
-        return {
-            "read": "只读操作，无外部副作用",
-            "write": "写操作：会修改外部系统数据",
-            "destructive": "破坏性操作：删除/覆盖等不可逆变更",
-            "unknown": "操作副作用未知",
-        }.get(risk, "操作副作用未知")
+    def sanitize_args(args: dict[str, Any], limit: int = 4000) -> dict[str, Any]:
+        """公开的参数脱敏入口；gate 创建审批时复用同一口径。"""
+        return ToolRunner._sanitize_args(args, limit)
+
+    @staticmethod
+    def _wrap_external(name: str, source: str, content: str) -> str:
+        """外部来源结果包 ``<untrusted>``，防止工具输出里的指令被当系统指令执行。"""
+        label: str | None = None
+        if name.startswith("mcp__") or source == "mcp":
+            label = "mcp"
+        elif name == "send_message":
+            label = "a2a"
+        elif name == "search_knowledge":
+            if content in {_KNOWLEDGE_NOT_FOUND, _KNOWLEDGE_ERROR, _KNOWLEDGE_DISABLED}:
+                return content
+            label = "knowledge"
+        elif name == "read_skill_file":
+            label = "skill"
+        if label is None or not content:
+            return content
+        return wrap_untrusted(label, content)
 
 
 # --------------------------------------------------------------------------- LangChain 工具定义

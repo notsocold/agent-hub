@@ -26,8 +26,8 @@ class AgentAuthInput(BaseModel):
         if value is None:
             return value
         value = value.strip()
-        if value and not value.startswith("env:"):
-            raise ValueError("secret_ref 必须为 env:环境变量名 形式")
+        if value and not (value.startswith("env:") or value.startswith("secret:")):
+            raise ValueError("secret_ref 必须为 env:环境变量名 或 secret:密钥名 形式")
         return value
 
 

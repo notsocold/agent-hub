@@ -36,6 +36,7 @@ _SECRET_HEADER_NAMES = {
 }
 
 _SECRET_REF_PATTERN = re.compile(r"^env:[A-Za-z_][A-Za-z0-9_]*$")
+_PLATFORM_SECRET_REF_PATTERN = re.compile(r"^secret:[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 _METADATA_IPS = {"169.254.169.254", "fd00:ec2::254"}
 
@@ -193,11 +194,15 @@ def decrypt_secret(token: str) -> str | None:
         return None
 
 
-def normalize_headers(raw: dict[str, str]) -> tuple[dict[str, object], str]:
+def normalize_headers(
+    raw: dict[str, str], *, allow_platform_secret: bool = False
+) -> tuple[dict[str, object], str]:
     """把用户提交的请求头转成可落库的形态。
 
     - 普通头：明文存储；
     - 敏感头且值为 ``env:NAME``：存 ``{"secret_ref": "env:NAME"}``；
+    - 敏感头值为 ``secret:NAME``：仅管理员（``allow_platform_secret``）可用，
+      引用 ``platform_secrets``，运行时解析；
     - 敏感头明文：有 CAPABILITY_SECRET_KEY 时 AES-GCM 加密存储，否则 503。
     返回 ``(存储形态, credentials_hint)``。
     """
@@ -209,6 +214,17 @@ def normalize_headers(raw: dict[str, str]) -> tuple[dict[str, object], str]:
             continue
         if name.strip().lower() in _SECRET_HEADER_NAMES:
             if _SECRET_REF_PATTERN.match(value):
+                stored[name] = {"secret_ref": value}
+                hints.append(f"{name}: {value}")
+            elif value.startswith("secret:"):
+                if not allow_platform_secret:
+                    raise ValidationFailedError(
+                        "secret: 引用仅管理员可配置", code="secret_ref_not_allowed"
+                    )
+                if not _PLATFORM_SECRET_REF_PATTERN.match(value):
+                    raise ValidationFailedError(
+                        "secret_ref 必须为 secret:密钥名 形式", code="secret_ref_invalid"
+                    )
                 stored[name] = {"secret_ref": value}
                 hints.append(f"{name}: {value}")
             else:
@@ -245,6 +261,43 @@ def resolve_headers(stored: dict[str, object]) -> dict[str, str]:
             if plaintext:
                 resolved[name] = plaintext
     return resolved
+
+
+
+
+async def resolve_headers_async(db, stored: dict[str, object]) -> dict[str, str]:
+    """异步版请求头还原：``env:`` 读环境变量，``secret:`` 查平台密钥表。
+
+    解析失败（密钥不存在/已禁用/无 CAPABILITY_SECRET_KEY）跳过该头，不抛错；
+    调用方若必需该凭据，由远程服务返回 401 并以远程错误处理。
+    """
+    from app.modules.secrets.service import resolve_platform_secret
+
+    resolved: dict[str, str] = {}
+    for name, value in stored.items():
+        if isinstance(value, str):
+            resolved[name] = value
+            continue
+        if not isinstance(value, dict):
+            continue
+        ref = value.get("secret_ref")
+        if isinstance(ref, str):
+            if ref.startswith("env:"):
+                env_value = os.environ.get(ref[4:], "")
+                if env_value:
+                    resolved[name] = env_value
+            elif ref.startswith("secret:"):
+                plaintext = await resolve_platform_secret(db, ref[7:])
+                if plaintext:
+                    resolved[name] = plaintext
+            continue
+        ciphertext = value.get("ciphertext")
+        if isinstance(ciphertext, str):
+            plaintext = decrypt_secret(ciphertext)
+            if plaintext:
+                resolved[name] = plaintext
+    return resolved
+
 
 
 def credentials_hint_from(headers: dict[str, object]) -> str:

@@ -20,7 +20,7 @@ from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.core.cursor import decode_cursor, encode_cursor
 from app.core.errors import ConflictError, NotFoundError, ValidationFailedError
-from app.core.ssrf import resolve_headers
+from app.core.ssrf import resolve_headers_async
 from app.core.timeutil import elapsed_ms
 from app.db.models.remote import A2A_ACTIVE_STATES, A2aTask, RemoteAgent
 from app.db.models.user import User
@@ -187,12 +187,23 @@ def _apply_auth(
     agent: RemoteAgent,
     card: dict,
     auth: object | None,
+    *,
+    role: str,
 ) -> None:
-    """把注册/更新时的 auth 输入落到 Agent；secret_ref 只存引用。"""
+    """把注册/更新时的 auth 输入落到 Agent；secret_ref 只存引用。
+
+    ``secret:NAME`` 引用平台密钥，仅管理员可配置；普通用户只能用 ``env:``。
+    """
     if auth is None:
         return
     auth_type = getattr(auth, "type", None) or "none"
     secret_ref = (getattr(auth, "secret_ref", None) or "").strip() or None
+    if secret_ref and secret_ref.startswith("secret:") and role != "admin":
+        from app.core.errors import ValidationFailedError
+
+        raise ValidationFailedError(
+            "secret: 引用仅管理员可配置", code="secret_ref_not_allowed"
+        )
     if auth_type == "none":
         agent.auth_type = "none"
         agent.auth_scheme = "none"
@@ -213,11 +224,13 @@ def _apply_auth(
         agent.auth_hint = secret_ref
 
 
-def _resolved_headers(agent: RemoteAgent) -> dict[str, str]:
-    """调用远程时使用的请求头（secret_ref / 密文还原）。"""
-    headers = resolve_headers(agent.headers or {})
+async def _resolved_headers(db: AsyncSession, agent: RemoteAgent) -> dict[str, str]:
+    """调用远程时使用的请求头（env:/secret: 引用与密文还原）。"""
+    headers = await resolve_headers_async(db, agent.headers or {})
     if agent.secret_ref and agent.auth_type == "api_key":
-        resolved = resolve_headers({"Authorization": {"secret_ref": agent.secret_ref}})
+        resolved = await resolve_headers_async(
+            db, {"Authorization": {"secret_ref": agent.secret_ref}}
+        )
         if resolved:
             headers["Authorization"] = resolved["Authorization"]
     return headers
@@ -277,7 +290,7 @@ async def create_agent(
         consecutive_failures=0,
         name_edited=bool(payload.name),
     )
-    _apply_auth(agent, fetched.card, payload.auth)
+    _apply_auth(agent, fetched.card, payload.auth, role=user.role)
     db.add(agent)
     await db.flush()
     await write_audit(
@@ -456,12 +469,14 @@ async def update_agent(
         agent.enabled = payload.enabled
         changed.append("enabled")
     if payload.auth is not None:
-        _apply_auth(agent, agent.card or {}, payload.auth)
+        _apply_auth(agent, agent.card or {}, payload.auth, role=user.role)
         changed.append("auth")
     if payload.headers is not None:
         from app.core.ssrf import normalize_headers
 
-        stored, hint = normalize_headers(payload.headers)
+        stored, hint = normalize_headers(
+            payload.headers, allow_platform_secret=user.role == "admin"
+        )
         agent.headers = stored
         if hint:
             agent.auth_hint = hint
@@ -527,7 +542,7 @@ async def _record_health(
 async def refresh_agent(db: AsyncSession, user: User, agent_id: uuid.UUID) -> AgentRefreshResult:
     agent = await _get_agent(db, agent_id)
     try:
-        fetched = await fetch_agent_card(agent.url, headers=_resolved_headers(agent))
+        fetched = await fetch_agent_card(agent.url, headers=await _resolved_headers(db, agent))
     except ValidationFailedError as exc:
         await _record_health(db, agent, ok=False, latency_ms=None, error=exc.message)
         await write_audit(
@@ -587,11 +602,11 @@ async def health_check_agent(db: AsyncSession, user: User, agent_id: uuid.UUID) 
     error: str | None = None
     latency_ms: int | None = None
     try:
-        fetched = await fetch_agent_card(agent.url, headers=_resolved_headers(agent))
+        fetched = await fetch_agent_card(agent.url, headers=await _resolved_headers(db, agent))
         latency_ms = fetched.latency_ms
         # 用刚拉取的 Card 快照探测，避免 SDK 客户端再拉一次 well-known。
         probe = A2aClient(
-            agent.url, headers=_resolved_headers(agent), card=fetched.card
+            agent.url, headers=await _resolved_headers(db, agent), card=fetched.card
         )
         try:
             await probe.get_task("__agent_hub_health_probe__")

@@ -30,9 +30,9 @@ async def _approval_sweeper() -> None:
     while True:
         await asyncio.sleep(60)
         try:
-            expired = await expire_pending()
-            if expired:
-                logger.info("审批超时巡检：%s 条置为 expired", expired)
+            canceled = await expire_pending()
+            if canceled:
+                logger.info("审批超时巡检：%s 个 run 已取消", len(canceled))
         except asyncio.CancelledError:
             raise
         except Exception:

@@ -200,15 +200,29 @@ async def decide(
     await db.commit()
     resumed = False
     resume_error: str | None = None
-    # 唤醒同一进程内正在等待审批的运行；跨进程/断线场景由 SSE 心跳与事件回放兜底。
-    from app.modules.chat.registry import registry
-
-    context = registry.get(approval.run_id)
-    if context is not None and (run is None or run.status == "running"):
-        context.resolve_approval(approval.id, payload.decision)
-        resumed = True
+    run = await db.get(Run, approval.run_id)
+    if run is None:
+        resume_error = "运行不存在"
+    elif run.status in {"succeeded", "failed", "canceled"}:
+        resume_error = "运行已结束"
     else:
-        resume_error = "运行已不在本实例等待审批（可能已结束或跨实例）"
+        remaining = await db.scalar(
+            select(func.count(Approval.id)).where(
+                Approval.run_id == approval.run_id, Approval.status == "pending"
+            )
+        )
+        if remaining:
+            # 一轮多审批：等全部决定完再恢复（gate 只调用一次 interrupt）。
+            resume_error = "本轮还有其他审批待处理"
+        elif run.status in {"running", "interrupted"}:
+            # running 表示决定先于图挂起到达；恢复任务会先等首轮任务收尾。
+            from app.modules.chat import service as chat_service
+
+            resumed = await chat_service.schedule_resume(approval.run_id)
+            if not resumed:
+                resume_error = "运行不在等待审批状态或已有恢复任务"
+        else:
+            resume_error = "运行状态不支持恢复"
     return ApprovalDecisionResult(
         id=approval.id,
         status=approval.status,  # type: ignore[arg-type]
@@ -218,8 +232,12 @@ async def decide(
     )
 
 
-async def expire_pending(limit: int = 200) -> int:
-    """后台巡检：把超时未处理的审批置为 expired。"""
+async def expire_pending(limit: int = 200) -> list[uuid.UUID]:
+    """后台巡检：过期审批置 expired；其 run 无其他 pending 时取消并清理线程。
+
+    返回本次被取消的 run id 列表。终态事件与 halt 清理由
+    ``chat.service.cancel_interrupted_run`` 统一负责（条件更新保证只执行一次）。
+    """
     now = _now()
     async with get_session_factory()() as db:
         ids = list(
@@ -236,7 +254,41 @@ async def expire_pending(limit: int = 200) -> int:
             ).scalars()
         )
         if not ids:
-            return 0
-        await db.execute(update(Approval).where(Approval.id.in_(ids)).values(status="expired"))
+            return []
+        await db.execute(
+            update(Approval)
+            .where(Approval.id.in_(ids), Approval.status == "pending")
+            .values(status="expired")
+        )
+        run_ids = list(
+            (
+                await db.execute(select(Approval.run_id).where(Approval.id.in_(ids)))
+            ).scalars()
+        )
         await db.commit()
-        return len(ids)
+    canceled: list[uuid.UUID] = []
+    from app.modules.chat import service as chat_service
+
+    for run_id in dict.fromkeys(run_ids):
+        async with get_session_factory()() as db:
+            remaining = await db.scalar(
+                select(func.count(Approval.id)).where(
+                    Approval.run_id == run_id, Approval.status == "pending"
+                )
+            )
+        if remaining:
+            continue
+        if await chat_service.cancel_interrupted_run(run_id, reason="approval_timeout"):
+            canceled.append(run_id)
+            async with get_session_factory()() as db:
+                await write_audit(
+                    db,
+                    actor_type="system",
+                    actor_id="sweeper",
+                    action="approval.timeout_canceled",
+                    resource_type="run",
+                    resource_id=str(run_id),
+                    detail={"reason": "approval_timeout"},
+                )
+                await db.commit()
+    return canceled

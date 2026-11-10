@@ -99,3 +99,83 @@ async def test_resolve_platform_secret(db, admin: User) -> None:
             session, admin, SecretCreateRequest(name="RESOLVE_ME", value="plain-value")
         )
         assert await secrets_service.resolve_platform_secret(session, "RESOLVE_ME") == "plain-value"
+
+
+MCP_URL = "https://mcp.example.com/mcp"
+
+
+async def _register_header_capture(tools: list[dict], seen: dict) -> None:
+    import json
+
+    from httpx import MockTransport
+
+    from app.modules.mcp.service import register_test_transport
+    from tests.helpers import make_mcp_transport
+
+    transport = make_mcp_transport(tools)
+    original = transport.handle_async_request
+
+    async def handler(request):
+        try:
+            payload = json.loads(request.content)
+        except (ValueError, TypeError):
+            payload = {}
+        if payload.get("method") == "initialize":
+            seen["authorization"] = request.headers.get("authorization")
+        return await original(request)
+
+    register_test_transport(MCP_URL, MockTransport(handler))
+
+
+async def test_admin_secret_ref_resolved_for_mcp(
+    client: httpx.AsyncClient, admin: User, admin_auth: dict[str, str]
+) -> None:
+    from tests.helpers import MOCK_TOOL_READ
+
+    created_secret = await client.post(
+        "/api/v1/admin/secrets",
+        json={"name": "MCP_KEY", "value": "resolved-value"},
+        headers=admin_auth,
+    )
+    assert created_secret.status_code == 201
+    seen: dict = {}
+    await _register_header_capture([MOCK_TOOL_READ], seen)
+
+    created = await client.post(
+        "/api/v1/mcp/servers",
+        json={
+            "name": "密钥 MCP",
+            "slug": "secret-mcp",
+            "transport": "streamable_http",
+            "url": MCP_URL,
+            "headers": {"Authorization": "secret:MCP_KEY"},
+        },
+        headers=admin_auth,
+    )
+    assert created.status_code == 201, created.text
+    assert "resolved-value" not in created.text
+
+    checked = await client.post(
+        f"/api/v1/mcp/servers/{created.json()['id']}/check", headers=admin_auth
+    )
+    assert checked.status_code == 200
+    assert seen["authorization"] == "resolved-value"
+
+
+async def test_normal_user_cannot_use_secret_ref(
+    client: httpx.AsyncClient, user: User
+) -> None:
+    headers = auth_headers(create_access_token(user.id).token)
+    response = await client.post(
+        "/api/v1/mcp/servers",
+        json={
+            "name": "越权 MCP",
+            "slug": "bad-secret-mcp",
+            "transport": "streamable_http",
+            "url": MCP_URL,
+            "headers": {"Authorization": "secret:MCP_KEY"},
+        },
+        headers=headers,
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "secret_ref_not_allowed"

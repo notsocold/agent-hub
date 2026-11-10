@@ -23,31 +23,11 @@ class RunContext:
     # 本轮已产出的引用（CitationOut 形状的 dict）；与 ToolRunner.citations 是同一对象，
     # 由工具追加、由终态统一去重编号后随 message.done 发出并落库。
     citations: list[dict] = field(default_factory=list)
-    # HITL：按 approval_id 注册 waiter；decision 接口写入决定并 set 对应事件。
-    # waiter 在 approval.required 发出前注册，decision 先到时也会落在 decisions 里，
-    # 消除「决定先于等待注册」的竞态。
-    approval_waiters: dict[uuid.UUID, asyncio.Event] = field(default_factory=dict)
-    approval_decisions: dict[uuid.UUID, str] = field(default_factory=dict)
+    # 审批等待已迁移到 LangGraph interrupt()（M5）：进程内不再保存审批 waiter。
     # A2A HITL：input_required/auth_required 期间挂起；tasks 动作接口写入决定并唤醒。
     # decision 形如 {"action": "resume"|"authorize"|"reject"|"cancel"|"expired", ...}。
     a2a_task_waiters: dict[uuid.UUID, asyncio.Event] = field(default_factory=dict)
     a2a_task_decisions: dict[uuid.UUID, dict] = field(default_factory=dict)
-
-    def wait_for_approval(self, approval_id: uuid.UUID) -> asyncio.Event:
-        event = asyncio.Event()
-        self.approval_waiters[approval_id] = event
-        return event
-
-    def take_approval_decision(self, approval_id: uuid.UUID) -> str | None:
-        """取走决定；同一审批只消费一次。"""
-        return self.approval_decisions.pop(approval_id, None)
-
-    def resolve_approval(self, approval_id: uuid.UUID, decision: str) -> None:
-        """decision 接口唤醒：写入决定并通知等待中的工具执行。"""
-        self.approval_decisions[approval_id] = decision
-        waiter = self.approval_waiters.get(approval_id)
-        if waiter is not None:
-            waiter.set()
 
     def wait_for_a2a_task(self, task_id: uuid.UUID) -> asyncio.Event:
         """A2A 任务等待注册：在事件发出前注册，消除决定先到的竞态。"""
@@ -76,7 +56,13 @@ class RunRegistry:
     def start(self, context: RunContext, coroutine) -> None:
         context.task = asyncio.create_task(coroutine, name=f"run-{context.run_id}")
         self._contexts[context.run_id] = context
-        context.task.add_done_callback(lambda _: self._contexts.pop(context.run_id, None))
+
+        def _cleanup(_: asyncio.Task) -> None:
+            # 同一 run 可能先有首轮任务、后有恢复任务：只清理自己，避免误删新 context。
+            if self._contexts.get(context.run_id) is context:
+                self._contexts.pop(context.run_id, None)
+
+        context.task.add_done_callback(_cleanup)
 
     def get(self, run_id: uuid.UUID) -> RunContext | None:
         return self._contexts.get(run_id)
@@ -90,9 +76,6 @@ class RunRegistry:
         if context is None or context.task is None or context.task.done():
             return False
         context.cancel_requested = True
-        # 取消时也唤醒审批等待，让执行器尽快感知并收尾。
-        for waiter in context.approval_waiters.values():
-            waiter.set()
         # A2A 等待同样唤醒：工具收到 cancel 决策后返回已取消的 ToolMessage。
         for task_id, waiter in context.a2a_task_waiters.items():
             context.a2a_task_decisions.setdefault(task_id, {"action": "cancel"})

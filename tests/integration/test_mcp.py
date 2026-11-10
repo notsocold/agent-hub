@@ -365,9 +365,24 @@ async def test_chat_mcp_write_tool_rejected(client: httpx.AsyncClient, monkeypat
     assert approvals.json()["stats"]["rejected"] == 1
 
 
-async def test_chat_mcp_approval_timeout_interrupts(client: httpx.AsyncClient, monkeypatch) -> None:
-    """审批超时：message.done.finish_reason=interrupted，run 进入 interrupted。"""
+async def test_chat_mcp_approval_timeout_cancels_run(
+    client: httpx.AsyncClient, monkeypatch
+) -> None:
+    """审批超时（M5）：approval→expired、run→canceled，晚决定 409。"""
+    import uuid
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import select
+
+    from app.db.models.approval import Approval
+    from app.db.models.chat import Run
+    from app.db.models.user import User
+    from app.db.session import get_session_factory
+    from app.modules.approvals.service import expire_pending
     from app.modules.chat import service as chat_service
+    from app.modules.chat.schemas import ChatStreamRequest
+    from app.modules.chat.service import start_chat
+    from tests.conftest import collect_run_events_live
 
     _register_mock([MOCK_TOOL_WRITE])
     registered = await register_user(client)
@@ -385,25 +400,55 @@ async def test_chat_mcp_approval_timeout_interrupts(client: httpx.AsyncClient, m
         ]
     )
     monkeypatch.setattr(chat_service, "build_chat_model", lambda settings: model)
-    run_id, events = await collect_sse(client, headers=headers, payload={"message": "创建工单"})
-    names = [name for name, _ in events]
-    assert "approval.required" in names
-    done = events[-1][1]
-    assert done["finish_reason"] == "interrupted"
-    assert done["reason"] == "approval_timeout"
 
-    run = await client.get(f"/api/v1/runs/{run_id}", headers=headers)
-    assert run.json()["status"] == "interrupted"
+    async def _start():
+        async with get_session_factory()() as session:
+            user = await session.scalar(
+                select(User).where(User.id == uuid.UUID(registered["user"]["id"]))
+            )
+            assert user is not None
+            return await start_chat(session, user, ChatStreamRequest(message="创建工单"))
 
-    # 超时审批再决定 → 409 approval_expired
-    approval = next(data for name, data in events if name == "approval.required")
+    result = await _start()
+    interrupted: dict = {}
+
+    async def on_event(name: str, data: dict) -> None:
+        if name == "run.interrupted":
+            interrupted.update(data)
+
+    await collect_run_events_live(
+        str(result.run_id), stop_on={"run.interrupted"}, on_event=on_event
+    )
+    approval_id = interrupted["approvals"][0]
+
+    # 把审批改为已过期，再触发巡检（避免等待真实 30 分钟）
+    async with get_session_factory()() as session:
+        approval = await session.get(Approval, uuid.UUID(approval_id))
+        assert approval is not None
+        approval.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        await session.commit()
+
+    canceled = await expire_pending()
+    assert str(result.run_id) in {str(item) for item in canceled}
+    async with get_session_factory()() as session:
+        run = await session.get(Run, result.run_id)
+        assert run is not None and run.status == "canceled"
+
+    replay = await collect_run_events_live(str(result.run_id), timeout=10)
+    assert replay[-1][0] == "message.done"
+    assert replay[-1][1]["finish_reason"] == "canceled"
+    assert replay[-1][1]["reason"] == "approval_timeout"
+
     late = await client.post(
-        f"/api/v1/approvals/{approval['approval_id']}/decision",
+        f"/api/v1/approvals/{approval_id}/decision",
         json={"decision": "approve"},
         headers=headers,
     )
     assert late.status_code == 409
-    assert late.json()["error"]["code"] == "approval_expired"
+    assert late.json()["error"]["code"] in {
+        "approval_expired",
+        "approval_already_decided",
+    }
 
 
 async def test_chat_mcp_explicit_unreachable_degrades(client: httpx.AsyncClient, monkeypatch) -> None:

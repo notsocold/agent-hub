@@ -253,17 +253,19 @@ class SendMessageRunner:
 
     # ------------------------------------------------------------------ 远程调用
 
-    def _client(self) -> A2aClient:
+    async def _client(self) -> A2aClient:
+        async with get_session_factory()() as db:
+            headers = await _resolved_headers(db, self.agent)
         return A2aClient(
             self.agent.url,
-            headers=_resolved_headers(self.agent),
+            headers=headers,
             card=self.agent.card,
         )
 
     async def _send_round(
         self, text: str, *, context_id: str | None, task_id: str | None
     ) -> list[Any]:
-        client = self._client()
+        client = await self._client()
         if (self.agent.capabilities or {}).get("streaming"):
             return [update async for update in client.stream_message(
                 text=text, context_id=context_id, task_id=task_id
@@ -287,7 +289,7 @@ class SendMessageRunner:
             return updates
         settings = get_settings()
         deadline = _now() + timedelta(seconds=settings.a2a_client_timeout_seconds)
-        client = self._client()
+        client = await self._client()
         while _now() < deadline:
             await asyncio.sleep(0.2)
             update = await client.get_task(task_id)

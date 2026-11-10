@@ -24,7 +24,7 @@ from app.core.errors import (
     NotFoundError,
     ValidationFailedError,
 )
-from app.core.ssrf import normalize_headers, resolve_headers, validate_mcp_url
+from app.core.ssrf import normalize_headers, resolve_headers_async, validate_mcp_url
 from app.core.timeutil import elapsed_ms
 from app.db.models.mcp import McpServer, McpTool, UserCapabilityOverride
 from app.db.models.user import User
@@ -256,7 +256,9 @@ async def create_server(
     )
     if system_slug is not None:
         raise ConflictError("slug 与系统服务器冲突")
-    stored_headers, hint = normalize_headers(payload.headers)
+    stored_headers, hint = normalize_headers(
+        payload.headers, allow_platform_secret=user.role == "admin"
+    )
     server = McpServer(
         scope="user",
         owner_user_id=user.id,
@@ -314,7 +316,9 @@ async def update_server(
     if payload.auto_inject is not None:
         server.auto_inject = payload.auto_inject
     if payload.headers is not None:
-        stored_headers, hint = normalize_headers(payload.headers)
+        stored_headers, hint = normalize_headers(
+        payload.headers, allow_platform_secret=user.role == "admin"
+    )
         server.headers = stored_headers
         server.credentials_hint = hint
     await write_audit(
@@ -391,8 +395,8 @@ async def set_server_enabled(
     return _server_out(server, effective=effective, tool_count=int(count or 0))
 
 
-def _client_for(server: McpServer) -> Any:
-    headers = resolve_headers(server.headers or {})
+async def _client_for(db: AsyncSession, server: McpServer) -> Any:
+    headers = await resolve_headers_async(db, server.headers or {})
     if server.transport == "stdio":
         if not server.command:
             raise ValidationFailedError("stdio 传输缺少 command")
@@ -515,7 +519,7 @@ async def _check_and_sync(
             )
     started = datetime.now(UTC)
     try:
-        client = _client_for(server)
+        client = await _client_for(db, server)
         status, latency, _ = await client.check()
         tools = await client.list_tools()
         discovered = await _sync_tools(db, server, tools)

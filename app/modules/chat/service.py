@@ -6,17 +6,20 @@ import asyncio
 import logging
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from langchain_core.messages import HumanMessage
-from sqlalchemy import or_, select, update
+from langgraph.types import Command
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.checkpointer import open_checkpointer
 from app.agents.graph import build_graph
 from app.agents.models import build_chat_model
+from app.core.audit import content_fingerprint, write_audit
 from app.core.config import get_settings
 from app.core.cursor import encode_cursor
 from app.core.errors import (
@@ -28,6 +31,7 @@ from app.core.errors import (
     ValidationFailedError,
     current_request_id,
 )
+from app.core.prompt_guard import SUSPICIOUS_INPUT_NOTE, sanitize_output, scan_injection
 from app.core.rate_limit import limiter
 from app.core.timeutil import elapsed_ms
 from app.db.models.approval import Approval
@@ -37,6 +41,7 @@ from app.db.models.remote import A2aTask, RemoteAgent
 from app.db.models.user import User
 from app.db.session import get_session_factory
 from app.modules.chat import capabilities as capabilities_module
+from app.modules.chat.approvals import build_approval_gate, build_halt_gate
 from app.modules.chat.bus import bus
 from app.modules.chat.capabilities import validate_chat_selections
 from app.modules.chat.events import (
@@ -59,7 +64,6 @@ from app.modules.chat.schemas import (
     RunResumeResult,
 )
 from app.modules.chat.tools import (
-    ApprovalTimeoutError,
     ToolRunner,
     build_mcp_tools,
     build_native_tools,
@@ -82,6 +86,16 @@ _DEFAULT_CAPABILITIES: dict[str, Any] = {
     "knowledge_categories": [],
     "workflow_id": None,
 }
+
+
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro) -> None:
+    """保持后台清理任务的引用，避免被 GC 回收（RUF006）。"""
+    task = asyncio.create_task(coro)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
 
 
 def _now() -> datetime:
@@ -308,257 +322,414 @@ async def start_chat(db: AsyncSession, user: User, payload: ChatStreamRequest) -
     return ChatStartResult(run_id=run.id, conversation_id=conversation.id, replay=False)
 
 
-async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
-    """后台运行：独立于 SSE 连接，客户端断开不影响执行。"""
-    settings = get_settings()
-    run_id = context.run_id
-    publisher = context.publisher
-    started_wall = _now()
-    started_at: datetime | None = None
-    first_token_ms: int | None = None
+@dataclass
+class RunRuntime:
+    """一次运行所需的装配结果；首轮与恢复共用，避免两套逻辑漂移。"""
+
+    run_id: uuid.UUID
+    conversation_id: uuid.UUID
+    conversation_title: str
+    user_id: uuid.UUID
+    run: Run
+    runner: ToolRunner
+    tools: list[Any]
+    model: Any
+    system_prompt: str
+    model_name: str
+    model_input: str
+    started_at: datetime
+    started_wall: datetime
+    first_token_ms: int | None
+    content_parts: list[str]
+    reasoning_parts: list[str]
+    usage: dict[str, Any]
+    user_message_id: uuid.UUID
+    user_text: str
+    client_message_id: str
+    user_message_created: datetime
+    reasoning_effort: str
+    notices: list[dict[str, Any]]
+    skill_activations: list[dict[str, Any]]
+
+
+def _add_usage(base: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+    result = dict(base)
+    for key in ("input_tokens", "output_tokens", "reasoning_tokens", "total_tokens"):
+        if key in extra:
+            result[key] = int(result.get(key) or 0) + int(extra.get(key) or 0)
+    return result
+
+
+async def _write_security_audit(
+    *,
+    actor_id: uuid.UUID,
+    action: str,
+    resource_id: str,
+    detail: dict[str, Any],
+) -> None:
+    """安全审计独立短事务，避免影响主流程。"""
+    async with get_session_factory()() as db:
+        await write_audit(
+            db,
+            actor_type="user",
+            actor_id=str(actor_id),
+            action=action,
+            resource_type="run" if action.startswith("security.output") else "message",
+            resource_id=resource_id,
+            detail=detail,
+            commit=True,
+        )
+
+
+async def _event_start_seq(run_id: uuid.UUID) -> int:
+    async with get_session_factory()() as db:
+        value = await db.scalar(select(func.max(RunEvent.seq)).where(RunEvent.run_id == run_id))
+    return int(value or 0)
+
+
+async def prepare_runtime(
+    db,
+    run: Run,
+    publisher: RunEventPublisher,
+    context: RunContext,
+    *,
+    resumed: bool,
+) -> RunRuntime:
+    """能力装配 + 工具目录 + 模型；恢复时从 DB 读回已产出内容/引用/usage。"""
+    conversation = await db.get(Conversation, run.conversation_id)
+    user_message = await db.get(Message, run.user_message_id) if run.user_message_id else None
+    assistant_message = (
+        await db.get(Message, run.assistant_message_id) if run.assistant_message_id else None
+    )
+    if conversation is None or user_message is None or assistant_message is None:
+        _raise_missing_run_data()
+    user = await db.get(User, conversation.user_id)
+    if user is None:
+        _raise_missing_run_data()
+    run_capabilities = run.capabilities or {}
+
+    assembled = await capabilities_module.assemble(
+        db,
+        user,
+        attachment_ids=[uuid.UUID(item) for item in run_capabilities.get("attachments", [])],
+        skill_ids=[uuid.UUID(item) for item in run_capabilities.get("skills", [])],
+        mcp_server_ids=[uuid.UUID(item) for item in run_capabilities.get("mcp_servers", [])],
+        mcp_tool_ids=[uuid.UUID(item) for item in run_capabilities.get("mcp_tools", [])],
+    )
+    if assembled.attachment_snapshot:
+        user_message.attachments = assembled.attachment_snapshot
+        await db.commit()
+
+    runner = ToolRunner(
+        run_id=run.id,
+        publisher=publisher,
+        user_id=user.id,
+        user_role=user.role,
+        mcp_tools=assembled.mcp_tool_map,
+        active_skill_ids=assembled.active_skill_ids,
+        a2a_agents=assembled.a2a_agent_map,
+        conversation_id=conversation.id,
+        # 与 RunContext 共享同一个 list：工具追加，终态读取。
+        citations=context.citations,
+        knowledge_categories=[
+            str(item) for item in run_capabilities.get("knowledge_categories", [])
+        ],
+    )
+    tools = [
+        *build_native_tools(runner),
+        build_search_knowledge_tool(runner),
+        *build_mcp_tools(runner, assembled.mcp_tool_map),
+    ]
+    send_message_tool = build_send_message_tool(runner, assembled.a2a_agent_map)
+    if send_message_tool is not None:
+        tools.append(send_message_tool)
+
     content_parts: list[str] = []
     reasoning_parts: list[str] = []
-    reasoning_started: datetime | None = None
     usage: dict[str, Any] = {}
+    if resumed:
+        if assistant_message.content:
+            content_parts.append(assistant_message.content)
+        if assistant_message.citations:
+            context.citations.extend(assistant_message.citations)
+        usage = {
+            "input_tokens": run.input_tokens,
+            "output_tokens": run.output_tokens,
+            "reasoning_tokens": run.reasoning_tokens,
+            "total_tokens": run.input_tokens + run.output_tokens,
+        }
+
+    system_prompt = assembled.system_prompt
+    settings = get_settings()
+    if settings.prompt_guard_enabled:
+        findings = scan_injection(user_message.content)
+        if findings:
+            system_prompt = f"{system_prompt}\n\n{SUSPICIOUS_INPUT_NOTE}"
+            if not resumed:
+                await _write_security_audit(
+                    actor_id=user.id,
+                    action="security.injection_suspected",
+                    resource_id=str(user_message.id),
+                    detail={
+                        "rules": sorted({item.rule for item in findings}),
+                        "fingerprint": content_fingerprint(user_message.content),
+                        "message_length": len(user_message.content),
+                    },
+                )
+    model_input = user_message.content
+    if assembled.attachment_text:
+        model_input = f"{user_message.content}\n\n{assembled.attachment_text}"
+
+    return RunRuntime(
+        run_id=run.id,
+        conversation_id=conversation.id,
+        conversation_title=conversation.title,
+        user_id=user.id,
+        run=run,
+        runner=runner,
+        tools=tools,
+        model=build_chat_model(get_settings()),
+        system_prompt=system_prompt,
+        model_name=run.model,
+        model_input=model_input,
+        started_at=run.started_at or _now(),
+        started_wall=_now(),
+        first_token_ms=None,
+        content_parts=content_parts,
+        reasoning_parts=reasoning_parts,
+        usage=usage,
+        user_message_id=user_message.id,
+        user_text=user_message.content,
+        client_message_id=user_message.client_message_id or "",
+        user_message_created=user_message.created_at,
+        reasoning_effort=run.reasoning_effort or "low",
+        notices=list(assembled.notices),
+        skill_activations=list(assembled.skill_activations),
+    )
+
+
+def _build_graph_for(runtime: RunRuntime, saver, *, halt: bool = False):
+    gate = build_halt_gate() if halt else build_approval_gate(runtime.runner)
+    return build_graph(
+        runtime.model,
+        saver,
+        system_prompt=runtime.system_prompt,
+        tools=runtime.tools,
+        tool_executor=runtime.runner.execute,
+        approval_gate=gate,
+        max_tool_rounds=get_settings().max_tool_rounds,
+    )
+
+
+async def _clear_stale_interrupt(saver, runtime: RunRuntime, config: dict[str, Any]) -> None:
+    """新 run 开始前清理同一会话线程里残留的 interrupt（防御性兜底）。"""
+    probe = _build_graph_for(runtime, saver, halt=True)
+    snapshot = await probe.aget_state(config)
+    if not snapshot.next:
+        return
+    logger.warning(
+        "清理残留 interrupt run_id=%s thread=%s", runtime.run_id, config["configurable"]["thread_id"]
+    )
+    async for _ in probe.astream(
+        Command(resume={"decision": "cancel"}), config, stream_mode="messages"
+    ):
+        pass
+
+
+async def _stream_graph(
+    context: RunContext,
+    runtime: RunRuntime,
+    graph,
+    config: dict[str, Any],
+    graph_input: Any,
+    *,
+    is_new_conversation: bool = False,
+    resumed: bool = False,
+) -> None:
+    """执行图并持续发事件；挂起时落库部分内容并发 run.interrupted。"""
+    publisher = context.publisher
+    run_id = runtime.run_id
+    started_at = runtime.started_at
+    first_token_ms: int | None = runtime.first_token_ms
+    content_parts = runtime.content_parts
+    reasoning_parts = runtime.reasoning_parts
+    reasoning_started: datetime | None = None
+    usage = runtime.usage
 
     try:
-        async with get_session_factory()() as db:
-            run = await db.get(Run, run_id)
-            if run is None:
-                return
-            if run.status != "running":
-                # 取消可能发生在后台任务真正开始之前；补一个终态事件让 SSE 正常结束。
-                if run.status == "canceled" and not context.terminal_emitted:
-                    context.terminal_emitted = True
-                    # 任务还没开始就被取消：补记助手消息计数，保证会话统计与消息行一致。
-                    conversation = await db.get(Conversation, run.conversation_id)
-                    if conversation is not None:
-                        conversation.message_count += 1
-                        conversation.last_message_at = _now()
-                        conversation.last_message_preview = "（已取消）"
-                        await db.commit()
-                    await publisher.emit(
-                        "message.done",
-                        {
-                            "message_id": (
-                                str(run.assistant_message_id) if run.assistant_message_id else ""
-                            ),
-                            "usage": _usage_dict(None),
-                            "finish_reason": "canceled",
-                            "model": run.model,
-                            "first_token_ms": None,
-                            "duration_ms": 0,
-                            "active_duration_ms": 0,
-                            "citations": context.citations,
-                            "artifacts": [],
-                        },
-                        event_type="message",
-                        status="canceled",
-                        title="已取消",
-                    )
-                return
-            conversation = await db.get(Conversation, run.conversation_id)
-            user_message = (
-                await db.get(Message, run.user_message_id) if run.user_message_id else None
-            )
-            assistant_message = (
-                await db.get(Message, run.assistant_message_id)
-                if run.assistant_message_id
-                else None
-            )
-            if conversation is None or user_message is None or assistant_message is None:
-                _raise_missing_run_data()
-            user = await db.get(User, conversation.user_id)
-            if user is None:
-                _raise_missing_run_data()
-            started_at = run.started_at or started_wall
-            conversation_id = conversation.id
-            conversation_title = conversation.title
-            user_message_id = user_message.id
-            assistant_message_id = assistant_message.id
-            user_message_created = user_message.created_at
-            user_text = user_message.content
-            client_message_id = user_message.client_message_id or ""
-            requested_effort = run.reasoning_effort or "low"
-            model_name = run.model
-            run_capabilities = run.capabilities or {}
-
-            # 能力装配：附件快照、指令、记忆、技能与 MCP 工具目录。
-            assembled = await capabilities_module.assemble(
-                db,
-                user,
-                attachment_ids=[uuid.UUID(item) for item in run_capabilities.get("attachments", [])],
-                skill_ids=[uuid.UUID(item) for item in run_capabilities.get("skills", [])],
-                mcp_server_ids=[uuid.UUID(item) for item in run_capabilities.get("mcp_servers", [])],
-                mcp_tool_ids=[uuid.UUID(item) for item in run_capabilities.get("mcp_tools", [])],
-            )
-            if assembled.attachment_snapshot:
-                user_message.attachments = assembled.attachment_snapshot
-                await db.commit()
-
-            runner = ToolRunner(
-                run_id=run_id,
-                publisher=publisher,
-                user_id=user.id,
-                user_role=user.role,
-                mcp_tools=assembled.mcp_tool_map,
-                active_skill_ids=assembled.active_skill_ids,
-                a2a_agents=assembled.a2a_agent_map,
-                conversation_id=conversation_id,
-                # 与 RunContext 共享同一个 list：工具追加，终态读取。
-                citations=context.citations,
-                knowledge_categories=[
-                    str(item) for item in run_capabilities.get("knowledge_categories", [])
-                ],
-            )
-            tools = [
-                *build_native_tools(runner),
-                build_search_knowledge_tool(runner),
-                *build_mcp_tools(runner, assembled.mcp_tool_map),
-            ]
-            send_message_tool = build_send_message_tool(runner, assembled.a2a_agent_map)
-            if send_message_tool is not None:
-                tools.append(send_message_tool)
-            model_input = user_text
-            if assembled.attachment_text:
-                model_input = f"{user_text}\n\n{assembled.attachment_text}"
-
-        if is_new_conversation:
+        if resumed:
             await publisher.emit(
-                "conversation.created",
-                {"conversation_id": str(conversation_id), "title": conversation_title},
+                "run.resumed",
+                {
+                    "run_id": str(run_id),
+                    "conversation_id": str(runtime.conversation_id),
+                    "status": "running",
+                },
+                event_type="run",
+                title="继续运行",
+            )
+        else:
+            if is_new_conversation:
+                await publisher.emit(
+                    "conversation.created",
+                    {
+                        "conversation_id": str(runtime.conversation_id),
+                        "title": runtime.conversation_title,
+                    },
+                    event_type="message",
+                    title="创建会话",
+                )
+            await publisher.emit(
+                "run.started",
+                {
+                    "conversation_id": str(runtime.conversation_id),
+                    "user_message_id": str(runtime.user_message_id),
+                    "client_message_id": runtime.client_message_id,
+                    "model": runtime.model_name,
+                    "reasoning_effort": runtime.reasoning_effort,
+                    "workflow_id": None,
+                    "workflow_version": None,
+                },
+                event_type="request",
+                title="用户请求",
+                subtitle=runtime.user_text[:80],
+            )
+            await publisher.emit(
+                "message.created",
+                {
+                    "message_id": str(runtime.user_message_id),
+                    "role": "user",
+                    "client_message_id": runtime.client_message_id,
+                    "created_at": to_iso(runtime.user_message_created),
+                },
                 event_type="message",
-                title="创建会话",
+                title="用户消息",
+                subtitle=runtime.user_text[:80],
             )
-        await publisher.emit(
-            "run.started",
-            {
-                "conversation_id": str(conversation_id),
-                "user_message_id": str(user_message_id),
-                "client_message_id": client_message_id,
-                "model": model_name,
-                "reasoning_effort": requested_effort,
-                "workflow_id": None,
-                "workflow_version": None,
-            },
-            event_type="request",
-            title="用户请求",
-            subtitle=user_text[:80],
-        )
-        await publisher.emit(
-            "message.created",
-            {
-                "message_id": str(user_message_id),
-                "role": "user",
-                "client_message_id": client_message_id,
-                "created_at": to_iso(user_message_created),
-            },
-            event_type="message",
-            title="用户消息",
-            subtitle=user_text[:80],
-        )
-        await publisher.emit(
-            "message.started",
-            {
-                "message_id": str(assistant_message_id),
-                "role": "assistant",
-                "started_at": to_iso(_now()),
-            },
-            event_type="message",
-            status="running",
-            title="助手消息",
-        )
-        for activation in assembled.skill_activations:
+            assistant_message_id = runtime.run.assistant_message_id
             await publisher.emit(
-                "skill.activated",
-                activation,
-                event_type="tool",
-                title=f"技能已激活：{activation['name']}",
-                subtitle=activation["slug"],
+                "message.started",
+                {
+                    "message_id": str(assistant_message_id) if assistant_message_id else "",
+                    "role": "assistant",
+                    "started_at": to_iso(_now()),
+                },
+                event_type="message",
+                status="running",
+                title="助手消息",
             )
-        for notice in assembled.notices:
-            await publisher.emit(
-                "notice",
-                notice,
-                event_type="notice",
-                status="warning" if notice.get("level") == "warning" else "ok",
-                title=notice.get("code") or "提示",
-                subtitle=notice.get("message") or "",
-            )
+            for activation in runtime.skill_activations:
+                await publisher.emit(
+                    "skill.activated",
+                    activation,
+                    event_type="tool",
+                    title=f"技能已激活：{activation['name']}",
+                    subtitle=activation["slug"],
+                )
+            for notice in runtime.notices:
+                await publisher.emit(
+                    "notice",
+                    notice,
+                    event_type="notice",
+                    status="warning" if notice.get("level") == "warning" else "ok",
+                    title=notice.get("code") or "提示",
+                    subtitle=notice.get("message") or "",
+                )
 
-        model = build_chat_model(settings)
-        async with open_checkpointer() as saver:
-            graph = build_graph(
-                model,
-                saver,
-                system_prompt=assembled.system_prompt,
-                tools=tools,
-                tool_executor=runner.execute,
-                max_tool_rounds=settings.max_tool_rounds,
-            )
-            config = {"configurable": {"thread_id": str(conversation_id)}}
-            async for chunk, metadata in graph.astream(
-                {"messages": [HumanMessage(content=model_input)]},
-                config,
-                stream_mode="messages",
-            ):
-                if context.cancel_requested:
-                    raise asyncio.CancelledError  # noqa: TRY301 - 取消信号需要冒泡到外层
-                if metadata.get("langgraph_node") != "model":
-                    continue
-                # stream_mode="messages" 下 ainvoke 节点可能给出完整 AIMessage
-                # 或 AIMessageChunk；两者都带 content/additional_kwargs/usage_metadata。
-                if not hasattr(chunk, "content"):
-                    continue
+        async for chunk, metadata in graph.astream(
+            graph_input,
+            config,
+            stream_mode="messages",
+        ):
+            if context.cancel_requested:
+                raise asyncio.CancelledError  # noqa: TRY301 - 取消信号需要冒泡到外层
+            if metadata.get("langgraph_node") != "model":
+                continue
+            if not hasattr(chunk, "content"):
+                continue
 
-                reasoning = chunk.additional_kwargs.get("reasoning_content")
-                if isinstance(reasoning, str) and reasoning:
-                    if reasoning_started is None:
-                        reasoning_started = _now()
-                    reasoning_parts.append(reasoning)
-                    await publisher.emit(
-                        "reasoning.delta",
-                        {"message_id": str(assistant_message_id), "delta": reasoning},
-                        persist=False,
-                    )
+            reasoning = chunk.additional_kwargs.get("reasoning_content")
+            if isinstance(reasoning, str) and reasoning:
+                if reasoning_started is None:
+                    reasoning_started = _now()
+                reasoning_parts.append(reasoning)
+                await publisher.emit(
+                    "reasoning.delta",
+                    {"message_id": str(runtime.run.assistant_message_id), "delta": reasoning},
+                    persist=False,
+                )
 
-                text = _content_text(chunk.content)
-                if text:
-                    if first_token_ms is None:
-                        first_token_ms = elapsed_ms(started_at)
-                    content_parts.append(text)
-                    await publisher.emit(
-                        "message.delta",
-                        {"message_id": str(assistant_message_id), "delta": text},
-                        persist=False,
-                    )
-                if chunk.usage_metadata:
-                    usage = dict(chunk.usage_metadata)
+            text = _content_text(chunk.content)
+            if text:
+                if first_token_ms is None:
+                    first_token_ms = elapsed_ms(started_at)
+                content_parts.append(text)
+                await publisher.emit(
+                    "message.delta",
+                    {"message_id": str(runtime.run.assistant_message_id), "delta": text},
+                    persist=False,
+                )
+            if chunk.usage_metadata:
+                usage = (
+                    _add_usage(runtime.usage, dict(chunk.usage_metadata))
+                    if resumed
+                    else dict(chunk.usage_metadata)
+                )
 
-            snapshot = await graph.aget_state(config)
-            messages = snapshot.values.get("messages", [])
-            if messages:
-                final_message = messages[-1]
-                final_text = _content_text(getattr(final_message, "content", ""))
-                if final_text and not content_parts:
-                    content_parts.append(final_text)
-                if getattr(final_message, "usage_metadata", None):
-                    usage = dict(final_message.usage_metadata)
+        snapshot = await graph.aget_state(config)
+        if snapshot.next:
+            await _finalize_waiting_approval(context=context, runtime=runtime)
+            return
+        messages = snapshot.values.get("messages", [])
+        if messages:
+            final_message = messages[-1]
+            final_text = _content_text(getattr(final_message, "content", ""))
+            if final_text and not content_parts:
+                content_parts.append(final_text)
+            if getattr(final_message, "usage_metadata", None) and not usage:
+                usage = dict(final_message.usage_metadata)
 
         now = _now()
         duration_ms = elapsed_ms(started_at, now)
         notes = _usage_dict(usage)
         content = "".join(content_parts)
+        if get_settings().prompt_guard_redact_output:
+            redacted, redaction_rules = sanitize_output(content)
+            if redaction_rules:
+                await _write_security_audit(
+                    actor_id=runtime.user_id,
+                    action="security.output_redacted",
+                    resource_id=str(run_id),
+                    detail={
+                        "rules": redaction_rules,
+                        "fingerprint": content_fingerprint(content),
+                    },
+                )
+                content = redacted
+                content_parts[:] = [content]
+        assistant_message_id = runtime.run.assistant_message_id
+
+        if snapshot.values.get("halted"):
+            await asyncio.shield(
+                _finalize_canceled(
+                    context=context,
+                    content=content,
+                    usage=notes,
+                    first_token_ms=first_token_ms,
+                    started_at=started_at,
+                    reason="approval_timeout",
+                )
+            )
+            return
 
         if reasoning_parts:
-            reasoning_text = "".join(reasoning_parts)
             await publisher.emit(
                 "reasoning.done",
                 {
-                    "message_id": str(assistant_message_id),
+                    "message_id": str(assistant_message_id) if assistant_message_id else "",
                     "duration_ms": elapsed_ms(reasoning_started or started_at),
                     "tokens": notes["reasoning_tokens"],
-                    "summary": reasoning_text[:2000],
+                    "summary": "".join(reasoning_parts)[:2000],
                 },
                 event_type="message",
                 title="思考摘要",
@@ -581,7 +752,7 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                     content=content,
                     usage=notes,
                     first_token_ms=first_token_ms,
-                    started_at=started_at or started_wall,
+                    started_at=started_at,
                 )
             )
             return
@@ -591,11 +762,11 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
         await publisher.emit(
             "message.done",
             {
-                "conversation_id": str(conversation_id),
-                "message_id": str(assistant_message_id),
+                "conversation_id": str(runtime.conversation_id),
+                "message_id": str(assistant_message_id) if assistant_message_id else "",
                 "usage": notes,
                 "finish_reason": "stop",
-                "model": model_name,
+                "model": runtime.model_name,
                 "first_token_ms": first_token_ms,
                 "duration_ms": duration_ms,
                 "active_duration_ms": duration_ms,
@@ -625,18 +796,7 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                 content="".join(content_parts),
                 usage=_usage_dict(usage),
                 first_token_ms=first_token_ms,
-                started_at=started_at or started_wall,
-            )
-        )
-    except ApprovalTimeoutError as exc:
-        logger.info("审批超时 run_id=%s approval_id=%s", run_id, exc.approval_id)
-        await asyncio.shield(
-            _finalize_interrupted(
-                context=context,
-                content="".join(content_parts),
-                usage=_usage_dict(usage),
-                first_token_ms=first_token_ms,
-                started_at=started_at or started_wall,
+                started_at=started_at,
             )
         )
     except Exception:
@@ -647,9 +807,262 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                 content="".join(content_parts),
                 usage=_usage_dict(usage),
                 first_token_ms=first_token_ms,
-                started_at=started_at or started_wall,
+                started_at=started_at,
             )
         )
+
+
+async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
+    """首轮执行：装配运行时、构建图并驱动事件流。"""
+    run_id = context.run_id
+    try:
+        async with get_session_factory()() as db:
+            run = await db.get(Run, run_id)
+            if run is None:
+                return
+            if run.status != "running":
+                if run.status == "canceled" and not context.terminal_emitted:
+                    context.terminal_emitted = True
+                    conversation = await db.get(Conversation, run.conversation_id)
+                    if conversation is not None:
+                        conversation.message_count += 1
+                        conversation.last_message_at = _now()
+                        conversation.last_message_preview = "（已取消）"
+                        await db.commit()
+                    await context.publisher.emit(
+                        "message.done",
+                        {
+                            "message_id": (
+                                str(run.assistant_message_id) if run.assistant_message_id else ""
+                            ),
+                            "usage": _usage_dict(None),
+                            "finish_reason": "canceled",
+                            "model": run.model,
+                            "first_token_ms": None,
+                            "duration_ms": 0,
+                            "active_duration_ms": 0,
+                            "citations": context.citations,
+                            "artifacts": [],
+                        },
+                        event_type="message",
+                        status="canceled",
+                        title="已取消",
+                    )
+                return
+            runtime = await prepare_runtime(db, run, context.publisher, context, resumed=False)
+
+        async with open_checkpointer() as saver:
+            graph = _build_graph_for(runtime, saver)
+            config = {"configurable": {"thread_id": str(runtime.conversation_id)}}
+            await _clear_stale_interrupt(saver, runtime, config)
+            await _stream_graph(
+                context,
+                runtime,
+                graph,
+                config,
+                {"messages": [HumanMessage(content=runtime.model_input)]},
+                is_new_conversation=is_new_conversation,
+            )
+    except asyncio.CancelledError:
+        logger.info("运行被取消 run_id=%s", run_id)
+        await asyncio.shield(
+            _finalize_canceled(
+                context=context,
+                content="",
+                usage=_usage_dict(None),
+                first_token_ms=None,
+                started_at=_now(),
+            )
+        )
+    except Exception:
+        logger.exception("运行失败 run_id=%s", run_id)
+        await asyncio.shield(
+            _finalize_failed(
+                context=context,
+                content="",
+                usage=_usage_dict(None),
+                first_token_ms=None,
+                started_at=_now(),
+            )
+        )
+
+
+async def schedule_resume(run_id: uuid.UUID) -> bool:
+    """调度审批恢复任务；返回是否成功调度（不等待图执行）。
+
+    决定可能先于图挂起到达：等待旧 execute_run 任务收尾后再检查 checkpoint，
+    避免「决定已落库但没有任务负责恢复」的竞态。
+    """
+    existing = registry.get(run_id)
+    wait_task = (
+        existing.task
+        if existing is not None and existing.task is not None and not existing.task.done()
+        else None
+    )
+    start_seq = await _event_start_seq(run_id)
+    publisher = RunEventPublisher(run_id, get_session_factory(), bus, start_seq=start_seq)
+    context = RunContext(run_id=run_id, publisher=publisher)
+    registry.start(context, _resume_after_wait(context, wait_task))
+    return True
+
+
+async def _resume_after_wait(
+    context: RunContext, wait_task: asyncio.Task | None
+) -> None:
+    """等待首轮任务结束（gate 挂起后 execute_run 返回），再走恢复。"""
+    if wait_task is not None:
+        await asyncio.wait({wait_task}, timeout=10)
+    await resume_after_decision(context)
+
+
+async def resume_after_decision(context: RunContext) -> None:
+    """审批决定后的后台恢复：抢占 interrupted→running 并续跑同一条 run。"""
+    run_id = context.run_id
+    try:
+        async with get_session_factory()() as db:
+            updated = await db.execute(
+                update(Run)
+                .where(Run.id == run_id, Run.status == "interrupted")
+                .values(status="running")
+            )
+            await db.commit()
+            if not updated.rowcount:
+                return
+            run = await db.get(Run, run_id)
+            if run is None:
+                return
+            runtime = await prepare_runtime(db, run, context.publisher, context, resumed=True)
+
+        async with open_checkpointer() as saver:
+            graph = _build_graph_for(runtime, saver)
+            config = {"configurable": {"thread_id": str(runtime.conversation_id)}}
+            snapshot = await graph.aget_state(config)
+            if not snapshot.next:
+                # 决定先于挂起：gate 已按 DB 状态继续，回滚抢占即可。
+                async with get_session_factory()() as db:
+                    await db.execute(
+                        update(Run)
+                        .where(Run.id == run_id, Run.status == "running")
+                        .values(status="interrupted")
+                    )
+                    await db.commit()
+                return
+            await _stream_graph(
+                context,
+                runtime,
+                graph,
+                config,
+                Command(resume={"decision": "resume"}),
+                resumed=True,
+            )
+    except asyncio.CancelledError:
+        logger.info("恢复任务被取消 run_id=%s", run_id)
+        await asyncio.shield(
+            _finalize_canceled(
+                context=context,
+                content="",
+                usage=_usage_dict(None),
+                first_token_ms=None,
+                started_at=_now(),
+            )
+        )
+    except Exception:
+        logger.exception("恢复运行失败 run_id=%s", run_id)
+        await asyncio.shield(
+            _finalize_failed(
+                context=context,
+                content="",
+                usage=_usage_dict(None),
+                first_token_ms=None,
+                started_at=_now(),
+            )
+        )
+
+
+async def halt_run(run_id: uuid.UUID) -> bool:
+    """清理 checkpoint 里残留的 interrupt；不写 run/message、不发事件。"""
+    async with get_session_factory()() as db:
+        run = await db.get(Run, run_id)
+        if run is None:
+            return False
+        start_seq = await _event_start_seq(run_id)
+        publisher = RunEventPublisher(run_id, get_session_factory(), bus, start_seq=start_seq)
+        context = RunContext(run_id=run_id, publisher=publisher)
+        runtime = await prepare_runtime(db, run, publisher, context, resumed=True)
+
+    async with open_checkpointer() as saver:
+        graph = _build_graph_for(runtime, saver, halt=True)
+        config = {"configurable": {"thread_id": str(runtime.conversation_id)}}
+        snapshot = await graph.aget_state(config)
+        if not snapshot.next:
+            return False
+        async for _ in graph.astream(
+            Command(resume={"decision": "cancel"}), config, stream_mode="messages"
+        ):
+            pass
+    return True
+
+
+async def _finalize_waiting_approval(
+    *,
+    context: RunContext,
+    runtime: RunRuntime,
+) -> None:
+    """图停在审批 gate：落库部分内容、run→interrupted、发非终态 run.interrupted。"""
+    now = _now()
+    duration_ms = elapsed_ms(runtime.started_at, now)
+    content = "".join(runtime.content_parts)
+    usage = _usage_dict(runtime.usage)
+    async with get_session_factory()() as db:
+        run = await db.get(Run, runtime.run_id)
+        if run is None:
+            return
+        assistant = (
+            await db.get(Message, run.assistant_message_id) if run.assistant_message_id else None
+        )
+        if assistant is not None:
+            assistant.content = content
+            assistant.status = "streaming"
+            assistant.citations = context.citations
+        run.status = "interrupted"
+        run.duration_ms = duration_ms
+        run.active_duration_ms = duration_ms
+        run.first_token_ms = runtime.first_token_ms
+        run.input_tokens = usage["input_tokens"]
+        run.output_tokens = usage["output_tokens"]
+        run.reasoning_tokens = usage["reasoning_tokens"]
+        conversation = await db.get(Conversation, run.conversation_id)
+        if conversation is not None:
+            conversation.last_message_at = now
+            conversation.last_message_preview = content[:80] or "（等待审批）"
+        approval_ids = list(
+            (
+                await db.execute(
+                    select(Approval.id).where(
+                        Approval.run_id == run.id, Approval.status == "pending"
+                    )
+                )
+            ).scalars()
+        )
+        await db.commit()
+        assistant_message_id = run.assistant_message_id
+
+    await context.publisher.emit(
+        "run.interrupted",
+        {
+            "run_id": str(runtime.run_id),
+            "conversation_id": str(runtime.conversation_id),
+            "message_id": str(assistant_message_id) if assistant_message_id else "",
+            "status": "interrupted",
+            "approvals": [str(item) for item in approval_ids],
+            "usage": usage,
+            "citations": context.citations,
+        },
+        event_type="run",
+        status="interrupted",
+        title="等待人工确认",
+        duration_ms=duration_ms,
+    )
 
 
 async def _finalize_success(
@@ -704,6 +1117,7 @@ async def _finalize_canceled(
     usage: dict[str, int],
     first_token_ms: int | None,
     started_at: datetime,
+    reason: str | None = None,
 ) -> None:
     if context.terminal_emitted:
         return
@@ -754,81 +1168,11 @@ async def _finalize_canceled(
             "active_duration_ms": duration_ms,
             "citations": context.citations,
             "artifacts": [],
+            **({"reason": reason} if reason else {}),
         },
         event_type="message",
         status="canceled",
-        title="已取消",
-        duration_ms=duration_ms,
-        tokens=usage,
-    )
-
-
-async def _finalize_interrupted(
-    *,
-    context: RunContext,
-    content: str,
-    usage: dict[str, int],
-    first_token_ms: int | None,
-    started_at: datetime,
-) -> None:
-    """审批超时：pending 审批置 expired，run 置 interrupted，流结束。"""
-    if context.terminal_emitted:
-        return
-    context.terminal_emitted = True
-    run_id = context.run_id
-    publisher = context.publisher
-    now = _now()
-    duration_ms = elapsed_ms(started_at, now)
-    async with get_session_factory()() as db:
-        run = await db.get(Run, run_id)
-        if run is None:
-            return
-        assistant = (
-            await db.get(Message, run.assistant_message_id) if run.assistant_message_id else None
-        )
-        if assistant is not None:
-            assistant.content = content
-            assistant.status = "completed"
-            assistant.usage = usage
-            assistant.citations = context.citations
-        run.status = "interrupted"
-        run.duration_ms = duration_ms
-        run.active_duration_ms = duration_ms
-        run.first_token_ms = first_token_ms
-        run.input_tokens = usage["input_tokens"]
-        run.output_tokens = usage["output_tokens"]
-        run.reasoning_tokens = usage["reasoning_tokens"]
-        await db.execute(
-            update(Approval)
-            .where(Approval.run_id == run_id, Approval.status == "pending")
-            .values(status="expired")
-        )
-        conversation = await db.get(Conversation, run.conversation_id)
-        if conversation is not None:
-            conversation.last_message_at = now
-            conversation.last_message_preview = content[:80] or "（等待审批超时）"
-            conversation.message_count += 1
-        await db.commit()
-        message_id = run.assistant_message_id
-        model_name = run.model
-
-    await publisher.emit(
-        "message.done",
-        {
-            "message_id": str(message_id) if message_id else "",
-            "usage": usage,
-            "finish_reason": "interrupted",
-            "model": model_name,
-            "first_token_ms": first_token_ms,
-            "duration_ms": duration_ms,
-            "active_duration_ms": duration_ms,
-            "citations": context.citations,
-            "artifacts": [],
-            "reason": "approval_timeout",
-        },
-        event_type="message",
-        status="interrupted",
-        title="等待审批超时",
+        title="审批超时已取消" if reason == "approval_timeout" else "已取消",
         duration_ms=duration_ms,
         tokens=usage,
     )
@@ -1052,11 +1396,110 @@ async def list_run_events(
     return RunEventPage(items=items, next_cursor=next_cursor, has_more=has_more)
 
 
+async def _has_terminal_event(run_id: uuid.UUID) -> bool:
+    async with get_session_factory()() as db:
+        exists = await db.scalar(
+            select(RunEvent.id)
+            .where(
+                RunEvent.run_id == run_id,
+                RunEvent.payload["_event"].astext.in_(("message.done", "error")),
+            )
+            .limit(1)
+        )
+    return exists is not None
+
+
+async def cancel_interrupted_run(
+    run_id: uuid.UUID, *, reason: str = "approval_timeout"
+) -> bool:
+    """取消等待审批的 run：抢占 interrupted→canceled、写终态、发 message.done、调度 halt。"""
+    now = _now()
+    async with get_session_factory()() as db:
+        updated = await db.execute(
+            update(Run)
+            .where(Run.id == run_id, Run.status == "interrupted")
+            .values(status="canceled", canceled_at=now, finished_at=now)
+        )
+        await db.commit()
+        if not updated.rowcount:
+            return False
+        run = await db.get(Run, run_id)
+        if run is None:
+            return False
+        assistant = (
+            await db.get(Message, run.assistant_message_id) if run.assistant_message_id else None
+        )
+        content = assistant.content if assistant is not None else ""
+        if assistant is not None:
+            assistant.status = "canceled"
+        conversation = await db.get(Conversation, run.conversation_id)
+        if conversation is not None:
+            conversation.message_count += 1
+            conversation.last_message_at = now
+            conversation.last_message_preview = content[:80] or (
+                "（审批超时已取消）" if reason == "approval_timeout" else "（已取消）"
+            )
+        await db.execute(
+            update(Approval)
+            .where(
+                Approval.run_id == run_id,
+                Approval.status.in_(("pending", "approved")),
+            )
+            .values(status="canceled")
+        )
+        duration_ms = elapsed_ms(run.started_at or run.created_at, now)
+        run.duration_ms = duration_ms
+        run.active_duration_ms = duration_ms
+        await db.commit()
+        message_id = run.assistant_message_id
+        model_name = run.model
+        citations = assistant.citations if assistant is not None else []
+        usage = _usage_dict(
+            {
+                "input_tokens": run.input_tokens,
+                "output_tokens": run.output_tokens,
+                "reasoning_tokens": run.reasoning_tokens,
+            }
+        )
+
+    if not await _has_terminal_event(run_id):
+        publisher = RunEventPublisher(
+            run_id, get_session_factory(), bus, start_seq=await _event_start_seq(run_id)
+        )
+        await publisher.emit(
+            "message.done",
+            {
+                "message_id": str(message_id) if message_id else "",
+                "usage": usage,
+                "finish_reason": "canceled",
+                "model": model_name,
+                "first_token_ms": None,
+                "duration_ms": duration_ms,
+                "active_duration_ms": duration_ms,
+                "citations": citations,
+                "artifacts": [],
+                "reason": reason,
+            },
+            event_type="message",
+            status="canceled",
+            title="审批超时已取消" if reason == "approval_timeout" else "已取消",
+            duration_ms=duration_ms,
+            tokens=usage,
+        )
+    await halt_run(run_id)
+    return True
+
+
 async def cancel_run(db: AsyncSession, user: User, run_id: uuid.UUID) -> RunCancelResult:
     run = await _load_owned_run(db, user, run_id)
     if run.status not in _ACTIVE_STATUSES:
         raise RunNotCancelableError(run.status)
     now = _now()
+    if run.status == "interrupted":
+        # 等待审批中的 run 没有活跃任务：直接抢占状态、写终态并清理挂起线程。
+        if not await cancel_interrupted_run(run_id, reason="user_canceled"):
+            raise RunNotCancelableError(run.status)
+        return RunCancelResult(id=run_id, status="canceled", canceled_at=now)
     started_at = run.started_at or run.created_at
     duration_ms = elapsed_ms(started_at, now)
     run.status = "canceled"
@@ -1076,6 +1519,8 @@ async def cancel_run(db: AsyncSession, user: User, run_id: uuid.UUID) -> RunCanc
     )
     await db.commit()
     registry.cancel(run_id)
+    # 兜底：任务收尾后若 checkpoint 仍挂起（取消与挂起竞态），清理线程。
+    _spawn_background(halt_run(run_id))
     return RunCancelResult(id=run.id, status="canceled", canceled_at=now)
 
 
