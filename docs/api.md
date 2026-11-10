@@ -4,7 +4,7 @@
 - 业务前缀：`/api/v1`
 - 协议：HTTP + JSON；聊天流式用 SSE
 - 文档：FastAPI 自动生成 `/docs`（Swagger）与 `/redoc`
-- 状态：设计稿，M1 起逐步实现
+- 状态：M1 / M1.5 / M2 已实现；M3 入站已按 2026-11-10 需求变更取消；M4–M6 待实现
 
 ## 1. 通用约定
 
@@ -225,7 +225,13 @@ Authorization: Bearer <access_token>
 |---|---|---|
 | GET | `/healthz` | 存活探针（不查库） |
 | GET | `/readyz` | 就绪探针（检查 DB/迁移版本，规划） |
-| GET | `/api/v1/system/info` | 版本、模型配置、A2A 地址、能力开关 |
+| GET | `/api/v1/system/info` | 版本、模型配置、A2A 入站状态、能力开关 |
+
+`system/info.a2a` 字段（2026-11-10 起）：
+
+- 本服务只做 A2A 出站 Client，不提供入站 Server；
+- `enabled` 恒 `false`，`card_url` / `jsonrpc_url` 恒为空字符串，`auth_type` / `card_security` 恒 `none`；
+- 五个字段保留只为兼容前端契约，不表示可被调用的 A2A 地址。
 
 ## 3. 聊天 SSE 契约
 
@@ -524,7 +530,6 @@ GET /api/v1/instructions
 | `POST /skills/import` | 20 次/小时/用户 | 上传校验成本高 |
 | `POST /memories` | 60 次/分钟/用户 | |
 | 能力目录读取（`/mcp/available`、`/skills/catalog`） | 120 次/分钟/用户 | |
-| A2A 入站 | 按 `client_id` 限流（默认 60 次/分钟） | 与用户侧独立 |
 
 ## 6. 兼容与版本
 
@@ -570,7 +575,7 @@ GET /api/v1/instructions
 - 取消后 `message.done.finish_reason=canceled`，已生成内容保留；
 - 相同 `conversation_id + client_message_id` 返回同一 run 的事件回放，不创建新消息；
 - 致命错误只发 `error`，不发 `message.done`；
-- `reasoning.delta/done`、`tool.*`、`a2a.*`、`skill.activated`、`approval.required`、`workflow.step`、`memory.saved`、`notice` 在后续里程碑接入。
+- `reasoning.delta/done`、`tool.*`、`a2a.*`、`skill.activated`、`approval.required`、`memory.saved`、`notice` 已在 M1.5/M2 接入（详见 §8.2）；`workflow.step` 仍待 M5+。
 
 ### 7.4 能力开关
 
@@ -586,7 +591,7 @@ GET /api/v1/instructions
 
 - 请求携带未启用的能力字段时返回 403 `capability_disabled`；
 - 携带 `workflow_id` 返回 409 `workflow_disabled`；
-- `knowledge_categories` 仍为 403（M4 再开）；`agents`/`tasks` 保持 false（M2 再开）；
+- `knowledge_categories` 仍为 403（M4 再开）；`agents`/`tasks` 在 M1 时点为 false，**M2 起均为 true**（上方 JSON 为 M1 时点快照）；
 - `reasoning_efforts` 默认空数组（模型不支持或 `LLM_REASONING_EFFORT_SUPPORTED=false` 时），`default_reasoning_effort` 仍返回 `low`；打开该开关后返回 `low/medium/high` 三项。
 
 ### 7.5 数据层差异
@@ -726,3 +731,9 @@ GET /api/v1/instructions
 
 - 集成测试见 `tests/README.md`；MCP 测试用 `httpx.MockTransport` 注入 + `MCP_ALLOWED_HOSTS` 白名单；
 - **注意**：`httpx.ASGITransport` 会缓冲整个 SSE 响应，HITL 实时交互测试走服务层（`collect_run_events_live`）；真实 uvicorn（8000）下 SSE 为实时流式，前端联调不受影响。
+
+## 9. A2A 出站与入站状态（2026-11-10）
+
+- **出站（M2，已实现）**：`/api/v1/agents*` 注册/刷新/健康检查、`send_message` 工具、`/api/v1/tasks*` 任务查询与动作、SSE `a2a.*` 事件；
+- **入站（M3，已取消）**：本服务不发布 Agent Card、不暴露 JSON-RPC 端点；`/a2a` 与 `/a2a/.well-known/agent-card.json` 返回 404；
+- 需求变更记录见 [feedback/2026-11-10-requirement-change-outbound-only.md](feedback/2026-11-10-requirement-change-outbound-only.md)。

@@ -98,7 +98,7 @@ agent-hub/
 | `modules/conversations` | 会话与消息历史 |
 | `modules/chat` | SSE 流式编排、run 生命周期、取消 |
 | `modules/agents` | 远程 Agent 注册、Card 缓存、健康检查 |
-| `modules/a2a` | A2A Server/Client、Agent Card、任务映射 |
+| `modules/a2a` | A2A Client、远程 Agent Card 校验、任务映射（入站 Server 已于 2026-11-10 取消） |
 | `modules/knowledge` | 文档入库、切分、Embedding、检索 |
 | `modules/tasks` | run / A2A Task 查询与取消 |
 | `modules/approvals` | HITL 审批与恢复 |
@@ -155,7 +155,8 @@ SSE 事件、错误码、示例见 `docs/api.md`。
 - 模型：`LLM_PROVIDER`、`LLM_API_KEY`、`LLM_BASE_URL`、`LLM_MODEL`、超时/温度
 - Embedding：`EMBEDDING_API_KEY`、`EMBEDDING_BASE_URL`、`EMBEDDING_MODEL`、`EMBEDDING_DIM`
 - 检索：`VECTOR_TOP_K`、`VECTOR_SCORE_THRESHOLD`
-- A2A：`A2A_ENABLED`、`A2A_PUBLIC_URL`、`A2A_AGENT_PATH`、超时、`A2A_ALLOWED_HOSTS`
+- A2A（仅出站）：`A2A_CLIENT_TIMEOUT_SECONDS`、`A2A_ALLOWED_HOSTS`、Card 拉取与等待超时；
+  `A2A_ENABLED`/`A2A_PUBLIC_URL`/`A2A_AGENT_PATH` 为历史兼容字段（入站已取消）
 - 认证：`JWT_SECRET`、算法、TTL
 
 ## 9. 错误处理
@@ -215,7 +216,7 @@ SSE 事件、错误码、示例见 `docs/api.md`。
 | ADR-001 | 向量库用 pgvector | Qdrant / Milvus / Chroma | 同库事务与运维优先，预留抽象 |
 | ADR-002 | DB 层目录化 | 单文件 `db.py` | 按用户要求拆分，模型按领域分文件 |
 | ADR-003 | 主图 + 远程 Agent 工具 | Supervisor 多图 / 外部编排 | 先简单可解释，复杂场景再演进 |
-| ADR-004 | 本服务同时做 A2A Server | 只做 Client | 用户要求可被调用，双向互操作 |
+| ADR-004 | ~~本服务同时做 A2A Server~~ | 只做 Client | **已作废（2026-11-10 需求变更）**：本服务只做 Client，不提供入站 |
 | ADR-005 | checkpoint 独立 schema | public 混放 | 隔离增长快、可单独归档 |
 | ADR-006 | 前端 Element Plus | Naive UI / 无组件库 | 团队熟悉度与生态优先 |
 | ADR-007 | SSE 而非 WebSocket | WebSocket | 单向流式足够、实现简单、代理友好 |

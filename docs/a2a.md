@@ -1,17 +1,21 @@
 # A2A 集成设计
 
 - 协议：Agent2Agent（A2A）
-- SDK：`a2a-sdk[fastapi]` 1.3.x（实现 A2A 1.0 规范，兼容 0.3）
-- 状态：设计稿，M2/M3 实现
+- 依赖：`a2a-sdk[fastapi]` 1.x（当前最新稳定 1.3.0）；**当前实现为自研 JSON-RPC 2.0 over `httpx`**（兼容 0.3/1.0 方法名），迁移到 SDK 运行时列为后续任务
+- 状态：M2 出站已实现（2026-11-10）；**入站 Server 按 2026-11-10 需求变更不实现**（见[变更记录](feedback/2026-11-10-requirement-change-outbound-only.md)）
 
-## 1. 本服务的两个角色
+## 1. 本服务的角色
+
+> **2026-11-10 需求变更**：本服务只做 A2A 出站 Client，不发布 Agent Card、不暴露
+> JSON-RPC 入站端点。下表 Server 行与本文第 3、4、8.1、8.2 节保留为历史设计，均已作废；
+> 代码侧不再提供 `/a2a` 与 `/.well-known/agent-card.json` 路由。
 
 | 角色 | 方向 | 说明 |
 |---|---|---|
-| A2A Client | 出站（本服务 → 远程智能体） | 主智能体把子任务委派给其他智能体 |
-| A2A Server | 入站（远程智能体 → 本服务） | 本服务发布 Agent Card，暴露对话/知识问答能力 |
+| A2A Client | 出站（本服务 → 远程智能体） | 主智能体把子任务委派给其他智能体（M2 已实现） |
+| ~~A2A Server~~ | ~~入站（远程智能体 → 本服务）~~ | **不实现**：本服务不发布 Agent Card，不接受反向调用 |
 
-两条链路共用同一个 LangGraph 主图，通过 `runs.source` 区分来源，保证审计与限流可区分。
+出站链路通过 `runs.source` / `a2a_tasks` 记录来源与结果，保证审计与限流可区分。
 
 ## 2. 协议核心概念
 
@@ -26,7 +30,10 @@
 
 传输：JSON-RPC 2.0 over HTTPS；流式用 SSE。A2A 1.0 额外支持 REST 与 gRPC，本项目一期只实现 JSON-RPC（兼容性最好）。
 
-## 3. 本服务的 Agent Card
+## 3. 本服务的 Agent Card（不实现）
+
+> 2026-11-10 需求变更：本服务不发布 Agent Card；以下为历史设计，保留供参考。
+> 代码侧 `system/info.a2a.card_url` 恒为空，`/a2a/.well-known/agent-card.json` 返回 404。
 
 Agent Card 由 `modules/a2a/card.py` 在启动时构建，`url` 取 `A2A_PUBLIC_URL + A2A_AGENT_PATH`。
 
@@ -79,7 +86,10 @@ Agent Card 由 `modules/a2a/card.py` 在启动时构建，`url` 取 `A2A_PUBLIC_
 - 入站技能默认只读；写操作技能需同时满足「显式开启 + 审批」；
 - Agent Card 中不暴露内部端点、模型名、密钥等敏感信息。
 
-## 4. 入站：A2A Server
+## 4. 入站：A2A Server（不实现）
+
+> 2026-11-10 需求变更：本服务只做 A2A Client，不提供入站 Server；以下设计全部作废，
+> 仅作历史记录。取消原因与影响见[需求变更记录](feedback/2026-11-10-requirement-change-outbound-only.md)。
 
 ### 4.1 组件
 
@@ -265,15 +275,19 @@ sequenceDiagram
 
 ## 8. 本地联调
 
-### 8.1 查看 Agent Card
+> 本服务不提供入站端点，以下 8.1 / 8.2 的 curl 仅用于调试**远程** Agent。
+
+### 8.1 查看远程 Agent 的 Agent Card
 
 ```bash
-curl -s http://localhost:8000/a2a/.well-known/agent-card.json | python3 -m json.tool
+curl -s http://<remote-agent>/a2a/.well-known/agent-card.json | python3 -m json.tool
 ```
 
-> 具体 well-known 路径由 SDK 挂载方式决定，编码后以 `app.routes` 打印的路由表为准。
+> 本服务自身没有 well-known 路由；`system/info.a2a.card_url` 恒为空。
 
-### 8.2 发送消息（JSON-RPC，0.3 兼容格式）
+### 8.2 向远程 Agent 发送消息（JSON-RPC，0.3 兼容格式）
+
+以下请求与 M2 `A2aClient` 发出的报文等价，用于手工调试远端实现。
 
 ```bash
 curl -s http://localhost:8000/a2a \
@@ -313,7 +327,7 @@ curl -s http://localhost:8000/a2a \
 
 ## 10. 版本兼容策略
 
-- 以 `a2a-sdk` 1.x 为主，利用其对 0.3 的兼容模式；
+- 出站客户端按 0.3/1.0 通用方法名实现（`message/send`、`message/stream`、`tasks/get`、`tasks/cancel`）；`a2a-sdk` 1.x（最新稳定 1.3.0）依赖保留，运行时迁移列为后续任务；
 - `remote_agents.protocol_version` 记录对端版本；
 - 客户端按 Agent Card 的 `capabilities.streaming` 选择 `message/stream` 或 `message/send`；
 - SDK 升级前跑契约测试（Agent Card schema、JSON-RPC 方法、SSE 事件）与 a2a-inspector 冒烟；

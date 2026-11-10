@@ -57,11 +57,18 @@ class SystemLimitsOut(BaseModel):
 
 
 class SystemA2aInfoOut(BaseModel):
-    enabled: bool
-    card_url: str
-    jsonrpc_url: str
-    auth_type: str
-    card_security: str
+    """A2A 接入信息。
+
+    2026-11-10 需求变更：本服务只做 A2A 出站 Client，不提供 Agent Card 与
+    JSON-RPC 入站端点。五个字段保留只为兼容前端契约：``enabled`` 恒 false，
+    ``card_url`` / ``jsonrpc_url`` 恒为空字符串。
+    """
+
+    enabled: bool = Field(description="本服务是否提供 A2A 入站；恒为 false")
+    card_url: str = Field(description="入站 Agent Card 地址；不提供入站时为空")
+    jsonrpc_url: str = Field(description="入站 JSON-RPC 地址；不提供入站时为空")
+    auth_type: str = Field(description="入站鉴权方式；不提供入站时恒为 none")
+    card_security: str = Field(description="Agent Card 安全声明；不提供入站时恒为 none")
 
 
 class EmbeddingInfoOut(BaseModel):

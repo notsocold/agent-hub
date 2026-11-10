@@ -8,8 +8,8 @@
 > 已包含认证、会话/消息、聊天 SSE、运行与事件回放、审批、系统信息、个人能力层
 > （指令/记忆/技能/MCP/附件），以及 M2 的远程 Agent 注册表（Card 拉取/校验/健康检查）、
 > 统一 `send_message` 委派工具（含 HITL 等待与 SSE 事件）与任务查询/动作 API。
-> 测试 101 个全绿；迁移 `8a2f7c31e9d5` 已应用到 agent_hub。
-> M3 入站 Server（A2A_ENABLED）与 M4–M6 仍未实现，对应能力开关明确返回 `false`。
+> 测试 103 个全绿；迁移 `8a2f7c31e9d5` 已应用到 agent_hub。
+> M3 入站 Server 已按 2026-11-10 需求变更取消（本服务仅出站）；M4–M6 仍未实现，对应能力开关明确返回 `false`。
 
 ## 1. 项目定位
 
@@ -20,7 +20,7 @@
 - **调用远程智能体**：通过 A2A 协议把任务委派给其他智能体（如代码助手、数据分析、翻译），再把结果整合给用户；
 - **请求人工确认**：高风险动作（写操作、外部副作用）触发 HITL 审批，用户确认后继续。
 
-同时，本服务自身也是一个 A2A Server：发布 Agent Card，暴露 JSON-RPC 端点，允许其他智能体反向调用。
+本服务只做 A2A 出站 Client：不发布 Agent Card、不暴露 JSON-RPC 入站端点，也不接受其他智能体反向调用（2026-11-10 需求变更）。
 
 平台另提供**个人能力层**：账号级的 MCP 接入、Skill 技能包、长期记忆与自定义 Instruction。配置采用「系统默认 + 用户自定义」两层模型，运行时合并；会话内可以显式点名使用某个 Skill 或某个 MCP 服务器，只影响当次请求。设计见 [个人能力层设计](docs/superpowers/specs/2026-11-05-agent-capabilities-design.md)。
 
@@ -37,7 +37,6 @@ flowchart LR
         CHAT["chat 模块<br/>流式编排"]
         GRAPH["LangGraph 主智能体"]
         TOOLS["工具层<br/>知识检索 / 远程 Agent / 审批"]
-        A2AS["A2A Server<br/>Agent Card + JSON-RPC"]
         A2AC["A2A Client<br/>注册 / 调用 / 任务跟踪"]
         DB[("PostgreSQL 16<br/>业务表 + pgvector")]
         CKPT[("langgraph schema<br/>checkpoint 表")]
@@ -57,8 +56,6 @@ flowchart LR
     A2AC -->|"JSON-RPC / SSE"| R1
     A2AC -->|"JSON-RPC / SSE"| R2
     GRAPH <-->|"会话记忆"| CKPT
-    A2AS --> GRAPH
-    R1 -->|"反向调用"| A2AS
 ```
 
 ## 3. 技术选型（设计基线）
@@ -67,7 +64,7 @@ flowchart LR
 |---|---|---|
 | Web 框架 | FastAPI + Uvicorn | `create_app()` 工厂，REST + SSE |
 | 智能体编排 | LangChain 1.x + LangGraph 1.x | 状态图、工具调用、中断、流式事件 |
-| A2A 协议 | `a2a-sdk[fastapi]` 1.x | 实现 A2A 1.0 规范，兼容 0.3 |
+| A2A 协议 | `a2a-sdk[fastapi]` 1.x（当前最新稳定 1.3.0）+ 自研 JSON-RPC 2.0 客户端 | 兼容 0.3/1.0 方法名；SDK 运行时迁移列为后续任务（M2 报告 §3 已披露当前自研实现） |
 | 业务库 | PostgreSQL 16 + SQLAlchemy 2（异步） + Alembic | 统一承载业务表 |
 | 向量检索 | pgvector（HNSW，cosine） | 与业务表同库同事务 |
 | 会话记忆 | `langgraph-checkpoint-postgres` | checkpoint 表放独立 `langgraph` schema |
@@ -98,7 +95,7 @@ agent-hub/
 │       ├── chat/            # SSE、run、事件、取消
 │       ├── approvals/       # 审批查询与决定
 │       ├── agents/          # 远程智能体（M2）
-│       ├── a2a/             # A2A Server/Client（M2/M3）
+│       ├── a2a/             # A2A Client（M2，仅出站）
 │       ├── knowledge/       # 知识库（M4）
 │       ├── tasks/           # A2A Task（M2）
 │       └── system/          # 系统信息与健康检查
@@ -166,7 +163,7 @@ M1（2026-11-09）与 M1.5「个人能力层」（2026-11-09）已完成，M2「
 明确未包含（按路线图后续交付）：
 
 - [ ] M1.5 管理端路由（`/api/v1/admin/…`，数据模型已就绪）
-- [ ] M3：A2A 入站 Server（Agent Card 发布 + JSON-RPC 端点，`A2A_ENABLED` 仍为 false）
+- [-] M3：A2A 入站 Server —— 已按 2026-11-10 需求变更取消（本服务仅出站）
 - [ ] M4：知识库 + pgvector（记忆语义检索、`q` 升级为向量检索）
 - [ ] M5+：工作流、管理控制台、RBAC
 - [ ] CI、Dockerfile、生产可观测性
@@ -189,7 +186,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/agents \
 | 业务模型 | 客服：订单、审批、RBAC | 对话平台：会话、消息、run、远程 Agent、A2A Task、知识库 |
 | 向量存储 | FAISS 本地索引 | PostgreSQL + pgvector，与业务同库 |
 | 会话记忆 | SqliteSaver | LangGraph PostgresSaver（独立 schema） |
-| 多智能体 | 单 agent + 工具 | 主图 + A2A 出站/入站 |
+| 多智能体 | 单 agent + 工具 | 主图 + A2A 出站（仅 Client） |
 | 前端 | 无 | 独立 Vue 项目 `agent-hub-web` |
 
 ## 8. 文档索引

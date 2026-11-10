@@ -71,7 +71,10 @@ class Settings(BaseSettings):
     vector_top_k: int = 6
     vector_score_threshold: float = 0.30
 
-    # ------------------------------------------------------------------ A2A（M2/M3 使用）
+    # ------------------------------------------------------------------ A2A（仅出站）
+    # 2026-11-10 需求变更：本服务只做 A2A Client，不提供入站 Server。
+    # A2A_ENABLED / A2A_PUBLIC_URL / A2A_AGENT_PATH 仅为历史部署配置兼容保留，
+    # 不再参与任何运行逻辑，也不再生成 Agent Card；新部署无需设置。
     a2a_enabled: bool = False
     a2a_public_url: str = "http://localhost:8000"
     a2a_agent_path: str = "/a2a"

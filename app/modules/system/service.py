@@ -38,8 +38,6 @@ def build_system_info(settings: Settings | None = None) -> SystemInfoOut:
         )
         for model in settings.allowed_models
     ]
-    base_url = settings.a2a_public_url.rstrip("/")
-    agent_path = "/" + settings.a2a_agent_path.strip("/")
     return SystemInfoOut(
         version=__version__,
         build=settings.build_label,
@@ -54,10 +52,12 @@ def build_system_info(settings: Settings | None = None) -> SystemInfoOut:
             timeout_seconds=settings.llm_timeout_seconds,
             max_output_tokens=settings.llm_max_output_tokens,
         ),
+        # 本服务只做 A2A 出站 Client（2026-11-10 需求变更）：不发布 Agent Card、
+        # 不暴露 JSON-RPC 入站端点。五个字段保留只为不破坏前端契约，取值恒为“无入站”。
         a2a=SystemA2aInfoOut(
-            enabled=settings.a2a_enabled,
-            card_url=f"{base_url}{agent_path}/.well-known/agent-card.json",
-            jsonrpc_url=f"{base_url}{agent_path}",
+            enabled=False,
+            card_url="",
+            jsonrpc_url="",
             auth_type="none",
             card_security="none",
         ),

@@ -14339,23 +14339,28 @@
         "properties": {
           "enabled": {
             "type": "boolean",
-            "title": "Enabled"
+            "title": "Enabled",
+            "description": "本服务是否提供 A2A 入站；恒为 false"
           },
           "card_url": {
             "type": "string",
-            "title": "Card Url"
+            "title": "Card Url",
+            "description": "入站 Agent Card 地址；不提供入站时为空"
           },
           "jsonrpc_url": {
             "type": "string",
-            "title": "Jsonrpc Url"
+            "title": "Jsonrpc Url",
+            "description": "入站 JSON-RPC 地址；不提供入站时为空"
           },
           "auth_type": {
             "type": "string",
-            "title": "Auth Type"
+            "title": "Auth Type",
+            "description": "入站鉴权方式；不提供入站时恒为 none"
           },
           "card_security": {
             "type": "string",
-            "title": "Card Security"
+            "title": "Card Security",
+            "description": "Agent Card 安全声明；不提供入站时恒为 none"
           }
         },
         "type": "object",
@@ -14366,7 +14371,8 @@
           "auth_type",
           "card_security"
         ],
-        "title": "SystemA2aInfoOut"
+        "title": "SystemA2aInfoOut",
+        "description": "A2A 接入信息。\n\n2026-11-10 需求变更：本服务只做 A2A 出站 Client，不提供 Agent Card 与\nJSON-RPC 入站端点。五个字段保留只为兼容前端契约：``enabled`` 恒 false，\n``card_url`` / ``jsonrpc_url`` 恒为空字符串。"
       },
       "SystemCapabilitiesOut": {
         "properties": {

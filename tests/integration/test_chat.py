@@ -238,11 +238,13 @@ async def test_system_info_and_readyz(client: httpx.AsyncClient) -> None:
     assert body["capabilities"]["instructions"] is True
     assert body["capabilities"]["attachments"] is True
     assert body["capabilities"]["knowledge"] is False
-    # M2：A2A 出站已实现，agents/tasks 与入站 A2A_ENABLED 无关，恒为 true。
+    # M2：A2A 出站已实现；2026-11-10 需求变更后本服务不再提供入站 Server。
     assert body["capabilities"]["agents"] is True
     assert body["capabilities"]["tasks"] is True
     assert body["limits"]["message_max_chars"] == 8000
-    assert body["a2a"]["card_url"].endswith("/a2a/.well-known/agent-card.json")
+    assert body["a2a"]["enabled"] is False
+    assert body["a2a"]["card_url"] == ""
+    assert body["a2a"]["jsonrpc_url"] == ""
 
     health = await client.get("/healthz")
     assert health.status_code == 200

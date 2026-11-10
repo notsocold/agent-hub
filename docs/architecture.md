@@ -1,8 +1,8 @@
 # 架构设计
 
 - 项目：Agent Hub（`agent-hub`）
-- 状态：设计稿；当前仓库只有目录与文档，代码未实现
-- 更新时间：2026-11-04
+- 状态：M1/M1.5/M2 已实现；M3 入站按 2026-11-10 需求变更取消（本服务仅出站）
+- 更新时间：2026-11-10
 
 ## 1. 目标与非目标
 
@@ -10,12 +10,12 @@
 
 1. 用户通过 Web 前端与主智能体多轮对话，回答流式输出。
 2. 主智能体可自主检索知识库，并在需要时通过 **Google A2A 协议**调用其他智能体完成任务。
-3. 本服务同时作为 A2A Server，向其他智能体暴露自己的能力。
-4. 所有会话、消息、图执行、远程任务、工具调用可追踪、可审计、可恢复。
+3. 所有会话、消息、图执行、远程任务、工具调用可追踪、可审计、可恢复。
 5. 高风险动作支持人工确认（HITL），避免智能体自主产生不可逆副作用。
 
 ### 非目标（当前阶段）
 
+- **不提供 A2A 入站 Server**：不发布 Agent Card、不接受其他智能体反向调用（2026-11-10 需求变更）；
 - 不做通用工作流编排器（BPMN/低代码画布）；
 - 不做 Agent 训练/微调平台；
 - 不做多租户计费；
@@ -32,7 +32,6 @@ flowchart TB
     Hub -->|"A2A JSON-RPC / SSE"| Remote2["远程智能体：数据分析"]
     Hub -->|"A2A JSON-RPC / SSE"| Remote3["远程智能体：翻译/写作"]
 
-    OtherAgent["其他智能体"] -->|"A2A（反向调用）"| Hub
     Admin["运维/管理员"] -->|REST| Hub
 
     Hub --> PG[("PostgreSQL 16 + pgvector")]
@@ -47,7 +46,7 @@ flowchart TB
 | `api/v1` | 用户侧 REST 边界、鉴权、DTO 校验 | 业务规则、SQL |
 | `modules/chat` | SSE 编排、run 生命周期、取消 | LangGraph 图内部逻辑 |
 | `agents/` | LangGraph 图、状态、提示词、工具定义 | HTTP、数据库事务 |
-| `modules/a2a` | A2A Server/Client、Agent Card、远程任务映射 | 用户鉴权、UI |
+| `modules/a2a` | A2A Client、远程 Agent Card 校验、远程任务映射 | A2A 入站 Server、用户鉴权、UI |
 | `modules/agents` | 远程 Agent 注册、发现、健康检查 | 具体协议传输细节 |
 | `modules/knowledge` | 文档入库、切分、Embedding、检索 | 向量 SQL（由 `db/vector` 实现） |
 | `modules/approvals` | 审批工单、恢复图执行 | 决定何时需要审批（由工具声明） |
@@ -122,7 +121,9 @@ sequenceDiagram
 - 远程返回的 Task 状态、Artifact、错误统一归档到 `a2a_tasks`；
 - 超时、重试、取消由客户端封装统一处理，工具层只关心结果。
 
-### 4.3 A2A 入站（其他智能体调用本服务）
+### 4.3 A2A 入站（不实现，2026-11-10 需求变更）
+
+> 本服务只做出站 Client，不发布 Agent Card、不接受反向调用；以下为历史设计，保留供参考。
 
 ```mermaid
 sequenceDiagram
@@ -214,13 +215,13 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 | 向量库 | pgvector（同库） | 业务元数据与向量同事务，删除/权限过滤简单，备份统一 | 千万级以上或高 QPS 检索可能成为瓶颈；届时切 Qdrant |
 | 会话记忆 | LangGraph PostgresSaver | 与业务库同源，支持多实例；避免 SQLite 单机限制 | checkpoint 表增长快，需要定期归档 |
 | 多智能体编排 | 单主图 + 远程 Agent 工具 | 实现简单、可解释、调试成本低；A2A 天然适合工具化 | 复杂 DAG 任务需要 planner/executor 子图（M5 后评估） |
-| A2A Server | 与主服务同进程 | 少一个部署单元，Agent Card 与图共享配置 | 入站流量大时拆独立服务 |
+| A2A Server | 不实现，仅出站 Client | 2026-11-10 需求变更：本服务只负责调用远程智能体 | 若需要被其他智能体调用，另建独立 Server 服务 |
 | 流式协议 | SSE（服务端→前端） | 浏览器原生、简单、易调试；A2A 内部用 JSON-RPC/SSE | 需要双向实时（语音）时评估 WebSocket |
 | DB 目录化 | `app/db/{base,engine,session,models,vector}` | 避免单文件膨胀，模型按领域拆分，迁移边界清晰 | 文件增多，需要 `models/__init__.py` 汇总导入 |
 | 认证 | JWT（access + refresh） | 前后端分离标准方案，无状态易扩展 | 需要吊销能力时引入 token 黑名单/短 TTL |
 | 前端 | Vue 3 + TS + Vite | 与现有 Node 项目技术栈一致，生态成熟 | — |
 | 个人能力配置 | 账号级「系统默认 + 用户覆盖」 | 会话级独立配置 / 仅允许用户自建 | 用户明确要求；系统默认可更新，覆盖表避免批量回填 | 系统项正文不可改，只能在启停层覆盖；会话级覆盖留待后续 |
-| 长期记忆 | LangGraph `AsyncPostgresStore` | 自建 `memories` 表 / 外部记忆服务 | 框架原生、自带 pgvector 语义检索、少写存储代码 | 业务字段只能放 value、无外键；表由框架 `setup()` 管理，不进 Alembic |
+| 长期记忆 | 业务表 `memories`（原计划 LangGraph `AsyncPostgresStore`，M1.5 变更） | 框架 Store / 外部记忆服务 | 避免 store/embedding 初始化复杂度，业务字段可直接建表 | 无框架原生语义检索；M4 引入 pgvector 时评估迁移或双写（见 api.md §8.3） |
 | 本地 Skill | v1 纯指令包（`SKILL.md`） | v1 支持可执行脚本 | 多用户 Web 服务执行上传代码风险过高 | 需要动作时走 MCP/A2A；脚本方案需沙箱，列为 v2 |
 | 用户 MCP 传输 | 仅远程 URL；stdio 只允许系统项 | 全部允许 stdio | 进程隔离、资源限制、进程清理与密钥注入成本高 | 需要本地工具时由管理员配置系统 MCP |
 
@@ -260,7 +261,7 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 |---|---|
 | 用户认证 | JWT access/refresh；密码 argon2；登录限流 |
 | 用户授权 | 会话/消息按 `user_id` 过滤；管理员接口单独角色 |
-| A2A 入站 | API Key / OAuth2；按技能授权；请求体大小限制；限流 |
+| A2A 入站 | 不提供（2026-11-10 需求变更：仅出站） |
 | A2A 出站 | SSRF 防护（默认拒绝内网/回环，白名单放行）；Agent Card URL 校验；TLS 校验 |
 | MCP 出站 | SSRF 校验（拒绝私网/回环/云元数据地址，`MCP_ALLOWED_HOSTS` 白名单）；TLS 校验；超时与响应大小限制 |
 | 能力凭据 | MCP 请求头/Token 用 AES-GCM 加密存储，接口只回脱敏 hint；日志脱敏 |
@@ -275,7 +276,7 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 
 - **日志**：JSON 结构化（后续从标准 logging 切换），字段包含 `request_id`、`run_id`、`conversation_id`、`a2a_task_id`、`tool_call_id`。
 - **指标**：请求量/延迟/错误率、SSE 连接数、图执行时长、LLM token、A2A 调用成功率和 P95、向量检索延迟。
-- **Trace**：接入 OpenTelemetry（a2a-sdk 自带 telemetry extra），把一次用户请求串成 trace。
+- **Trace**：接入 OpenTelemetry（M6 规划；a2a-sdk 自带 telemetry extra），把一次用户请求串成 trace。
 - **审计**：`audit_logs` 记录登录、会话删除、Agent 注册、审批决定、远程调用等关键动作。
 
 ## 11. 部署拓扑
@@ -329,7 +330,7 @@ vite dev server :5173（/api 代理到 8000）
 |---|---|
 | `modules/mcp` | 服务器 CRUD、连通性检查、工具发现与缓存、调用桥接、健康巡检 |
 | `modules/skills` | 技能包导入与校验、目录、激活、参考文件读取 |
-| `modules/memories` | `AsyncPostgresStore` 封装、保存去重、检索注入、管理 CRUD |
+| `modules/memories` | 业务表 `memories` 封装、保存去重、检索注入、管理 CRUD（M1.5 由 Store 改为业务表） |
 | `modules/instructions` | 平台默认/用户覆盖解析、长度校验、生效预览 |
 | `agents/` | 提示词装配、`save_memory` / `read_skill_file` 工具、MCP 工具目录 |
 
@@ -348,6 +349,6 @@ flowchart TB
 
 - **MCP**：系统项可 stdio，用户项仅远程 URL；工具名 `mcp__<slug>__<tool>`；破坏性工具强制审批；系统 MCP 的写/破坏性工具仅管理员可用；调用写 `tool_invocations(source='mcp')`；
 - **Skill**：v1 只接受文本指令包；显式激活最多 3 个；正文按不可信数据包裹；脚本执行列为 v2；
-- **记忆**：存 `langgraph` schema 的 `store`；按 `("memories", user_id)` 隔离；v1 只做显式保存（`save_memory`）与手动管理，自动提取列为 v2；
+- **记忆**：存业务表 `memories`（原计划 `langgraph` schema 的 `store`，M1.5 改为业务表）；按 `user_id` 隔离；v1 只做显式保存（`save_memory`）与手动管理，自动提取列为 v2；
 - **Instruction**：用户文本整段覆盖平台默认，`null` 表示继承；基础系统提示词与安全规则不可覆盖；
 - **降级**：MCP 不可达、Store 故障都只降级不阻断对话，并发 `notice` 事件。

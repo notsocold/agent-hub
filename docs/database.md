@@ -3,7 +3,7 @@
 - 数据库：PostgreSQL 16
 - 扩展：`vector`（pgvector）、`pg_trgm`（可选，用于标题模糊搜索）
 - 迁移：Alembic（异步 SQLAlchemy）
-- 状态：表结构为设计稿，M1 起按里程碑落迁移
+- 状态：M1 / M1.5 / M2 表结构已落迁移；M3 入站取消；M4 起待落
 
 ## 1. 存储架构
 
@@ -221,47 +221,63 @@ erDiagram
 
 状态：`queued` → `running` → `succeeded` / `failed` / `canceled` / `interrupted`（可恢复）。
 
-### 4.5 `remote_agents`（远程 A2A Agent 注册表）
+### 4.5 `remote_agents`（远程 A2A Agent 注册表，M2 已落地）
 
 | 字段 | 类型 | 约束 | 说明 |
 |---|---|---|---|
 | `id` | uuid | PK | 注册 ID |
-| `slug` | varchar(64) | unique, not null | 工具名前缀，`[a-z0-9_-]` |
-| `name` | varchar(128) | not null | Agent Card 的 name |
+| `owner_user_id` | uuid | null, FK users (set null) | v1 全局注册表，保留归属字段 |
+| `slug` | varchar(64) | not null | 工具名前缀；`deleted_at IS NULL` 上部分唯一索引 |
+| `name` | varchar(128) | not null | Agent Card 的 name（可被用户改写） |
 | `description` | text | not null default '' | 能力描述 |
-| `url` | text | unique, not null | A2A 端点 |
+| `url` | text | not null | A2A 端点 |
 | `protocol_version` | varchar(16) | not null default '' | 从 Agent Card 读取 |
-| `card` | jsonb | not null | 原始 Agent Card 快照 |
+| `card` | jsonb | not null default '{}' | 原始 Agent Card 快照 |
 | `skills` | jsonb | not null default '[]' | 规范化后的技能列表 |
+| `capabilities` | jsonb | not null default '{}' | streaming / pushNotifications 等 |
 | `auth_type` | varchar(16) | not null default 'none' | `none` / `api_key` / `oauth2` |
-| `auth_config` | jsonb | not null default '{}' | 密钥引用（不存明文） |
+| `auth_scheme` | varchar(32) | not null default 'none' | 展示用 `bearer` / `header` / `oauth2` / `none` |
+| `auth_hint` | varchar(160) | not null default '' | 凭据提示（不回显明文） |
+| `secret_ref` | varchar(200) | null | 凭据引用（`env:NAME`） |
+| `headers` | jsonb | not null default '{}' | 普通头明文；敏感头只存 secret_ref 或 AES-GCM 密文 |
+| `requires_approval` | boolean | not null default false | 写操作技能需审批 |
 | `enabled` | boolean | not null default true | 是否参与工具生成 |
-| `health_status` | varchar(16) | not null default 'unknown' | `unknown` / `healthy` / `unhealthy` |
-| `last_seen_at` | timestamptz | null | 最近一次成功拉取 Card/调用 |
+| `health_status` | varchar(16) | not null default 'unknown' | `unknown` / `healthy` / `degraded` / `unhealthy` |
+| `consecutive_failures` | integer | not null default 0 | 连续失败计数（≥3 标 unhealthy） |
+| `last_checked_at` | timestamptz | null | 最近一次健康检查 |
+| `last_latency_ms` | integer | null | 最近一次健康检查延迟 |
+| `last_error` | text | null | 最近一次错误摘要 |
+| `name_edited` | boolean | not null default false | 用户改过 name 后 refresh 不覆盖 |
+| `deleted_at` | timestamptz | null | 软删 |
 | `created_at` / `updated_at` | timestamptz | not null | |
 
-索引：`(enabled)`、`(health_status)`。
+索引：`uq_remote_agents_slug_active(slug) WHERE deleted_at IS NULL`、`(owner_user_id)`、`(enabled, health_status)`。
 
-### 4.6 `a2a_tasks`（远程 A2A 任务）
+### 4.6 `a2a_tasks`（A2A 任务，M2 已落地）
 
 | 字段 | 类型 | 约束 | 说明 |
 |---|---|---|---|
 | `id` | uuid | PK | 本地任务 ID |
-| `run_id` | uuid | FK runs, cascade | 所属图执行 |
-| `remote_agent_id` | uuid | FK remote_agents, restrict | 目标 Agent |
-| `tool_call_id` | varchar(64) | not null | LangChain tool call ID，用于幂等 |
-| `a2a_task_id` | varchar(128) | null | 远程返回的 task id |
+| `a2a_task_id` | varchar(128) | not null default '' | 远程返回的 task id（空串表示尚未拿到） |
+| `remote_agent_id` | uuid | not null, FK remote_agents (restrict) | 目标 Agent |
+| `run_id` | uuid | null, FK runs (set null) | 所属图执行 |
+| `conversation_id` | uuid | null, FK conversations (set null) | 所属会话 |
+| `tool_call_id` | varchar(64) | not null default '' | LangChain tool call ID，用于幂等 |
 | `context_id` | varchar(128) | null | 远程上下文 ID |
-| `state` | varchar(24) | not null | 状态映射见下表 |
-| `request` | jsonb | not null | 请求摘要（脱敏） |
-| `result` | jsonb | null | artifact/最终消息摘要 |
-| `error` | jsonb | null | 错误码/消息/是否可重试 |
+| `state` | varchar(16) | not null default 'submitted' | 8 态，见下 |
+| `progress` | float | null | 远程进度 0–1 |
+| `request` | jsonb | not null default '{}' | `{tool,args,summary}` 请求快照 |
+| `result` | jsonb | null | `{artifact,summary}` 终态结果 |
+| `error` | jsonb | null | `{code,message,retryable,at}` |
+| `input_request` | jsonb | null | 远程要求补充输入 |
+| `auth_request` | jsonb | null | 远程要求授权 |
+| `timeline` | jsonb | not null default '[]' | `[{state,at,duration_ms,note}]` |
 | `started_at` / `finished_at` | timestamptz | null | |
 | `created_at` / `updated_at` | timestamptz | not null | |
 
-索引：`(run_id)`、`(state)`、`UNIQUE (remote_agent_id, a2a_task_id)`。
+索引：`(state, created_at desc)`、`(remote_agent_id, created_at desc)`、`(run_id, created_at desc)`、`(conversation_id, created_at desc)`。
 
-状态：`submitted` / `working` / `input_required` / `completed` / `failed` / `canceled` / `rejected` / `auth_required`。
+状态：`submitted` / `working` / `input_required` / `auth_required` / `completed` / `failed` / `canceled` / `rejected`。
 
 ### 4.7 `tool_invocations`
 
