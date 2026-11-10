@@ -46,6 +46,9 @@ logs/
 # 本地附件存储
 data/attachments/
 
+# 测试用知识库原文存储（用例结束后由 conftest 清理，绝不入库）
+data/test-knowledge/
+
 # DSH workspace-session (managed by dsh-workspace-session)
 .dsh/workspace-session.json
 .dsh/sessions/**/session.lock
