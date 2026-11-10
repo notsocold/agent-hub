@@ -734,6 +734,6 @@ GET /api/v1/instructions
 
 ## 9. A2A 出站与入站状态（2026-11-10）
 
-- **出站（M2，已实现）**：`/api/v1/agents*` 注册/刷新/健康检查、`send_message` 工具、`/api/v1/tasks*` 任务查询与动作、SSE `a2a.*` 事件；
+- **出站（M2，已实现）**：`/api/v1/agents*` 注册/刷新/健康检查、`send_message` 工具、`/api/v1/tasks*` 任务查询与动作、SSE `a2a.*` 事件；协议层已迁移到 `a2a-sdk` 1.3.0，对外契约不变；
 - **入站（M3，已取消）**：本服务不发布 Agent Card、不暴露 JSON-RPC 端点；`/a2a` 与 `/a2a/.well-known/agent-card.json` 返回 404；
 - 需求变更记录见 [feedback/2026-11-10-requirement-change-outbound-only.md](feedback/2026-11-10-requirement-change-outbound-only.md)。

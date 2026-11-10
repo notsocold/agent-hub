@@ -1,5 +1,8 @@
 # M2 A2A 出站后端交接报告
 
+> **历史报告**（2026-11-09）：当时 A2A 客户端为自研实现；2026-11-10 已迁移到 `a2a-sdk` 1.3.0。
+> 当前实现与验证见 [迁移报告](2026-11-10-a2a-sdk-migration-report.md)；本报告保留当时的交付证据，不再代表当前实现。
+
 - 日期：2026-11-10
 - 仓库：`agent-hub`（FastAPI + SQLAlchemy async + Alembic + LangGraph）
 - 范围：远程 Agent 注册表 / Agent Card 拉取校验 / A2A 出站客户端 / 统一 send_message 工具 / 任务查询与动作 / 聊天与系统集成

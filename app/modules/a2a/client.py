@@ -1,4 +1,4 @@
-"""A2A 出站客户端：基于 ``a2a-sdk`` 1.x 的 JSON-RPC 传输（兼容 0.3 / 1.0）。
+"""A2A 出站客户端：基于 ``a2a-sdk`` 1.3.0 的 JSON-RPC 传输（兼容 0.3 / 1.0）。
 
 迁移说明（2026-11-10）：协议层改用官方 ``a2a-sdk``（Agent Card 解析、JSON-RPC
 transport、protobuf 类型、SDK 错误类型），对外仍保留 ``A2aClient`` / ``A2aError``
@@ -8,7 +8,7 @@ transport、protobuf 类型、SDK 错误类型），对外仍保留 ``A2aClient`
   ``CompatJsonRpcTransport``，1.x 时用 ``JsonRpcTransport``；
 - card 优先由调用方传入（数据库快照），缺失时通过 SDK ``A2ACardResolver`` 拉取；
 - 测试注入：``register_test_transport`` 保留，SDK 传输共用同一 ``httpx.AsyncClient``；
-- 响应体上限仍按 ``A2A_MAX_RESPONSE_BYTES`` 约束（按文本字符近似）。
+- 响应体上限仍按 ``A2A_MAX_RESPONSE_BYTES`` 约束（按 UTF-8 字节估算）。
 """
 
 from __future__ import annotations
@@ -245,20 +245,24 @@ def _response_updates(response: SendMessageResponse) -> list[A2aUpdate]:
     raise A2aError("a2a_invalid_response", "远程返回结构无法识别", retryable=False)
 
 
+def _text_bytes(text: str) -> int:
+    return len(text.encode("utf-8"))
+
+
 def _update_size(update: A2aUpdate) -> int:
-    """按文本字符数近似一次更新的体积。"""
+    """按 UTF-8 字节数估算一次更新的体积。"""
     total = 0
     for part in update.parts:
-        total += len(str(part.get("text") or ""))
+        total += _text_bytes(str(part.get("text") or ""))
     if update.status_message is not None:
         for part in update.status_message.get("parts") or []:
-            total += len(str(part.get("text") or ""))
+            total += _text_bytes(str(part.get("text") or ""))
     if update.artifact is not None:
         for part in update.artifact.get("parts") or []:
-            total += len(str(part.get("text") or ""))
+            total += _text_bytes(str(part.get("text") or ""))
     for artifact in update.artifacts:
         for part in artifact.get("parts") or []:
-            total += len(str(part.get("text") or ""))
+            total += _text_bytes(str(part.get("text") or ""))
     return total
 
 

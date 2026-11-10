@@ -64,7 +64,7 @@ flowchart LR
 |---|---|---|
 | Web 框架 | FastAPI + Uvicorn | `create_app()` 工厂，REST + SSE |
 | 智能体编排 | LangChain 1.x + LangGraph 1.x | 状态图、工具调用、中断、流式事件 |
-| A2A 协议 | `a2a-sdk[fastapi]` 1.3.0（客户端运行时） | 出站协议层用 SDK JSON-RPC 传输（0.3 兼容 + 1.0）；Card 拉取与 SSRF 校验保留业务层 |
+| A2A 协议 | `a2a-sdk[fastapi]` >=1.3.0,<2.0（当前锁定 1.3.0） | 出站协议层用 SDK JSON-RPC 传输（0.3 兼容 + 1.0）；Card 拉取/SSRF 校验与 SDK schema 校验并存 |
 | 业务库 | PostgreSQL 16 + SQLAlchemy 2（异步） + Alembic | 统一承载业务表 |
 | 向量检索 | pgvector（HNSW，cosine） | 与业务表同库同事务 |
 | 会话记忆 | `langgraph-checkpoint-postgres` | checkpoint 表放独立 `langgraph` schema |

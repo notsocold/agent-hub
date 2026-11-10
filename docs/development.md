@@ -1,7 +1,7 @@
 # 开发指南
 
-> **当前仓库处于 M1**：认证、会话、聊天 SSE、运行/事件已实现，依赖已安装。
-> 本文命令可直接执行；M1.5/M2+ 模块仍按路线图推进。
+> **当前进度**：M1 / M1.5 / M2 已实现，A2A 出站客户端已迁移到 `a2a-sdk` 1.3.0；
+> M3 入站按 2026-11-10 需求变更取消，M4 起按路线图推进。本文命令可直接执行。
 
 ## 1. 环境要求
 
@@ -94,13 +94,13 @@ psql "${DATABASE_URL/postgresql+psycopg/postgresql}" -c "SELECT extname FROM pg_
 5. 补测试（unit + integration），更新 `docs/api.md`；
 6. 跑 `uv run ruff check . && uv run ruff format . && uv run pytest`。
 
-### 新增 A2A 工具
+### 新增 A2A 能力
 
-1. 在 `app/agents/tools/` 新建工具模块，用 `@tool` 装饰并写清适用/不适用场景；
-2. 工具必须是幂等的，或显式声明 `requires_approval=True`；
-3. 超时、错误转换为可读文本，不把堆栈抛给模型；
-4. 在 `app/agents/tools/__init__.py` 汇总；
-5. 补工具单测（mock 外部依赖）。
+1. 协议调用放 `app/modules/a2a/`（`client.py` 用 SDK 传输，`tool.py` 做远程调用编排）；
+2. LangChain 工具工厂放 `app/modules/chat/tools.py`，在装配处注册；
+3. 工具必须幂等，或显式声明 `requires_approval=True`；
+4. 超时、错误转换为可读文本，不把堆栈抛给模型；远程返回按不可信数据截断；
+5. 补单元测试（`tests/test_a2a_sdk_unit.py`）与假 Agent 契约测试。
 
 ## 6. 数据库迁移流程（已可用）
 
@@ -131,23 +131,31 @@ uv run alembic downgrade -1 && uv run alembic upgrade head
 - 大表索引使用 `CONCURRENTLY`（Alembic `autocommit_block()`）；
 - 向量维度变更必须走新表方案（见 `docs/database.md` 5.3）。
 
-## 7. A2A 本地联调
+## 7. A2A 本地联调（仅出站）
+
+本服务不提供 A2A 入站（没有 Agent Card / JSON-RPC 端点），出站协议层使用 `a2a-sdk` 1.3.0。
 
 ```bash
-# 启动本服务（需先实现 app/main.py）
+# 1. 启动本服务
 uv run uvicorn app.main:app --reload
 
-# 查看 Agent Card（路径以实际路由为准）
-curl -s http://localhost:8000/a2a/.well-known/agent-card.json | python3 -m json.tool
+# 2. 另起终端启动本地假 Agent（0.3 协议，127.0.0.1:9100）
+uv run python scripts/mock_a2a_agent.py
 
-# 用官方 inspector 调试
-# https://github.com/a2aproject/a2a-inspector
+# 3. 注册远程 Agent（需要先登录拿 JWT）
+curl -s http://localhost:8000/api/v1/agents \
+  -H "Authorization: Bearer <token>" \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"http://127.0.0.1:9100"}'
+
+# 4. 在聊天里让主智能体委派，或直接查看任务
+curl -s http://localhost:8000/api/v1/tasks -H "Authorization: Bearer <token>"
 ```
 
 出站联调建议：
 
-- 先起一个本地假 Agent（`tests/fixtures/fake_agent.py`，M2 提供），验证注册、工具生成、任务状态；
-- 用 `A2A_ALLOWED_HOSTS=localhost,127.0.0.1` 放行本地地址（仅开发环境）；
+- 假 Agent 跑 `scripts/mock_a2a_agent.py`（与 `tests/fixtures/fake_a2a_agent.py` 同源），验证注册、工具生成、任务状态；
+- dev/test 默认允许回环地址；生产需配置 `A2A_ALLOWED_HOSTS` 白名单；
 - 远程调用日志包含 `a2a_task_id`、`context_id`、耗时、状态码。
 
 ## 8. 测试策略
@@ -156,7 +164,7 @@ curl -s http://localhost:8000/a2a/.well-known/agent-card.json | python3 -m json.
 |---|---|---|
 | 单元 | schema、工具封装、状态映射、权限函数 | 无外部服务 |
 | 集成 | FastAPI + 测试 PG + 假 LLM | 本机 PostgreSQL（`TEST_DATABASE_URL`） |
-| 契约 | Agent Card schema、JSON-RPC 方法、SSE 事件 | 固定样本/假 Agent |
+| 契约 | Agent Card schema、JSON-RPC 0.3/1.0 传输、SSE 事件 | 固定样本 / 假 Agent（`tests/fixtures/fake_a2a_agent.py`） |
 | E2E | 真实链路（可选） | 真模型 + 假远程 Agent |
 
 约定：
@@ -164,7 +172,7 @@ curl -s http://localhost:8000/a2a/.well-known/agent-card.json | python3 -m json.
 - 默认不依赖真实 LLM/Embedding；用 `FakeListChatModel` 或 mock；
 - 测试数据库独立（默认 `agent_hub_test`），跑完清理；首次需 `createdb agent_hub_test`；
 - SSE 断言事件序列，不只断言文本；
-- 远程调用测试覆盖超时、5xx、非法响应、取消。
+- 远程调用测试覆盖超时、5xx、非法响应、取消；0.3 走假 Agent，1.0 走 `httpx.MockTransport`。
 
 ## 9. 调试
 
@@ -172,7 +180,7 @@ curl -s http://localhost:8000/a2a/.well-known/agent-card.json | python3 -m json.
 - 图调试：LangGraph Studio（可选）或 `graph.get_graph().draw_mermaid()`；
 - SQL：`DB_ECHO=true` 打印语句（仅本地）；
 - SSE：`curl -N -H "Accept: text/event-stream" ...` 观察原始帧；
-- A2A：`a2a-inspector` + 保存原始 JSON-RPC 报文到 `tests/fixtures/`。
+- A2A：查看 `a2a_tasks` 的 `timeline`/`request`/`result`；假 Agent 的调用记录见 `tests/fixtures/fake_a2a_agent.py`。
 
 ## 10. 常见问题
 

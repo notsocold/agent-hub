@@ -12,7 +12,7 @@
 | M0 项目骨架 | 已完成 | 目录、依赖声明、配置模板、文档与前端脚手架；交付物全部勾选 |
 | M1 对话最小闭环 | 已完成（2026-11-09） | 认证/会话/SSE/运行/系统信息；前端真实联调 `smoke:real` 97 项；首 token P95 压测并入 M6 |
 | M1.5 个人能力层 | 已完成（2026-11-09） | 指令/记忆/技能/MCP/附件/HITL；85 个测试 + `smoke:m15` 68 项；遗留项见 M1.5 报告 §6 |
-| M2 A2A 出站 | 已完成（2026-11-10） | Agent Card/客户端/`send_message`/任务 API；101 个测试 + 假 Agent 真实联调 |
+| M2 A2A 出站 | 已完成（2026-11-10） | Agent Card/客户端/`send_message`/任务 API；101 个测试 + 假 Agent 真实联调；同日出站客户端迁移到 `a2a-sdk` 1.3.0（108 测试） |
 | M3 A2A 入站 | 已取消（2026-11-10 需求变更） | 本服务只做 A2A 出站 Client，不发布 Agent Card、不提供 JSON-RPC 入站；原范围/验收不适用，M4 顺延 |
 | M4 知识库 RAG | 未开始 | `capabilities.knowledge=false`；pgvector 与 `search_knowledge` 未接入 |
 | M5 审批与安全加固 | 未开始（部分切片已提前落地） | `approvals`/`audit_logs` 与审批端点已在 M1.5 落地；聊天限流、`interrupt()`/`Command(resume=...)`、注入防护、密钥管理未做 |

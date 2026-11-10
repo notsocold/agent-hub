@@ -24,7 +24,7 @@
 | MCP 自研客户端 | `api.md` §8.3 | 未用官方 `mcp` SDK，自研 JSON-RPC over httpx |
 | MCP stdio 默认关闭 | `api.md` §8.3 | 无隔离保证，v1 默认关闭 |
 | M1.5 管理端未实现 | `api.md` §8.3 | 数据模型已就绪，路由未做 |
-| M2 A2A 客户端自研 | `feedback/2026-11-09-m2-backend-report.md` §3 | 未用 a2a-sdk 运行时，仅用 0.3/1.0 通用方法名 |
+| M2 A2A 客户端自研（已消除） | `feedback/2026-11-09-m2-backend-report.md` §3 | 2026-11-10 已迁移到 a2a-sdk 1.3.0，见迁移报告；M2 报告已加历史注记 |
 | M3 入站取消 | `roadmap.md`、`feedback/2026-11-10-requirement-change-outbound-only.md` | 2026-11-10 需求变更 |
 
 ## 3. 待决策

@@ -141,3 +141,68 @@ async def test_http_401_maps_to_auth_failed() -> None:
         await A2aClient(_AGENT_URL, card=_CARD_10).send_message(text="hello")
     assert exc_info.value.code == "a2a_auth_failed"
     assert exc_info.value.retryable is False
+
+
+async def test_stream_message_parses_1_0_events() -> None:
+    """1.0 流式：SSE data 为 JSON-RPC 信封，result 为 StreamResponse。"""
+    frames = [
+        {
+            "jsonrpc": "2.0",
+            "id": "1",
+            "result": {
+                "statusUpdate": {
+                    "taskId": "task-1",
+                    "contextId": "ctx-1",
+                    "status": {"state": "TASK_STATE_WORKING"},
+                }
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": "1",
+            "result": {
+                "artifactUpdate": {
+                    "taskId": "task-1",
+                    "contextId": "ctx-1",
+                    "artifact": {
+                        "artifactId": "art-1",
+                        "name": "result",
+                        "parts": [{"text": "流式结果"}],
+                    },
+                }
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": "1",
+            "result": {
+                "statusUpdate": {
+                    "taskId": "task-1",
+                    "contextId": "ctx-1",
+                    "status": {"state": "TASK_STATE_COMPLETED"},
+                }
+            },
+        },
+    ]
+    body = "".join(f"data: {json.dumps(frame, ensure_ascii=False)}\n\n" for frame in frames)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            content=body.encode("utf-8"),
+        )
+
+    register_test_transport(_AGENT_URL, httpx.MockTransport(handler))
+    updates = [
+        update
+        async for update in A2aClient(_AGENT_URL, card=_CARD_10).stream_message(text="hello")
+    ]
+
+    assert [update.kind for update in updates] == ["task", "artifact", "task"]
+    assert updates[0].state == "working"
+    assert updates[0].task_id == "task-1"
+    assert updates[1].artifact is not None
+    assert updates[1].artifact["parts"][0]["text"] == "流式结果"
+    assert updates[2].state == "completed"
+    assert updates[2].final is True

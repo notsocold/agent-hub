@@ -33,7 +33,7 @@
 |---|---|---|---|
 | Web | FastAPI + Uvicorn | ≥ 0.141 / ≥ 0.53 | 与 customer-service 一致，异步生态成熟 |
 | 编排 | LangChain + LangGraph | 1.4.x / 1.2.x | 用户指定；LangGraph 状态图适合多轮与工具循环 |
-| A2A | `a2a-sdk[fastapi]` | 1.3.x | 实现 A2A 1.0，兼容 0.3；官方 Python SDK |
+| A2A | `a2a-sdk[fastapi]` | >=1.3.0,<2.0（当前锁定 1.3.0） | 实现 A2A 1.0，兼容 0.3；出站协议层已使用官方 SDK |
 | 业务库 | PostgreSQL 16 + SQLAlchemy 2（异步） | — | 事务、JSONB、扩展生态 |
 | 向量库 | pgvector（HNSW + cosine） | 0.5.x | 与业务同库同事务；优先使用用户本机已有 PostgreSQL，Docker 仅可选 |
 | 会话记忆 | `langgraph-checkpoint-postgres` | 3.2.x | 多实例可共享，避免 SQLite 单机限制 |

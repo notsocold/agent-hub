@@ -1,7 +1,7 @@
 # A2A 集成设计
 
 - 协议：Agent2Agent（A2A）
-- 依赖：`a2a-sdk[fastapi]` 1.3.0（当前最新稳定版）；**出站协议层已迁移到 SDK**（2026-11-10，兼容 0.3/1.0）
+- 依赖：`a2a-sdk[fastapi]` >=1.3.0,<2.0（当前锁定 1.3.0）；**出站协议层已迁移到 SDK**（2026-11-10，兼容 0.3/1.0）
 - 状态：M2 出站已实现（2026-11-10）；**入站 Server 按 2026-11-10 需求变更不实现**（见[变更记录](feedback/2026-11-10-requirement-change-outbound-only.md)）
 
 ## 1. 本服务的角色
@@ -315,7 +315,7 @@ curl -s http://localhost:8000/a2a \
 
 ### 8.3 验证工具
 
-- 官方 [a2a-inspector](https://github.com/a2aproject/a2a-inspector)：可视化查看 Agent Card、发消息、看 Task 状态；
+- 官方 [a2a-inspector](https://github.com/a2aproject/a2a-inspector)：可视化调试**远程** Agent 的 Card 与 JSON-RPC（本服务不提供入站，不能用于调试本服务）；
 - 本地假 Agent：`tests/fixtures/fake_agent.py`（M2 实现），用于出站链路的自动化测试；
 - 契约测试：固定 Agent Card JSON 与 JSON-RPC 响应样本，防止 SDK 升级破坏兼容。
 
@@ -336,5 +336,5 @@ curl -s http://localhost:8000/a2a \
 - 出站客户端使用 `a2a-sdk` 1.3.0 的 JSON-RPC 传输，按 Agent Card interface 版本协商（0.3 → `CompatJsonRpcTransport`，1.x → `JsonRpcTransport`）；
 - `remote_agents.protocol_version` 记录对端版本；
 - 客户端按 Agent Card 的 `capabilities.streaming` 选择 `message/stream` 或 `message/send`；
-- SDK 升级前跑契约测试（Agent Card schema、JSON-RPC 方法、SSE 事件）与 a2a-inspector 冒烟；
+- SDK 升级前跑契约测试（Agent Card schema、JSON-RPC 0.3/1.0 传输、SSE 事件）与假 Agent 冒烟；
 - 不在业务代码中直接构造/解析 JSON-RPC 原始报文，统一走 SDK 类型，降低规范升级成本。

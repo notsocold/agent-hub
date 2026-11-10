@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import time
 from dataclasses import dataclass, field
@@ -63,6 +64,22 @@ def _validate_protocol_version(version: Any) -> str:
     return raw[:16]
 
 
+def validate_card_schema(card: dict[str, Any]) -> None:
+    """用 ``a2a-sdk`` 的 AgentCard 模型做一次规范校验。
+
+    SDK 的 ``parse_agent_card`` 会原地修改 dict（兼容 0.3 字段），因此传入副本。
+    业务层仍保留同源、协议版本、技能数量等自定义校验。
+    """
+    from a2a.client.card_resolver import parse_agent_card
+
+    try:
+        parse_agent_card(copy.deepcopy(card))
+    except Exception as exc:
+        raise ValidationFailedError(
+            "Agent Card 结构不符合 A2A 规范", code="agent_card_invalid"
+        ) from exc
+
+
 def normalize_card(card: dict[str, Any], *, registered_url: str) -> CardFetchResult:
     """把原始 Card 校验并规范化；返回 preview 需要的结构。
 
@@ -72,6 +89,7 @@ def normalize_card(card: dict[str, Any], *, registered_url: str) -> CardFetchRes
     result = CardFetchResult(card=card)
     if not isinstance(card, dict):
         raise ValidationFailedError("Agent Card 不是 JSON 对象", code="agent_card_invalid")
+    validate_card_schema(card)
 
     name = str(card.get("name") or "").strip()
     if not name:
