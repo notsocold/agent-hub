@@ -31,10 +31,10 @@
 ```
 TEST_DATABASE_URL=postgresql+psycopg://devuser:devpass@localhost:54321/agent_hub_test \
   .venv/bin/python -m pytest -q
-→ 389 passed, 1 skipped in ~66s
+→ 395 passed, 1 skipped in ~68s
 ```
 
-- 基线 M4 时期 339 项 → 现在 **389 项通过**（+50）；
+- 基线 M4 时期 339 项 → 现在 **395 项通过**（+56）；
 - 唯一的 skip 仍是知识库语义评测组（需真实 Embedding key，与 M4 一致）；
 - 新增/更新的关键用例：
 
@@ -62,7 +62,25 @@ TEST_DATABASE_URL=postgresql+psycopg://devuser:devpass@localhost:54321/agent_hub
 | 安全用例（SSRF/越权/注入） | `test_security_hardening.py` + 既有 `test_security_unit.py` / MCP / A2A SSRF 用例全绿 |
 | 聊天限流 | `test_chat_rate_limit.py` 429 + `retry_after_seconds` |
 
-### 2.3 行为变化（实测）
+### 2.3 整分支审查与修复（2026-11-10）
+
+对 `a33b968..f95b728` 做了独立整分支审查，无 Critical、4 条 Important、8 条 Minor。修复记录：
+
+| # | 发现 | 修复与回归 |
+|---|---|---|
+| I1 | `tasks/service.py` 取消进行中 A2A 任务仍按旧签名调用 `_resolved_headers(agent)` → TypeError/500 | 改 `await _resolved_headers(db, agent)`；新增 `test_cancel_working_task_resolves_headers`（RED：TypeError → GREEN） |
+| I2 | resume 的 `start_seq` 在等待旧任务前读取 → seq 冲突/倒序，违反「seq 不冲突、message.done 只发一次」 | 改为旧任务收尾后取 `max(seq)`；cancel 前等待旧任务；`_finalize_*` 增加 `_has_terminal_event` 幂等；新增 seq 严格递增与单终态断言 |
+| I3 | 工具异常路径的错误原文未包 `<untrusted>`（MCP 远程错误可注入） | 异常分支同样 `_wrap_external`；新增 `test_external_error_wrapped`（RED→GREEN） |
+| I4 | 输出打码只覆盖成功终态；挂起/取消/失败路径明文落库 | 抽 `_redact_before_store`，三处终态与挂起落库前统一打码 + 审计；新增 `test_timeout_redacts_partial_output`（RED→GREEN） |
+| M1/M4/M5 | 超时审计缺 approval_id；巡检用预选 ids 推导 run；decide 未刷新 run | `UPDATE ... RETURNING` 只处理真正 expired；审计带 approval_id；decide commit 后 `refresh(run)` |
+| M2/M3 | halt 异常会让已取消请求 500；resume 无挂起回滚静默 | halt 包 try/except 记日志；回滚加 warning |
+| M6 | `role_override` 误伤「你现在是学生吗」；`tool_coercion` 不覆盖「直接调用」；包裹转义大小写变体 | 收紧/补充规则与负样例；大小写不敏感转义；`skill_file` 标签统一 |
+| M7 | 恢复后 `first_token_ms` 丢失、usage 累加基线错误 | resumed 读回 `run.first_token_ms`；usage 用当前累计值相加 |
+| M8 | `mcp/service.py` 续行缩进错位 | 对齐 |
+
+修复后：`ruff check .` 全绿；全量 **395 passed, 1 skipped**。
+
+### 2.4 行为变化（实测）
 
 - `interrupt()` 恢复只重跑 gate 节点，tools 只执行一次（probe：gate×2、tools×1）；
 - 同一 gate 节点顺序调用两次 `interrupt()` 会**错配 resume 值**（probe5），因此一轮多审批只挂起一次；

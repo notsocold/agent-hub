@@ -15,7 +15,7 @@
 | M2 A2A 出站 | 已完成（2026-11-10） | Agent Card/客户端/`send_message`/任务 API；101 个测试 + 假 Agent 真实联调；同日出站客户端迁移到 `a2a-sdk` 1.3.0（108 测试） |
 | M3 A2A 入站 | 已取消（2026-11-10 需求变更） | 本服务只做 A2A 出站 Client，不发布 Agent Card、不提供 JSON-RPC 入站；原范围/验收不适用，M4 顺延 |
 | M4 知识库 RAG | 后端已完成（2026-11-10）；前端待做 | 模型/pgvector 迁移/解析/切分/双通道 Embedding/7 个 API/`search_knowledge`/引用落库/`build_kb.py`/离线评测；323 测试通过、修复时钟抖动后全量 10 连跑 0 失败；语义召回率因无真实 Embedding key **未取得证据** |
-| M5 审批与安全加固 | 后端已完成（2026-11-10） | HITL 迁移到 `interrupt()`/`Command(resume=...)`；超时取消、聊天限流、注入检测/输出打码、平台密钥、审计检索；389 测试通过；跨实例启动保活与前端留后续（见 M5 报告） |
+| M5 审批与安全加固 | 后端已完成（2026-11-10） | HITL 迁移到 `interrupt()`/`Command(resume=...)`；超时取消、聊天限流、注入检测/输出打码、平台密钥、审计检索；395 测试通过；跨实例启动保活与前端留后续（见 M5 报告） |
 | M6 生产化与可观测 | 未开始 | OTel/指标/CI/Dockerfile/容量基线未做 |
 
 > 注：M1.5 是追加的中间里程碑，排在 M1 之后、M2 之前，不改动原 M2–M6 的编号含义。
@@ -183,7 +183,7 @@
 - [x] 高风险工具调用前必须审批，拒绝后不执行（`test_hitl_interrupt.py`：拒绝后 MCP 未收到调用）；
 - [x] 审批超时自动过期，run 进入 canceled（`test_hitl_interrupt` / `test_mcp`：expired + canceled + `message.done.reason=approval_timeout`）；
 - [x] 审计日志可按用户/动作/时间检索（`test_audit_api.py`：范围、过滤、游标）；
-- [x] 安全用例（SSRF、越权、注入）测试通过（`test_security_hardening.py` + 既有 SSRF/越权用例，全量 389 通过）。
+- [x] 安全用例（SSRF、越权、注入）测试通过（`test_security_hardening.py` + 既有 SSRF/越权用例，全量 395 通过）。
 
 ## M6 生产化与可观测（未开始）
 
