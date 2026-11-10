@@ -254,7 +254,11 @@ class SendMessageRunner:
     # ------------------------------------------------------------------ 远程调用
 
     def _client(self) -> A2aClient:
-        return A2aClient(self.agent.url, headers=_resolved_headers(self.agent))
+        return A2aClient(
+            self.agent.url,
+            headers=_resolved_headers(self.agent),
+            card=self.agent.card,
+        )
 
     async def _send_round(
         self, text: str, *, context_id: str | None, task_id: str | None

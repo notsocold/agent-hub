@@ -1,7 +1,7 @@
 # A2A 集成设计
 
 - 协议：Agent2Agent（A2A）
-- 依赖：`a2a-sdk[fastapi]` 1.x（当前最新稳定 1.3.0）；**当前实现为自研 JSON-RPC 2.0 over `httpx`**（兼容 0.3/1.0 方法名），迁移到 SDK 运行时列为后续任务
+- 依赖：`a2a-sdk[fastapi]` 1.3.0（当前最新稳定版）；**出站协议层已迁移到 SDK**（2026-11-10，兼容 0.3/1.0）
 - 状态：M2 出站已实现（2026-11-10）；**入站 Server 按 2026-11-10 需求变更不实现**（见[变更记录](feedback/2026-11-10-requirement-change-outbound-only.md)）
 
 ## 1. 本服务的角色
@@ -158,6 +158,12 @@ sequenceDiagram
 - 入站请求体限制（默认 1 MB），附件走独立上传通道。
 
 ## 5. 出站：A2A Client
+
+> 实现（2026-11-10）：出站协议层使用 `a2a-sdk` 1.3.0。Agent Card 用 SDK
+> `parse_agent_card` 解析；JSON-RPC 传输按 Card 的 `supportedInterfaces` 协商，
+> 0.3.x 走 `CompatJsonRpcTransport`、1.x 走 `JsonRpcTransport`；对外仍暴露
+> `A2aClient` / `A2aError` / `A2aUpdate`，业务层无需感知 protobuf。
+> Card 拉取、SSRF 与同源校验仍由本项目 `card.py` 完成（安全边界保留在业务层）。
 
 ### 5.1 注册与发现
 
@@ -327,7 +333,7 @@ curl -s http://localhost:8000/a2a \
 
 ## 10. 版本兼容策略
 
-- 出站客户端按 0.3/1.0 通用方法名实现（`message/send`、`message/stream`、`tasks/get`、`tasks/cancel`）；`a2a-sdk` 1.x（最新稳定 1.3.0）依赖保留，运行时迁移列为后续任务；
+- 出站客户端使用 `a2a-sdk` 1.3.0 的 JSON-RPC 传输，按 Agent Card interface 版本协商（0.3 → `CompatJsonRpcTransport`，1.x → `JsonRpcTransport`）；
 - `remote_agents.protocol_version` 记录对端版本；
 - 客户端按 Agent Card 的 `capabilities.streaming` 选择 `message/stream` 或 `message/send`；
 - SDK 升级前跑契约测试（Agent Card schema、JSON-RPC 方法、SSE 事件）与 a2a-inspector 冒烟；

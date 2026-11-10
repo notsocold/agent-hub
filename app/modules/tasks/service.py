@@ -384,7 +384,9 @@ async def cancel_task_action(db: AsyncSession, user: User, task_id: uuid.UUID) -
     agent = await db.get(RemoteAgent, task.remote_agent_id)
     if task.a2a_task_id and agent is not None:
         try:
-            client = A2aClient(agent.url, headers=_resolved_headers(agent))
+            client = A2aClient(
+                agent.url, headers=_resolved_headers(agent), card=agent.card
+            )
             await client.cancel_task(task.a2a_task_id)
         except A2aError as exc:
             logger.info("远程取消失败（尽力而为）task=%s：%s", task.id, exc.message)

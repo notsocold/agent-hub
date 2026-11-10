@@ -8,7 +8,7 @@
 
 | # | 发现 | 文档位置 | 实际情况 | 处理 |
 |---|---|---|---|---|
-| A | `a2a-sdk` 版本范围与运行时使用 | `docs/a2a.md`、`README.md` 写 1.3.x；`pyproject.toml` 为 `>=1.3.0,<2.0` | PyPI 最新稳定版即 `1.3.0`；`app/`、`tests/`、`scripts/` **零处 import a2a-sdk**（M2 自研客户端） | 依赖保持 `>=1.3.0,<2.0`（当前锁 1.3.0，允许后续 1.x）；文档注明「当前自研实现，SDK 运行时迁移列为后续任务」 |
+| A | `a2a-sdk` 版本范围与运行时使用 | `docs/a2a.md`、`README.md` 写 1.3.x；`pyproject.toml` 为 `>=1.3.0,<2.0` | PyPI 最新稳定版即 `1.3.0` | **已迁移**：出站协议层改用 SDK 1.3.0（0.3 兼容 + 1.0 传输），依赖保持 `>=1.3.0,<2.0`；见 [迁移报告](2026-11-10-a2a-sdk-migration-report.md) |
 | B | `database.md` 的 M2 表结构与模型不一致 | `remote_agents`、`a2a_tasks` | 模型多出 `owner_user_id`/`capabilities`/`auth_scheme`/`secret_ref`/`headers`/`timeline`/`progress` 等字段，索引与可空性也不同 | 已按 `app/db/models/remote.py` 重写 §4.5 / §4.6 |
 | C | `api.md` 实现状态过时 | §7.3 称 `a2a.*`/`skill.activated` 等「后续里程碑接入」；§7.4 称 `agents`/`tasks` 仍为 false | M1.5/M2 已接入，`agents`/`tasks=true` | 已加当前状态说明（保留 M1 时点快照） |
 | D | `.env.example` 缺配置项 | — | `Settings` 96 项，模板仅 94 项 | 已补 `DB_POOL_PRE_PING`、`KNOWLEDGE_CATEGORIES_PER_MESSAGE` |
@@ -29,9 +29,7 @@
 
 ## 3. 待决策
 
-1. **`a2a-sdk` 运行时迁移**（已定方向：使用 a2a-sdk 最新稳定版）：
-   - 依赖保持 `>=1.3.0,<2.0`，当前锁定最新稳定 1.3.0；
-   - 代码仍为自研 JSON-RPC 客户端；迁移到 SDK 运行时需重写出站协议层并重跑 M2 全部测试与假 Agent 联调，列为后续任务。
+1. ~~`a2a-sdk` 运行时迁移~~：已于 2026-11-10 完成（见 [迁移报告](2026-11-10-a2a-sdk-migration-report.md)）。
 2. **前端仓库同步**：`agent-hub-web` 的路线图仍需删除「M3 A2A 入站」并确认 `system/info.a2a` 置空后的展示；本次只改后端仓库。
 
 ## 4. 验证

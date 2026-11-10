@@ -8,7 +8,7 @@
 > 已包含认证、会话/消息、聊天 SSE、运行与事件回放、审批、系统信息、个人能力层
 > （指令/记忆/技能/MCP/附件），以及 M2 的远程 Agent 注册表（Card 拉取/校验/健康检查）、
 > 统一 `send_message` 委派工具（含 HITL 等待与 SSE 事件）与任务查询/动作 API。
-> 测试 103 个全绿；迁移 `8a2f7c31e9d5` 已应用到 agent_hub。
+> 测试 107 个全绿；迁移 `8a2f7c31e9d5` 已应用到 agent_hub。
 > M3 入站 Server 已按 2026-11-10 需求变更取消（本服务仅出站）；M4–M6 仍未实现，对应能力开关明确返回 `false`。
 
 ## 1. 项目定位
@@ -64,7 +64,7 @@ flowchart LR
 |---|---|---|
 | Web 框架 | FastAPI + Uvicorn | `create_app()` 工厂，REST + SSE |
 | 智能体编排 | LangChain 1.x + LangGraph 1.x | 状态图、工具调用、中断、流式事件 |
-| A2A 协议 | `a2a-sdk[fastapi]` 1.x（当前最新稳定 1.3.0）+ 自研 JSON-RPC 2.0 客户端 | 兼容 0.3/1.0 方法名；SDK 运行时迁移列为后续任务（M2 报告 §3 已披露当前自研实现） |
+| A2A 协议 | `a2a-sdk[fastapi]` 1.3.0（客户端运行时） | 出站协议层用 SDK JSON-RPC 传输（0.3 兼容 + 1.0）；Card 拉取与 SSRF 校验保留业务层 |
 | 业务库 | PostgreSQL 16 + SQLAlchemy 2（异步） + Alembic | 统一承载业务表 |
 | 向量检索 | pgvector（HNSW，cosine） | 与业务表同库同事务 |
 | 会话记忆 | `langgraph-checkpoint-postgres` | checkpoint 表放独立 `langgraph` schema |
@@ -153,7 +153,7 @@ M1（2026-11-09）与 M1.5「个人能力层」（2026-11-09）已完成，M2「
 - [x] `remote_agents`/`a2a_tasks` 模型 + 可逆迁移（`8a2f7c31e9d5`，测试库 upgrade/downgrade/upgrade 通过）
 - [x] Agent Card 拉取/校验（SSRF 防护、同源校验、协议版本/技能校验，dev 可放行回环）
 - [x] `/agents` 全端点：preview/create（幂等）/list（stats）/detail/patch/delete（软删）/refresh/health
-- [x] A2A 客户端（自研 JSON-RPC 2.0：message/send、message/stream SSE、tasks/get、tasks/cancel，超时与错误映射）
+- [x] A2A 客户端（已迁移到 `a2a-sdk` 1.3.0：JSON-RPC 传输 + 0.3/1.0 版本协商 + 超时与错误映射；对外 `A2aClient` 语义不变）
 - [x] 统一 `send_message` 工具：仅注入 enabled Agent，HITL 等待（input_required/auth_required）复用审批式进程内 waiter
 - [x] SSE 事件：`a2a.task` / `a2a.artifact` / `a2a.input_required` / `a2a.auth_required`
 - [x] `/tasks` 全端点：列表（多状态过滤 + stats）/详情/取消/补充输入/授权/拒绝 + 等待超时懒过期

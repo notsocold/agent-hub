@@ -588,7 +588,10 @@ async def health_check_agent(db: AsyncSession, user: User, agent_id: uuid.UUID) 
     try:
         fetched = await fetch_agent_card(agent.url, headers=_resolved_headers(agent))
         latency_ms = fetched.latency_ms
-        probe = A2aClient(agent.url, headers=_resolved_headers(agent))
+        # 用刚拉取的 Card 快照探测，避免 SDK 客户端再拉一次 well-known。
+        probe = A2aClient(
+            agent.url, headers=_resolved_headers(agent), card=fetched.card
+        )
         try:
             await probe.get_task("__agent_hub_health_probe__")
         except A2aError as exc:

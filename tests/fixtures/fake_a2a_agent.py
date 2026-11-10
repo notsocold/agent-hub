@@ -37,6 +37,7 @@ class FakeA2aAgent:
         slow_seconds: float = 0.0,
         requires_approval: bool = False,
         base_path: str = "",
+        protocol_version: str = "0.3.0",
     ) -> None:
         self.name = name
         self.slug = slug
@@ -46,6 +47,7 @@ class FakeA2aAgent:
         self.slow_seconds = slow_seconds
         self.requires_approval = requires_approval
         self.base_path = base_path.rstrip("/")
+        self.protocol_version = protocol_version
         self.tasks: dict[str, dict[str, Any]] = {}
         self.calls: list[dict[str, Any]] = []
         self.app = self._build_app()
@@ -81,7 +83,7 @@ class FakeA2aAgent:
         if self.requires_approval:
             skill["metadata"] = {"requiresApproval": True}
         return {
-            "protocolVersion": "1.0",
+            "protocolVersion": self.protocol_version,
             "name": self.name,
             "description": self.description,
             "url": self.url,
@@ -166,6 +168,7 @@ class FakeA2aAgent:
     def _status(self, state: str, text: str, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
         message: dict[str, Any] = {
             "role": "agent",
+            "messageId": uuid.uuid4().hex,
             "parts": [{"kind": "text", "text": text}],
         }
         if metadata:
@@ -264,6 +267,7 @@ class FakeA2aAgent:
             "status": self._status("completed", "完成"),
             "artifacts": [
                 {
+                    "artifactId": uuid.uuid4().hex,
                     "name": "result",
                     "parts": [{"kind": "text", "text": result_text}],
                     "metadata": {"type": "text", "checks_passed": 12, "checks_total": 12},
@@ -339,6 +343,7 @@ class FakeA2aAgent:
             )
             return
         artifact = {
+            "artifactId": uuid.uuid4().hex,
             "name": "result",
             "parts": [{"kind": "text", "text": f"流式结果：{text[:120]} 处理完成"}],
             "metadata": {"type": "text"},

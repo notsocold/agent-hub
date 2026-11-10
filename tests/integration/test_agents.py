@@ -42,7 +42,8 @@ async def test_preview_valid_and_reject_bad_urls(client: httpx.AsyncClient, monk
     assert preview.status_code == 200, preview.text
     body = preview.json()
     assert body["valid"] is True
-    assert body["card"]["protocolVersion"] == "1.0"
+    # 假 Agent 实现的是 0.3 JSON-RPC 方法名，Card 如实声明 0.3.0。
+    assert body["card"]["protocolVersion"] == "0.3.0"
     assert body["normalized"]["name"] == "Fake Agent"
     assert body["normalized"]["capabilities"] == {
         "streaming": True,
