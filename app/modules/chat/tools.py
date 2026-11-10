@@ -89,6 +89,7 @@ class SearchKnowledgeArgs(BaseModel):
 # 检索失败/无命中时的固定中文文案（失败也不能打断整轮）。
 _KNOWLEDGE_NOT_FOUND = "知识库中未找到相关内容"
 _KNOWLEDGE_ERROR = "知识库检索失败，请稍后再试。"
+_KNOWLEDGE_DISABLED = "知识库能力未启用"
 
 
 class ToolRunner:
@@ -326,8 +327,14 @@ class ToolRunner:
         """检索内部知识库；结果按 ``[n] heading（filename / category / score）`` 编号。
 
         工具执行发生在 ``execute_run`` 的 db 上下文之外，所以这里自己开 session。
-        检索失败或库内无内容都返回中文文案，绝不把异常抛回图里打断整轮。
+        能力开关关闭时直接返回中文提示、绝不查库；检索失败或库内无内容也都返回
+        中文文案，绝不把异常抛回图里打断整轮。
         """
+        # 执行期门禁：关闭能力后即使模型仍然调用本工具，也不能检索或产生引用
+        # （引文会经 tool.result / message.done 落库）。唯一门禁放在这里，不在
+        # execute_run 里再裁剪工具，避免两套检查。
+        if not get_settings().knowledge_enabled:
+            return ToolRunOutcome(content=_KNOWLEDGE_DISABLED, summary="能力未启用")
         query = str(args.get("query") or "").strip()
         try:
             top_k_raw = args.get("top_k")

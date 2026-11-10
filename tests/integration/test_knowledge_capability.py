@@ -17,13 +17,16 @@ from typing import Any
 
 import httpx
 import pytest
+from langchain_core.messages import ToolMessage
 
 from app.agents.prompts import KNOWLEDGE_SECTION, assemble_system_prompt
 from app.core.config import reset_settings_cache
 from app.core.security import create_access_token
 from app.db.models.user import User
 from app.modules.chat import capabilities as capabilities_module
+from app.modules.chat import service as chat_service
 from tests.conftest import auth_headers, collect_sse
+from tests.helpers import make_scripted_model
 
 INFO_URL = "/api/v1/system/info"
 STREAM_URL = "/api/v1/chat/stream"
@@ -74,7 +77,6 @@ async def test_system_info_reports_knowledge_false_when_disabled(
 
 # ------------------------------------------------------- knowledge_categories
 
-
 async def test_disabled_knowledge_categories_rejected_with_403(
     client: httpx.AsyncClient, auth: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -108,6 +110,51 @@ async def test_enabled_knowledge_categories_stream_starts(
     names = [name for name, _ in events]
     assert "error" not in names, events
     assert "message.done" in names
+
+
+async def test_disabled_knowledge_tool_cannot_retrieve_or_cite(
+    client: httpx.AsyncClient,
+    auth: dict[str, str],
+    seeded_docs: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """关闭能力后模型强行调用 search_knowledge 也不得检索、不得产生引用。
+
+    使用真实 ready 文档（``seeded_docs``），确保「没有引用」只可能来自执行期门禁，
+    而不是库为空；脚本化模型证明模型确实发起了工具调用。请求本身不带
+    ``knowledge_categories``，因此不经过请求层 403，测的正是执行期兜底。
+    """
+    model = make_scripted_model(
+        [
+            {"tool_calls": [{"name": "search_knowledge", "args": {"query": "退货政策"}}]},
+            {"text": "知识库能力未启用，无法检索。"},
+        ]
+    )
+    monkeypatch.setattr(chat_service, "build_chat_model", lambda settings: model)
+    monkeypatch.setenv("KNOWLEDGE_ENABLED", "false")
+    reset_settings_cache()
+    try:
+        _, events = await collect_sse(
+            client, headers=auth, payload={"message": "检索退货政策"}
+        )
+    finally:
+        reset_settings_cache()
+
+    names = [name for name, _ in events]
+    assert "error" not in names, events
+    assert "message.done" in names
+
+    tool_result = next(data for name, data in events if name == "tool.result")
+    assert tool_result["tool"] == "search_knowledge"
+    assert tool_result["status"] == "ok"
+    assert tool_result["summary"] == "能力未启用"
+    assert not tool_result.get("citations")
+
+    done = next(data for name, data in events if name == "message.done")
+    assert done["citations"] == []
+
+    tool_message = next(item for item in model.captured[-1] if isinstance(item, ToolMessage))
+    assert "知识库能力未启用" in tool_message.content
 
 
 async def test_over_limit_knowledge_categories_returns_422(
