@@ -34,11 +34,20 @@ class Approval(UUIDPrimaryKeyMixin, Base):
         CheckConstraint("risk IN ('read', 'write', 'destructive', 'unknown')", name="risk"),
         Index("ix_approvals_status_created", "status", "created_at"),
         Index("ix_approvals_run_id", "run_id"),
+        Index(
+            "ux_approvals_run_tool_call",
+            "run_id",
+            "tool_call_id",
+            unique=True,
+            postgresql_where=text("tool_call_id IS NOT NULL"),
+        ),
     )
 
     run_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
     )
+    # 模型生成的 tool_call id；恢复重放时用 (run_id, tool_call_id) 复用同一条审批。
+    tool_call_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     a2a_task_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
     tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
     tool_display_name: Mapped[str] = mapped_column(
