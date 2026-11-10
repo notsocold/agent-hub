@@ -1,0 +1,20 @@
+{"id": "kb-001", "question": "签收之日起七天内可以提交退货申请吗", "doc": "after-sales-return-policy.md", "keyword": "七天", "group": "chain"}
+{"id": "kb-002", "question": "退款三个工作日内原路返回支付账户吗", "doc": "after-sales-return-policy.md", "keyword": "三个工作日", "group": "chain"}
+{"id": "kb-003", "question": "签收后十五天内出现性能故障可以申请换货吗", "doc": "after-sales-repair.md", "keyword": "十五天", "group": "chain"}
+{"id": "kb-004", "question": "整机保修期十二个月，主要部件保修多久", "doc": "after-sales-repair.md", "keyword": "二十四个月", "group": "chain"}
+{"id": "kb-005", "question": "K3 Pro 指纹容量一百组够用吗", "doc": "product-model-specs.md", "keyword": "一百组", "group": "chain"}
+{"id": "kb-006", "question": "门锁内置 5000 毫安时锂电池续航几个月", "doc": "product-model-specs.md", "keyword": "5000 毫安时", "group": "chain"}
+{"id": "kb-007", "question": "新版本先向百分之十的用户灰度发布吗", "doc": "product-release-process.md", "keyword": "百分之十", "group": "chain"}
+{"id": "kb-008", "question": "回滚窗口为发布后三十分钟吗", "doc": "product-release-process.md", "keyword": "三十分钟", "group": "chain"}
+{"id": "kb-009", "question": "P1 事件要求十五分钟内完成响应吗", "doc": "security-incident-response.md", "keyword": "十五分钟", "group": "chain"}
+{"id": "kb-010", "question": "二十四小时内向管理层和合规团队通报吗", "doc": "security-incident-response.md", "keyword": "二十四小时", "group": "chain"}
+{"id": "kb-011", "question": "密码每九十天强制更换一次吗", "doc": "security-password-policy.md", "keyword": "九十天", "group": "chain"}
+{"id": "kb-012", "question": "电子普通发票在订单完成后七个工作日内开具吗", "doc": "billing-invoice.md", "keyword": "七个工作日", "group": "chain"}
+{"id": "kb-013", "question": "系统会在到期前七天通过站内信和邮件提醒吗", "doc": "billing-subscription.md", "keyword": "到期前七天", "group": "chain"}
+{"id": "kb-014", "question": "生产数据库每天凌晨两点执行全量备份吗", "doc": "ops-backup-restore.md", "keyword": "凌晨两点", "group": "chain"}
+{"id": "kb-015", "question": "一级告警要求五分钟内确认并电话通知值班负责人吗", "doc": "ops-oncall.md", "keyword": "五分钟", "group": "chain"}
+{"id": "kb-016", "question": "买回家的东西不想要了，退钱能开发票吗，你们服务费退不退", "doc": "after-sales-return-policy.md", "keyword": "退货", "group": "semantic"}
+{"id": "kb-017", "question": "这把锁没电了，半夜进不去屋，叫服务团队负责人上门大概多少钱，要提交工单吗", "doc": "product-model-specs.md", "keyword": "电池", "group": "semantic"}
+{"id": "kb-018", "question": "凌晨发现有人偷偷进来，非工作日也要马上提交工单吗", "doc": "security-incident-response.md", "keyword": "事件", "group": "semantic"}
+{"id": "kb-019", "question": "付完钱想要个正规票据，找服务团队哪位负责人办理", "doc": "billing-invoice.md", "keyword": "发票", "group": "semantic"}
+{"id": "kb-020", "question": "资料全没了，非工作日还能补救吗，要不要提交工单", "doc": "ops-backup-restore.md", "keyword": "恢复", "group": "semantic"}
