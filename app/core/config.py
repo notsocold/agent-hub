@@ -196,6 +196,12 @@ class Settings(BaseSettings):
     rate_limit_register_window_seconds: int = 3600
     rate_limit_login_max: int = 10
     rate_limit_login_window_seconds: int = 300
+    rate_limit_chat_max: int = 30
+    rate_limit_chat_window_seconds: int = 60
+
+    # ------------------------------------------------------------------ 安全防护（M5）
+    prompt_guard_enabled: bool = True
+    prompt_guard_redact_output: bool = True
 
     # ------------------------------------------------------------------ 路径
     data_dir: Path = Path("data")

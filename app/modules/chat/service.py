@@ -28,6 +28,7 @@ from app.core.errors import (
     ValidationFailedError,
     current_request_id,
 )
+from app.core.rate_limit import limiter
 from app.core.timeutil import elapsed_ms
 from app.db.models.approval import Approval
 from app.db.models.chat import Run, RunEvent
@@ -173,6 +174,12 @@ async def _find_active_run(db: AsyncSession, conversation_id: uuid.UUID) -> Run 
 
 async def start_chat(db: AsyncSession, user: User, payload: ChatStreamRequest) -> ChatStartResult:
     settings = get_settings()
+    # 聊天限流：按用户滑动窗口，与登录/注册限流共用进程内实现（M6 换 Redis）。
+    limiter.check(
+        f"chat:{user.id}",
+        settings.rate_limit_chat_max,
+        settings.rate_limit_chat_window_seconds,
+    )
     model = payload.model or settings.llm_model
     if model not in settings.allowed_models:
         raise ValidationFailedError("该模型不在允许列表中", code="model_not_allowed")
