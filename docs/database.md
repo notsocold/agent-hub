@@ -300,32 +300,55 @@ erDiagram
 
 ### 4.8 `knowledge_documents`
 
+> M4 实现后更新。owner 为空的系统文档与用户私有文档共用本表，checksum 唯一性按归属分域。
+
 | 字段 | 类型 | 约束 | 说明 |
 |---|---|---|---|
 | `id` | uuid | PK | |
+| `owner_user_id` | uuid | FK `users(id)` ON DELETE CASCADE, null | `NULL` = 系统文档（仅管理员可写） |
 | `title` | varchar(200) | not null | 文档标题 |
+| `filename` | varchar(255) | not null default '' | 原始文件名；供检索命中与脚本使用，**不对外返回** |
 | `source_uri` | text | not null default '' | 原始文件路径/URL |
 | `category` | varchar(64) | not null default '' | 分类，用于过滤 |
-| `checksum` | varchar(64) | unique, not null | SHA-256，防重复入库 |
-| `status` | varchar(16) | not null default 'pending' | `pending` / `indexing` / `ready` / `failed` |
+| `checksum` | varchar(64) | not null | SHA-256，防重复入库 |
+| `size_bytes` | integer | not null default 0 | 原始字节数 |
+| `storage_key` | varchar(255) | not null default '' | 后端无关的对象键，如 `knowledge/<id>.md` |
+| `status` | varchar(16) | not null default 'pending' | `pending` / `indexing` / `ready` / `failed`（CHECK） |
 | `chunk_count` | integer | not null default 0 | 块数 |
-| `metadata` | jsonb | not null default '{}' | 页数、作者、标签 |
+| `error` | text | null | 失败原因（脱敏、截断 500 字符）；成功时为 `NULL` |
+| `metadata` | jsonb | not null default '{}' | 页数、mime 等 |
 | `created_at` / `updated_at` | timestamptz | not null | |
 
-索引：`(status)`、`(category)`、`UNIQUE (checksum)`。
+索引与约束：
+
+```sql
+CREATE INDEX ix_knowledge_documents_status ON knowledge_documents (status);
+CREATE INDEX ix_knowledge_documents_category ON knowledge_documents (category);
+CREATE INDEX ix_knowledge_documents_owner ON knowledge_documents (owner_user_id, updated_at DESC);
+
+-- checksum 唯一性按归属分域（与 mcp_servers 的 system/user slug 模式一致）
+CREATE UNIQUE INDEX uq_knowledge_documents_system_checksum
+    ON knowledge_documents (checksum) WHERE owner_user_id IS NULL;
+CREATE UNIQUE INDEX uq_knowledge_documents_user_checksum
+    ON knowledge_documents (owner_user_id, checksum) WHERE owner_user_id IS NOT NULL;
+```
+
+> 偏离说明：设计初期是全局 `UNIQUE(checksum)`；引入 owner 后全局唯一会让两个用户上传同一份文档互相冲突，故拆成两条部分唯一索引。
 
 ### 4.9 `knowledge_chunks`（pgvector）
 
 | 字段 | 类型 | 约束 | 说明 |
 |---|---|---|---|
 | `id` | uuid | PK | |
-| `document_id` | uuid | FK knowledge_documents, cascade | |
-| `chunk_index` | integer | not null | 文档内序号 |
-| `content` | text | not null | 文本块 |
-| `embedding` | `vector(1536)` | not null | 维度由 `EMBEDDING_DIM` 决定 |
-| `token_count` | integer | not null default 0 | |
-| `metadata` | jsonb | not null default '{}' | 标题、分类、页码 |
+| `document_id` | uuid | FK knowledge_documents ON DELETE CASCADE, not null | |
+| `chunk_index` | integer | not null | 文档内序号，从 0 开始 |
+| `content` | text | not null | 文本块（**不含 Markdown 标题行**，标题存 `metadata.heading`） |
+| `embedding` | `vector(1536)` | not null | 维度由 `EMBEDDING_DIM` 决定；**改维度必须重建表** |
+| `token_count` | integer | not null default 0 | 保守估算 |
+| `metadata` | jsonb | not null default '{}' | `{heading, page, char_start}` |
 | `created_at` | timestamptz | not null | |
+
+> 本表**没有** `updated_at`：分块创建后不再变化，检索与引用统一取 `knowledge_documents.updated_at`。
 
 约束/索引：
 

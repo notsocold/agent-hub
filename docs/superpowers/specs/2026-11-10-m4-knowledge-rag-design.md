@@ -342,7 +342,7 @@ POST /knowledge/search
 - `updated_at` 取 `documents.updated_at`；
 - **检索范围恒为「自己的文档 + 系统文档」**，管理员也不例外（避免回答里混入他人私有资料）；
 - `query` 长度 1–500；`top_k` 默认 `VECTOR_TOP_K`(6)，范围 1–20；
-- 库空 → `{"hits": [], "elapsed_ms": 0}`，不是错误。
+- 库空 → `{"hits": [], "elapsed_ms": <真实耗时>}`，不是错误（初稿的 `0` 是示例值，实现返回真实耗时）；
 
 ### 7.5 重建
 
@@ -551,7 +551,7 @@ async def search_knowledge(query: str, top_k: int | None = None,
 - 新增 `Settings.knowledge_enabled: bool = True`（`KNOWLEDGE_ENABLED`）；
 - `system/info.capabilities.knowledge = settings.knowledge_enabled`（去掉硬编码 `False`）；
 - `system/info.embedding` **保持现状** `{model, dim}`（`EmbeddingInfoOut` 是必填字段，已存在；不新增 `enabled/mode`，避免无谓的契约变更）；
-- `chat/capabilities.validate_chat_selections`：`knowledge_categories` 非空且 `knowledge_enabled=False` → 403 `capability_disabled`；
+- `chat/service.py::_check_capabilities`：`knowledge_categories` 非空且 `knowledge_enabled=False` → 403 `capability_disabled`（设计初稿写的是 `validate_chat_selections`，实现放在请求入口的 `_check_capabilities`，行为等价且全仓只有这一处门禁）；
 - `knowledge_categories` 数量上限**已由** `ChatStreamRequest.knowledge_categories` 的 `Field(max_length=5)` 强制返回 422；本次只把它改为读 `settings.knowledge_categories_per_message`（保持 5 的默认值）。
 
 ## 11. 脚本与评测

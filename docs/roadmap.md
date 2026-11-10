@@ -14,7 +14,7 @@
 | M1.5 个人能力层 | 已完成（2026-11-09） | 指令/记忆/技能/MCP/附件/HITL；85 个测试 + `smoke:m15` 68 项；遗留项见 M1.5 报告 §6 |
 | M2 A2A 出站 | 已完成（2026-11-10） | Agent Card/客户端/`send_message`/任务 API；101 个测试 + 假 Agent 真实联调；同日出站客户端迁移到 `a2a-sdk` 1.3.0（108 测试） |
 | M3 A2A 入站 | 已取消（2026-11-10 需求变更） | 本服务只做 A2A 出站 Client，不发布 Agent Card、不提供 JSON-RPC 入站；原范围/验收不适用，M4 顺延 |
-| M4 知识库 RAG | 未开始 | `capabilities.knowledge=false`；pgvector 与 `search_knowledge` 未接入 |
+| M4 知识库 RAG | 后端已完成（2026-11-10）；前端待做 | 模型/pgvector 迁移/解析/切分/双通道 Embedding/7 个 API/`search_knowledge`/引用落库/`build_kb.py`/离线评测；323 测试通过、修复时钟抖动后全量 10 连跑 0 失败；语义召回率因无真实 Embedding key **未取得证据** |
 | M5 审批与安全加固 | 未开始（部分切片已提前落地） | `approvals`/`audit_logs` 与审批端点已在 M1.5 落地；聊天限流、`interrupt()`/`Command(resume=...)`、注入防护、密钥管理未做 |
 | M6 生产化与可观测 | 未开始 | OTel/指标/CI/Dockerfile/容量基线未做 |
 
@@ -135,24 +135,28 @@
 - [-] 取消请求能停止图执行；
 - [-] 未授权请求返回 401/403，不泄露内部信息。
 
-## M4 知识库 RAG（未开始）
+## M4 知识库 RAG（后端已完成，2026-11-10；前端待做）
 
 **目标**：知识库入库、检索、回答带来源。
 
+> 交付证据见 [M4 后端交付报告](feedback/2026-11-10-m4-backend-report.md)，设计见
+> [知识库 RAG 设计](superpowers/specs/2026-11-10-m4-knowledge-rag-design.md)。
+> 本轮只做后端；前端知识库页与引用展示留待前端 M4。
+
 范围：
 
-- [ ] `knowledge_documents` / `knowledge_chunks` 模型与 pgvector 迁移
-- [ ] 文档解析（Markdown/TXT/PDF）+ 切分 + Embedding
-- [ ] `scripts/build_kb.py`
-- [ ] `search_knowledge` 工具
-- [ ] `POST /knowledge/search` 调试接口
-- [ ] 前端展示来源引用
+- [x] `knowledge_documents` / `knowledge_chunks` 模型与 pgvector 迁移（`c4e7a91b2f36`，含两条部分唯一索引、HNSW、GIN）
+- [x] 文档解析（Markdown/TXT/PDF/CSV/JSON）+ 切分 + Embedding（fake / OpenAI 兼容双通道）
+- [x] `scripts/build_kb.py`（支持 `--dry-run` / `--rebuild` / `--owner`）
+- [x] `search_knowledge` 工具（含分类默认过滤、去重重编号、失败降级）
+- [x] `POST /knowledge/search` 调试接口（外加文档 CRUD/retry/rebuild 共 7 个端点）
+- [ ] 前端展示来源引用 —— 后端契约（`message.done.citations` + 落库 `messages.citations`）已就绪并实测，前端实现留待前端 M4
 
 验收：
 
-- [ ] 上传/重建后能检索到正确片段（离线评测集召回率 ≥ 90%）；
-- [ ] 回答包含来源文档与片段定位；
-- [ ] 检索 P95 < 200ms（百万级 chunk 以内，本地基准）。
+- [x] 上传/重建后能检索到正确片段：离线评测**链路组 15/15** 条 top-1 命中预期文档且含预期关键词；**语义组 5 条在 fake embedding 下全部未命中**（证明这组测的是语义而非词面）。**「语义召回率 ≥ 90%」未取得证据**——本机无可用 Embedding key，`KNOWLEDGE_EVAL_REAL=1` 逃生舱已就绪；
+- [x] 回答包含来源文档与片段定位：真实 HTTP 抓包 `tool.result` / `message.done` 均带 `citations`，`GET /conversations/{id}/messages` 回读一致（刷新后仍在）；
+- [x] 检索 P95 < 200ms：实测**服务端 P95 = 2ms、端到端 P95 = 7.8ms**（50 次采样）。**样本仅 3 文档 / 6 分块，百万级规模未验证**，容量基线并入 M6。
 
 ## M5 审批与安全加固（未开始，部分切片已提前落地）
 

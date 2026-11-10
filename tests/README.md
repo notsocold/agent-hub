@@ -9,6 +9,11 @@ tests/
 ├── test_security_unit.py          # 密码、JWT、游标、schema 单元测试（M1）
 ├── test_cursor_unit.py            # 游标编解码单元测试（M1）
 ├── test_capability_unit.py        # M1.5：zip 校验、SSRF、MCP 响应解析、工具名、凭据、提示词装配
+├── test_config_knowledge_unit.py  # M4：占位符密钥识别、知识库/存储配置默认值
+├── test_storage_unit.py           # M4：local/S3 双后端存储、路径穿越防护、原子写
+├── test_knowledge_embedding_unit.py  # M4：fake/OpenAI embedding、占位符 key 回退
+├── test_knowledge_parse_unit.py   # M4：md/txt/pdf/csv/json 解析与错误文案
+├── test_knowledge_split_unit.py   # M4：Markdown 分层切分、overlap、尾块合并、截断
 └── integration/
     ├── test_auth.py               # 注册/登录/刷新轮换/登出/改密（M1）
     ├── test_conversations.py      # 会话 CRUD、搜索、消息历史与计数（M1）
@@ -38,6 +43,9 @@ TEST_DATABASE_URL=postgresql+psycopg://devuser:devpass@localhost:54321/agent_hub
 - 没有可用 PostgreSQL 时集成测试自动 skip，单元测试仍可运行；
 - 测试默认不依赖真实 LLM/Embedding API key，使用 `FakeStreamingChatModel`；工具循环用例用 `ScriptedToolModel`；
 - 集成测试使用独立测试库，每个用例前 `create_all`、用例后 `TRUNCATE`；
+  **注意**：`create_all` 不执行迁移，所以「测试全绿」不代表开发库已迁移（M4 联调踩过）；
+- 知识库默认 fake embedding + local 存储，零网络零 S3；语义评测组用 `KNOWLEDGE_EVAL_REAL=1` 手动开启；
+- 耗时类断言依赖系统时钟；已用 `app/core/timeutil.py::elapsed_ms()` 夹紧到 0，避免 NTP 回退导致负值；
 - SSE 断言事件顺序与 `event:` 名称，不只断言最终文本；
 - **ASGITransport 会缓冲整个 SSE 响应**：HITL 审批的实时交互（审批决定、取消）绕过 HTTP 层，
   用服务层 `start_chat` + `collect_run_events_live`（`tests/conftest.py`）验证；真实 uvicorn 下 SSE 实时流式；

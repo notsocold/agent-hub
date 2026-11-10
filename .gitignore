@@ -61,3 +61,6 @@ data/test-knowledge/
 
 # Agent 工作树目录（工具生成，避免误提交）
 .agents/
+
+# 知识库原始文件（本地存储后端）
+data/knowledge/

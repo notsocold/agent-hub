@@ -48,13 +48,13 @@ flowchart TB
 | `agents/` | LangGraph 图、状态、提示词、工具定义 | HTTP、数据库事务 |
 | `modules/a2a` | A2A Client、远程 Agent Card 校验、远程任务映射 | A2A 入站 Server、用户鉴权、UI |
 | `modules/agents` | 远程 Agent 注册、发现、健康检查 | 具体协议传输细节 |
-| `modules/knowledge` | 文档入库、切分、Embedding、检索 | 向量 SQL（由 `db/vector` 实现） |
+| `modules/knowledge` | 文档入库、解析、切分、Embedding、检索、重建（M4 已实现） | 向量 SQL（由 `db/vector` 实现）、原始文件存储（由 `core/storage` 实现） |
 | `modules/approvals` | 审批工单、恢复图执行 | 决定何时需要审批（由工具声明） |
 | `modules/mcp` | MCP 服务器注册、连接管理、工具发现、工具桥接 | 用户凭据的加密原语（由 `core/` 提供） |
 | `modules/skills` | 本地技能包导入、校验、存储、激活 | 脚本执行（v2） |
 | `modules/memories` | 长期记忆的写入策略、检索、管理接口 | 单次会话上下文（由 checkpoint 负责） |
 | `modules/instructions` | 指令解析、覆盖合并、审计 | 基础系统提示词（代码内置） |
-| `db/` | ORM 模型、会话、迁移、向量存储实现 | 业务规则 |
+| `db/` | ORM 模型、会话、迁移、向量检索 SQL（`db/vector`，M4 已实现） | 业务规则 |
 | `core/` | 配置、日志、中间件、异常、鉴权原语 | 业务模块依赖 |
 
 ## 4. 核心链路
@@ -341,7 +341,8 @@ flowchart TB
     A["基础系统提示词（不可覆盖）"] --> B["用户指令（覆盖或继承默认）"]
     B --> C["长期记忆（置顶 + 语义 top-k）"]
     C --> D["技能目录 + 本轮激活正文"]
-    D --> E["工具定义（知识检索 / A2A / MCP）"]
+    D --> D2["知识库规则（有可见 ready 文档时才注入）"]
+    D2 --> E["工具定义（知识检索 / A2A / MCP）"]
     E --> F["会话历史 + 本轮用户消息"]
 ```
 

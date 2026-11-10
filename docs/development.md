@@ -9,7 +9,8 @@
 |---|---|---|
 | Python | 3.13 | `uv` 会自动下载/使用 `.python-version` 指定的版本 |
 | uv | ≥ 0.11 | 依赖与虚拟环境管理 |
-| PostgreSQL | 16（本机已有） | 业务库 + checkpoint；项目不托管数据库 |
+| PostgreSQL | 16+（本机已有，实测 18.4） | 业务库 + checkpoint；项目不托管数据库 |
+| pgvector | 0.8.x | **M4 必需**：`CREATE EXTENSION vector`；Debian 系可装 `postgresql-<ver>-pgvector`，迁移会自动尝试创建扩展 |
 | Docker + Compose | 可选 | 仅当本机没有 PostgreSQL 时的备用编排 |
 | Node.js | 24 LTS | 前端 |
 | pnpm | ≥ 10 | 前端包管理（统一使用 pnpm） |
@@ -32,7 +33,7 @@ uv run uvicorn app.main:app --reload
 curl http://localhost:8000/healthz
 ```
 
-验证数据库（使用本机 psql；M1 只需要 langgraph schema，pgvector 在 M4 再建）：
+验证数据库（使用本机 psql；M4 起 `knowledge_chunks` 需要 `vector` 扩展）：
 
 ```bash
 # DATABASE_URL 是 SQLAlchemy 格式（含 +psycopg），给 psql 时去掉驱动后缀
@@ -104,6 +105,10 @@ psql "${DATABASE_URL/postgresql+psycopg/postgresql}" -c "SELECT extname FROM pg_
 
 ## 6. 数据库迁移流程（已可用）
 
+> **M4 起必读**：集成测试用 `Base.metadata.create_all` 建表，**不会**执行迁移。
+> 因此「测试全绿」不能证明开发库已迁移——M4 联调时就出现过开发库缺 `knowledge_documents`
+> 表、上传直接 500 的情况。改动模型后务必对**开发库**也跑一次 `alembic upgrade head`。
+
 ```bash
 # 1. 改模型
 # 2. 生成迁移
@@ -173,6 +178,17 @@ curl -s http://localhost:8000/api/v1/tasks -H "Authorization: Bearer <token>"
 - 测试数据库独立（默认 `agent_hub_test`），跑完清理；首次需 `createdb agent_hub_test`；
 - SSE 断言事件序列，不只断言文本；
 - 远程调用测试覆盖超时、5xx、非法响应、取消；0.3 走假 Agent，1.0 走 `httpx.MockTransport`。
+- 知识库（M4）：默认用 `FakeEmbeddingProvider` 与本地存储，零网络零 S3；语义评测组需手动开启：
+
+```bash
+KNOWLEDGE_EVAL_REAL=1 EMBEDDING_API_KEY=<真实key> \
+  TEST_DATABASE_URL=postgresql+psycopg://devuser:devpass@localhost:54321/agent_hub_test \
+  .venv/bin/python -m pytest tests/integration/test_knowledge_eval.py -k semantic -v
+```
+
+  该开关会关闭 conftest 的「强制 fake + 空 key」安全闸，**只应在手动跑评测时使用**。
+- 存储后端：`STORAGE_BACKEND=local`（默认，目录 `KNOWLEDGE_DIR`）或 `s3`（`S3_*` 六项）；
+  本机 `dev_minio` 可用于 s3 联调，CI 用注入 client 的单元测试，不依赖 minio。
 
 ## 9. 调试
 
@@ -187,8 +203,8 @@ curl -s http://localhost:8000/api/v1/tasks -H "Authorization: Bearer <token>"
 | 问题 | 原因 | 处理 |
 |---|---|---|
 | `psycopg.OperationalError` 连接失败 | 本机 PG 未启动/端口、用户、库名不对 | 检查 `.env` 的 `DATABASE_URL`；项目不负责启停本机 PostgreSQL |
-| `extension "vector" is not available` | 镜像不是 pgvector 版 | 使用 `pgvector/pgvector:pg16` |
-| `type "vector" does not exist` | 未执行 initdb 或未建扩展 | 重建数据卷或手动 `CREATE EXTENSION vector` |
+| `extension "vector" is not available` | 当前 PG 实例没装 pgvector | 容器内装 `postgresql-<ver>-pgvector`（M4 实测 `postgresql-18-pgvector 0.8.7`），或换 `pgvector/pgvector` 镜像；装完 `CREATE EXTENSION vector` 不需要重启 PG |
+| `type "vector" does not exist` | 扩展已安装但当前库没建 | 对**该库**执行 `CREATE EXTENSION vector`（迁移会尝试，但需要 superuser 权限） |
 | `psycopg` 连接串报 driver 错误 | 把 `postgresql+psycopg://` 直接给了 psycopg | 用 `settings.checkpoint_dsn`（已去掉驱动后缀） |
 | checkpoint 表找不到 | search_path 未指向 `langgraph` | 连接参数 `options=-csearch_path=langgraph` |
 | embedding 维度不匹配 | 模型维度与 `EMBEDDING_DIM` 不一致 | 改配置并重建向量表，不能原地 ALTER |

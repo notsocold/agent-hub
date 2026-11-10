@@ -57,6 +57,7 @@ Authorization: Bearer <access_token>
 | 422 | `mcp_transport_not_allowed` | 用户自建 MCP 使用了被禁用的传输 |
 | 429 | `rate_limited` | 触发限流 |
 | 500 | `internal_error` | 未预期异常 |
+| 503 | `service_unavailable` | 依赖服务不可用（M4：Embedding 服务故障时的检索） |
 | 502 | `a2a_unavailable` | 远程智能体不可用 |
 | 502 | `mcp_unreachable` | 显式选择的 MCP 服务器不可达 |
 | 504 | `a2a_timeout` | 远程调用超时 |
@@ -138,12 +139,19 @@ Authorization: Bearer <access_token>
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/v1/knowledge/documents` | 上传/创建文档（异步入库） |
-| GET | `/api/v1/knowledge/documents` | 文档列表 |
+| POST | `/api/v1/knowledge/documents` | 上传文档（**同步入库**，返回终态）；新建 201、幂等命中 200 |
+| GET | `/api/v1/knowledge/documents` | 文档列表（`q`/`category`/`status`/`owner_scope` + 游标分页 + `stats`） |
 | GET | `/api/v1/knowledge/documents/{id}` | 文档详情 |
-| DELETE | `/api/v1/knowledge/documents/{id}` | 删除文档与向量 |
+| DELETE | `/api/v1/knowledge/documents/{id}` | 删除文档、分块与原始文件 |
+| POST | `/api/v1/knowledge/documents/{id}/retry` | 失败文档重试（重读原始文件重新入库） |
 | POST | `/api/v1/knowledge/search` | 检索调试（返回片段与分数） |
-| POST | `/api/v1/knowledge/rebuild` | 全量重建索引（管理端） |
+| POST | `/api/v1/knowledge/rebuild` | 重建索引（管理员）；`scope` = `all` / `system` / `own` |
+
+可见性：检索恒为「系统文档 + 本人文档」，管理员不放大；管理接口可用 `owner_scope=all`（仅管理员）查看全部。
+
+文档对象恰好 11 个字段：`id, title, source_uri, category, status, chunk_count, size_bytes, owner, error, created_at, updated_at`（**不含** `filename` / `storage_key`；`owner` 为 `null` 表示系统文档，`error` 为 `null` 表示无错误）。
+
+上传约束：允许 `.md/.markdown/.txt/.pdf/.csv/.json`；超过 `KNOWLEDGE_MAX_UPLOAD_BYTES`（默认 10MB）返回 **413 `payload_too_large`**；扩展名不支持返回 **422 `validation_error`**；`scope=system` 需要管理员。
 
 ### 2.7 审批
 
@@ -250,7 +258,8 @@ Accept: text/event-stream
   "attachments": [],
   "skills": ["<skill_id>"],
   "mcp_servers": ["<server_id>"],
-  "mcp_tools": ["<tool_id>"]
+  "mcp_tools": ["<tool_id>"],
+  "knowledge_categories": ["售后"]
 }
 ```
 
@@ -263,6 +272,7 @@ Accept: text/event-stream
 | `skills` | 否 | 本轮显式激活的本地技能，≤ 3 个 |
 | `mcp_servers` | 否 | 本轮强制纳入的 MCP 服务器，≤ 5 个 |
 | `mcp_tools` | 否 | 本轮强制纳入的 MCP 工具，≤ 10 个 |
+| `knowledge_categories` | 否 | 本轮检索的知识库分类（≤ `KNOWLEDGE_CATEGORIES_PER_MESSAGE`，默认 5）；作为 `search_knowledge` 工具的默认分类过滤 |
 
 > 显式选择只影响本次请求，不写回账号配置；MCP 写工具仍需审批。
 
@@ -434,11 +444,27 @@ POST /api/v1/knowledge/search
 ```json
 {
   "hits": [
-    {"chunk_id": "...", "document_id": "...", "title": "退货政策", "content": "...", "score": 0.83}
+    {
+      "chunk_id": "...",
+      "document_id": "...",
+      "title": "退货政策 > 吊牌要求",
+      "document_title": "退货政策",
+      "document_filename": "return-policy.md",
+      "category": "售后",
+      "chunk_index": 0,
+      "content": "客户申请退货时必须保留商品吊牌……",
+      "score": 0.83,
+      "updated_at": "2026-11-10T13:26:28.581291Z"
+    }
   ],
-  "elapsed_ms": 42
+  "elapsed_ms": 8
 }
 ```
+
+- `title` 是片段所属章节标题（解析不到时回退为文档标题）；`updated_at` 取**文档**的更新时间；
+- `elapsed_ms` 为真实耗时（示例值非契约）；空库返回 `{"hits": [], "elapsed_ms": 0..}`，不是错误；
+- `score = round(1 - 余弦距离, 4)`；fake embedding 模式下不应用分数阈值（词袋模型的短查询对长分块余弦上界约 0.11），真实 provider 才使用 `VECTOR_SCORE_THRESHOLD`；
+- Embedding 服务不可用时返回 **503 `service_unavailable`**。
 
 ### 4.6 创建 MCP 服务器
 
@@ -584,14 +610,14 @@ GET /api/v1/instructions
 ```json
 {
   "instructions": true, "memories": true, "skills": true, "mcp": true,
-  "knowledge": false, "attachments": true, "workflows": false,
+  "knowledge": true, "attachments": true, "workflows": false,
   "approvals": true, "agents": false, "tasks": false
 }
 ```
 
 - 请求携带未启用的能力字段时返回 403 `capability_disabled`；
 - 携带 `workflow_id` 返回 409 `workflow_disabled`；
-- `knowledge_categories` 仍为 403（M4 再开）；`agents`/`tasks` 在 M1 时点为 false，**M2 起均为 true**（上方 JSON 为 M1 时点快照）；
+- `knowledge_categories` **M4 起已开放**（不再 403），作为 `search_knowledge` 工具的默认分类过滤；`KNOWLEDGE_ENABLED=false` 时该字段与所有知识库端点一起返回 403 `capability_disabled`；`agents`/`tasks` 自 M2 起均为 true；
 - `reasoning_efforts` 默认空数组（模型不支持或 `LLM_REASONING_EFFORT_SUPPORTED=false` 时），`default_reasoning_effort` 仍返回 `low`；打开该开关后返回 `low/medium/high` 三项。
 
 ### 7.5 数据层差异
@@ -646,7 +672,8 @@ GET /api/v1/instructions
 
 - `conversation_id`：本次运行所属会话，便于断线后定位；
 - `model`、`first_token_ms`、`duration_ms`、`active_duration_ms`；
-- `citations`、`artifacts`（M1 均为空数组）；
+- `citations` 自 M4 起由 `search_knowledge` 命中填充（形状见下），`artifacts` 仍为空数组；
+- `citations` 元素恰好 7 个字段：`index`（从 1 连续编号）、`document_id`、`chunk_id`、`title`、`category`、`score`、`updated_at`；**不带 content**；同时写入助手消息的 `messages.citations`，因此刷新页面后仍可见；
 - `reasoning`（可为 `null`）。
 
 前端把 `conversation_id` 当可选字段消费即可；其余未知键按「忽略」处理。
@@ -702,8 +729,9 @@ GET /api/v1/instructions
 ### 8.2 聊天请求与 SSE 扩展
 
 - 请求新增可选字段：`attachments`（≤5）、`skills`（≤3）、`mcp_servers`（≤5）、`mcp_tools`（≤10）；
-- 选择不存在/他人的资源 404；已停用资源 422；`knowledge_categories`/`workflow_id` 仍禁用；
-- 新事件：`skill.activated`（首个 `message.delta` 之前）、`memory.saved`、`notice`、`tool.start`/`tool.result`（`source` ∈ native/skill/mcp，MCP 带 `server`）、`approval.required`；
+- 选择不存在/他人的资源 404；已停用资源 422；`knowledge_categories` 自 M4 起可用（`KNOWLEDGE_ENABLED=false` 时 403）；`workflow_id` 仍禁用；
+- 新事件：`skill.activated`（首个 `message.delta` 之前）、`memory.saved`、`notice`、`tool.start`/`tool.result`（`source` ∈ native/skill/mcp/a2a；MCP 带 `server`）、`approval.required`；
+- `tool.result` 在工具产生了知识库引用时带 `citations` 字段（与 `message.done.citations` 同形状）；
 - `approval.required.data`：`approval_id`、`tool_call_id`、`tool`、`source`、`risk`、`reason`、`payload`、`expires_at`；
 - 审批超时后 `message.done.finish_reason=interrupted`（`reason=approval_timeout`），run 状态 `interrupted`；
 - `message.done` 保持 M1 字段，新增 `reason`（仅 interrupted 时出现）。
