@@ -248,6 +248,17 @@ class Settings(BaseSettings):
             )
         if self.env == "prod" and len(self.jwt_secret) < 32:
             raise RuntimeError("生产环境必须配置至少 32 字节的 JWT_SECRET")
+        if (
+            self.env == "prod"
+            and self.knowledge_enabled
+            and not self.embedding_key_usable
+            and self.embedding_provider != "fake"
+        ):
+            raise RuntimeError(
+                "生产环境已启用知识库，但未配置可用的 EMBEDDING_API_KEY；"
+                "请配置真实密钥，或显式设置 EMBEDDING_PROVIDER=fake 使用假向量"
+                "（假向量分数不可解释，仅用于无外部依赖的部署）"
+            )
         if not self.jwt_secret:
             logger.warning("JWT_SECRET 未配置，开发环境使用内置兜底密钥；生产环境禁止这样运行")
 

@@ -133,13 +133,17 @@ class OpenAIEmbeddingProvider:
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
         vectors: list[list[float]] = []
-        async with httpx.AsyncClient(
-            transport=self._transport,
-            timeout=httpx.Timeout(self._timeout),
-        ) as client:
-            for start in range(0, len(texts), self._batch_size):
-                batch = texts[start : start + self._batch_size]
-                vectors.extend(await self._embed_batch(client, headers, batch))
+        try:
+            async with httpx.AsyncClient(
+                transport=self._transport,
+                timeout=httpx.Timeout(self._timeout),
+            ) as client:
+                for start in range(0, len(texts), self._batch_size):
+                    batch = texts[start : start + self._batch_size]
+                    vectors.extend(await self._embed_batch(client, headers, batch))
+        except httpx.InvalidURL as exc:
+            # 客户端构建阶段也可能因非法 base_url/代理配置抛 InvalidURL，一并包装。
+            raise EmbeddingUnavailableError("Embedding 服务地址配置无效") from exc
         return vectors
 
     async def _embed_batch(
@@ -151,8 +155,9 @@ class OpenAIEmbeddingProvider:
                 json={"model": self._model, "input": batch},
                 headers=headers,
             )
-        except httpx.HTTPError as exc:
-            # 连接失败/超时等传输层错误视为服务不可用，交由上层降级或返回 503。
+        except (httpx.HTTPError, httpx.InvalidURL) as exc:
+            # 连接失败/超时/非法 URL 等都属于服务不可用，交由上层返回 503。
+            # 注意 ``httpx.InvalidURL`` 不是 ``httpx.HTTPError`` 的子类，必须显式列出。
             raise EmbeddingUnavailableError("Embedding 请求失败，无法连接服务") from exc
         if not 200 <= response.status_code < 300:
             raise EmbeddingUnavailableError(f"Embedding 接口返回 HTTP {response.status_code}")
@@ -196,8 +201,15 @@ def _build_provider(config: Settings) -> EmbeddingProvider:
             "EMBEDDING_PROVIDER=openai 时必须配置可用的 EMBEDDING_API_KEY（当前为空或占位符）"
         )
     if not config.embedding_key_usable:
-        logger.info("Embedding 未配置可用密钥，回退 fake 提供方 dim=%s", config.embedding_dim)
-        return FakeEmbeddingProvider(config.embedding_dim)
+        if config.env == "prod":
+            # 生产环境禁止静默降级：保持真实分支，运行期失败由 service 映射为 503。
+            logger.error(
+                "生产环境未配置可用的 EMBEDDING_API_KEY，auto 模式不回退 fake；"
+                "调用 Embedding 服务失败将返回 503"
+            )
+        else:
+            logger.info("Embedding 未配置可用密钥，回退 fake 提供方 dim=%s", config.embedding_dim)
+            return FakeEmbeddingProvider(config.embedding_dim)
     logger.info(
         "Embedding 使用 OpenAI 兼容接口 model=%s base_url=%s",
         config.embedding_model,

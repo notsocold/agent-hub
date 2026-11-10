@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from app.core.config import Settings, is_placeholder_api_key
 
 # 被测默认值字段对应的环境变量；构造 Settings 前逐个清空，避免环境注入干扰断言。
@@ -76,3 +78,39 @@ def test_embedding_key_usable_with_real_key(monkeypatch) -> None:
     monkeypatch.setenv("EMBEDDING_API_KEY", "sk-" + "a" * 40)
     s = Settings(_env_file=None, database_url="postgresql+psycopg://u:p@localhost/x")
     assert s.embedding_key_usable is True
+
+
+# ------------------------------------------- 生产环境 Embedding 启动期强制校验（spec §8.1）
+def _prod_settings(**overrides: object) -> Settings:
+    """构造满足其它生产启动条件的 Settings，只让 Embedding 校验成为变量。"""
+    values: dict[str, object] = {
+        "_env_file": None,
+        "env": "prod",
+        "database_url": "postgresql+psycopg://u:p@localhost/x",
+        "jwt_secret": "s" * 32,
+        "knowledge_enabled": True,
+        "embedding_provider": "auto",
+        "embedding_api_key": "sk-xxx",
+    }
+    values.update(overrides)
+    return Settings(**values)
+
+
+def test_prod_auto_without_usable_key_raises_at_startup() -> None:
+    """生产 + 知识库开启 + auto + 占位符 key：必须启动失败，不能静默降级 fake。"""
+    with pytest.raises(RuntimeError, match="EMBEDDING_API_KEY"):
+        _prod_settings().validate_runtime()
+
+
+def test_prod_explicit_fake_provider_is_allowed() -> None:
+    """``EMBEDDING_PROVIDER=fake`` 是运维显式选择，生产环境允许。"""
+    _prod_settings(embedding_provider="fake").validate_runtime()
+
+
+def test_prod_knowledge_disabled_skips_embedding_check() -> None:
+    """知识库关闭时不需要 Embedding，不应因缺 key 阻止启动。"""
+    _prod_settings(knowledge_enabled=False).validate_runtime()
+
+
+def test_prod_with_usable_key_passes() -> None:
+    _prod_settings(embedding_api_key="sk-" + "a" * 40).validate_runtime()

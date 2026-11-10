@@ -549,9 +549,7 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                 "reasoning.done",
                 {
                     "message_id": str(assistant_message_id),
-                    "duration_ms": int(
-                        ((_now() - (reasoning_started or started_at)).total_seconds()) * 1000
-                    ),
+                    "duration_ms": elapsed_ms(reasoning_started or started_at),
                     "tokens": notes["reasoning_tokens"],
                     "summary": reasoning_text[:2000],
                 },
@@ -598,9 +596,7 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                 "artifacts": [],
                 "reasoning": (
                     {
-                        "duration_ms": int(
-                            ((_now() - (reasoning_started or started_at)).total_seconds()) * 1000
-                        ),
+                        "duration_ms": elapsed_ms(reasoning_started or started_at),
                         "tokens": notes["reasoning_tokens"],
                         "summary": "".join(reasoning_parts)[:2000],
                     }

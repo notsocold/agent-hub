@@ -125,8 +125,9 @@ async def upload_document(
     if scope == "system" and user.role != "admin":
         raise ForbiddenError("系统文档仅管理员可上传")
 
-    raw = await file.read()
     max_bytes = get_settings().knowledge_max_upload_bytes
+    # 有界读取：最多多读 1 字节用于判定超限，避免把超大文件整个读进内存（DoS）。
+    raw = await file.read(max_bytes + 1)
     if len(raw) > max_bytes:
         raise PayloadTooLargeError(f"上传文件超过大小上限（{max_bytes} 字节）")
 

@@ -15,6 +15,7 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from app.core.config import reset_settings_cache
 from app.core.security import create_access_token
@@ -192,6 +193,16 @@ async def test_oversize_upload_returns_413(
 ) -> None:
     monkeypatch.setenv("KNOWLEDGE_MAX_UPLOAD_BYTES", "10")
     reset_settings_cache()
+    # 记录路由实际传给 UploadFile.read 的 size：必须是有界的 max_bytes + 1，
+    # 而不是默认的 -1（一次性读完整个文件）。
+    read_sizes: list[int] = []
+    real_read = StarletteUploadFile.read
+
+    async def _spy_read(self: StarletteUploadFile, size: int = -1) -> bytes:
+        read_sizes.append(size)
+        return await real_read(self, size)
+
+    monkeypatch.setattr(StarletteUploadFile, "read", _spy_read)
     try:
         response = await _upload(client, auth, content=b"x" * 100)
     finally:
@@ -201,6 +212,35 @@ async def test_oversize_upload_returns_413(
     error = response.json()["error"]
     assert error["code"] == "payload_too_large"
     assert "上限" in error["message"]
+    assert read_sizes == [11]
+    assert await _document_count(db) == 0
+
+
+@pytest.mark.parametrize(
+    ("filename", "expected_fragment"),
+    [
+        # 300 个字符 + 扩展名：超过 filename 列宽 255。
+        ("a" * 300 + ".md", "文件名"),
+        # 210 个字符 + 扩展名：filename 未超宽，但派生 title（Path.stem）超过 200。
+        ("a" * 210 + ".md", "标题"),
+    ],
+)
+async def test_too_long_filename_or_title_returns_422(
+    client: httpx.AsyncClient,
+    auth: dict[str, str],
+    db: AsyncSession,
+    fake_storage: Any,
+    fake_embedding: Any,
+    filename: str,
+    expected_fragment: str,
+) -> None:
+    """超长 filename/title 必须在建行前 422，而不是数据库截断错误冒成 500。"""
+    response = await _upload(client, auth, filename=filename, content=b"# t\n\nbody")
+
+    assert response.status_code == 422, response.text
+    error = response.json()["error"]
+    assert error["code"] == "validation_error"
+    assert expected_fragment in error["message"]
     assert await _document_count(db) == 0
 
 
@@ -429,6 +469,44 @@ async def test_search_embedding_unavailable_returns_503(
     error = response.json()["error"]
     assert error["code"] == "service_unavailable"
     assert "Embedding" in error["message"]
+
+
+async def test_search_invalid_embedding_url_returns_503(
+    client: httpx.AsyncClient, auth: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``httpx.InvalidURL`` 不是 HTTPError：provider 构建/调用失败也必须映射成 503。"""
+
+    def _raise_invalid_url() -> None:
+        raise httpx.InvalidURL("bad url")
+
+    monkeypatch.setattr(
+        "app.modules.knowledge.service.get_embedding_provider", _raise_invalid_url
+    )
+
+    response = await client.post(SEARCH_URL, json={"query": "退货"}, headers=auth)
+
+    assert response.status_code == 503, response.text
+    error = response.json()["error"]
+    assert error["code"] == "service_unavailable"
+    assert "Embedding" in error["message"]
+
+
+async def test_search_embedding_config_error_returns_503(
+    client: httpx.AsyncClient, auth: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """显式 openai 无 key 的 ValueError 不得冒成 500。"""
+
+    def _raise_config_error() -> None:
+        raise ValueError("EMBEDDING_PROVIDER=openai 时必须配置可用的 EMBEDDING_API_KEY")
+
+    monkeypatch.setattr(
+        "app.modules.knowledge.service.get_embedding_provider", _raise_config_error
+    )
+
+    response = await client.post(SEARCH_URL, json={"query": "退货"}, headers=auth)
+
+    assert response.status_code == 503, response.text
+    assert response.json()["error"]["code"] == "service_unavailable"
 
 
 async def test_search_hit_contract_and_field_mapping(

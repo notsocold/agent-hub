@@ -167,6 +167,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -281,6 +291,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -409,6 +429,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -523,6 +553,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -627,6 +667,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -758,6 +808,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -870,6 +930,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1061,6 +1131,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       },
@@ -1178,6 +1258,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1306,6 +1396,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1449,6 +1549,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       },
@@ -1561,6 +1671,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1741,6 +1861,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -1878,6 +2008,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -2004,6 +2144,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2218,6 +2368,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -2339,6 +2499,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2477,6 +2647,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2682,6 +2862,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -2803,6 +2993,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2948,6 +3148,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -3067,6 +3277,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3235,6 +3455,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -3363,6 +3593,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       },
@@ -3475,6 +3715,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3608,6 +3858,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -3712,6 +3972,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3836,6 +4106,1060 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/knowledge/documents": {
+      "post": {
+        "tags": [
+          "知识库"
+        ],
+        "summary": "上传知识库文档",
+        "description": "multipart 上传并同步入库，返回终态文档。\n\n- 新建返回 **201**；同归属同 checksum 已存在时返回 **200 + 已有文档**（幂等）；\n- 超过 ``KNOWLEDGE_MAX_UPLOAD_BYTES`` → 413 ``payload_too_large``；\n- 扩展名不支持 → 422 ``validation_error``；\n- 解析/向量化等内容级失败仍返回 **201**，文档为 ``status=failed`` + 中文 ``error``；\n- ``scope=system`` 仅管理员可用，普通用户 → 403 ``forbidden``。",
+        "operationId": "upload_document_api_v1_knowledge_documents_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_document_api_v1_knowledge_documents_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "知识库"
+        ],
+        "summary": "知识库文档列表",
+        "description": "按可见范围分页列出文档，并返回 6 键全量统计。\n\n- ``owner_scope=visible``（默认）只看「系统 + 自己」；``all`` 仅管理员，\n  普通用户 → 403 ``forbidden``；\n- ``stats`` 统计可见范围内全量文档，不受 ``q`` / ``category`` / ``status`` 影响；\n- 排序 ``updated_at DESC, id DESC``，游标见 ``next_cursor``。",
+        "operationId": "list_knowledge_documents_api_v1_knowledge_documents_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "indexing",
+                    "ready",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "owner_scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "visible",
+                "all"
+              ],
+              "type": "string",
+              "default": "visible",
+              "title": "Owner Scope"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentPage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/documents/{document_id}": {
+      "get": {
+        "tags": [
+          "知识库"
+        ],
+        "summary": "知识库文档详情",
+        "description": "读取文档详情；不存在或属于他人的私有文档统一 404（不泄露存在性）。",
+        "operationId": "get_knowledge_document_api_v1_knowledge_documents__document_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "知识库"
+        ],
+        "summary": "删除知识库文档",
+        "description": "删除文档、分块与原始文件；可见性规则与详情一致（他人私有文档 404）。",
+        "operationId": "delete_knowledge_document_api_v1_knowledge_documents__document_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/documents/{document_id}/retry": {
+      "post": {
+        "tags": [
+          "知识库"
+        ],
+        "summary": "重试文档入库",
+        "description": "从原始文件重新解析入库，返回最新文档对象；原文缺失时文档置 failed。",
+        "operationId": "retry_knowledge_document_api_v1_knowledge_documents__document_id__retry_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/knowledge/search": {
+      "post": {
+        "tags": [
+          "知识库"
+        ],
+        "summary": "知识库语义检索",
+        "description": "语义检索自己的文档与系统文档（管理员也不例外，避免混入他人私有资料）。\n\n- ``query`` 长度 1–500，``top_k`` 范围 1–20（缺省取 ``VECTOR_TOP_K``）；\n- ``filters.category`` 非空时只检索该分类；\n- 命中字段对齐前端 ``KnowledgeSearchHit``（10 个）；``title`` 取分块章节标题；\n- 库为空返回空 ``hits``（不是错误）；``elapsed_ms`` 为本次检索耗时；\n- Embedding 服务不可用 → 503 ``service_unavailable``。",
+        "operationId": "search_knowledge_api_v1_knowledge_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeSearchOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/knowledge/rebuild": {
+      "post": {
+        "tags": [
+          "知识库"
+        ],
+        "summary": "重建知识库索引",
+        "description": "仅管理员：按 scope 从原始文件全量重建索引。\n\n- ``scope=\"own\"`` 指**所有用户的私有文档**，不是管理员本人的文档（控制器 R9）；\n- 返回口径（控制器 R10）：``documents`` 为本次处理的文档总数（含失败），\n  ``failed`` 为其中失败的条数，``chunks`` 为重建成功后成功写入的分块总数；\n- 原文缺失的文档计入 ``failed``，置 ``status=failed`` 并写中文 ``error``。",
+        "operationId": "rebuild_knowledge_index_api_v1_knowledge_rebuild_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeRebuildRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeRebuildOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4053,6 +5377,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       },
@@ -4170,6 +5504,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4296,6 +5640,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -4400,6 +5754,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4533,6 +5897,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4676,6 +6050,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       },
@@ -4788,6 +6172,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4929,6 +6323,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       },
@@ -5053,6 +6457,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -5157,6 +6571,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5290,6 +6714,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5416,6 +6850,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5559,6 +7003,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       },
@@ -5671,6 +7125,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5816,6 +7280,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -5941,6 +7415,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6085,6 +7569,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -6189,6 +7683,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6320,6 +7824,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -6429,6 +7943,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6562,6 +8086,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6705,6 +8239,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       },
@@ -6817,6 +8361,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6962,6 +8516,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -7083,6 +8647,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7218,6 +8792,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -7343,6 +8927,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7488,6 +9082,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -7603,6 +9207,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7735,6 +9349,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7937,6 +9561,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -8058,6 +9692,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8201,6 +9845,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       },
@@ -8313,6 +9967,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8448,6 +10112,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -8569,6 +10243,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8844,6 +10528,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -8972,6 +10666,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -9093,6 +10797,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9238,6 +10952,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -9369,6 +11093,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9514,6 +11248,16 @@
                 }
               }
             }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
           }
         }
       }
@@ -9618,6 +11362,16 @@
           },
           "500": {
             "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11253,6 +13007,53 @@
         ],
         "title": "Body_upload_attachment_api_v1_attachments_post"
       },
+      "Body_upload_document_api_v1_knowledge_documents_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "user",
+              "system"
+            ],
+            "title": "Scope",
+            "default": "user"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_document_api_v1_knowledge_documents_post"
+      },
       "ChangePasswordRequest": {
         "properties": {
           "current_password": {
@@ -11372,7 +13173,6 @@
               "type": "string"
             },
             "type": "array",
-            "maxItems": 5,
             "title": "Knowledge Categories"
           },
           "workflow_id": {
@@ -11899,6 +13699,374 @@
           "updated_at"
         ],
         "title": "InstructionUpdateResult"
+      },
+      "KnowledgeDocumentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "source_uri": {
+            "type": "string",
+            "title": "Source Uri"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "indexing",
+              "ready",
+              "failed"
+            ],
+            "title": "Status"
+          },
+          "chunk_count": {
+            "type": "integer",
+            "title": "Chunk Count"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          },
+          "owner": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeOwnerOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "source_uri",
+          "category",
+          "status",
+          "chunk_count",
+          "size_bytes",
+          "owner",
+          "error",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "KnowledgeDocumentOut",
+        "description": "知识库文档对象（11 字段，对齐前端 ``KnowledgeDocument``）。"
+      },
+      "KnowledgeDocumentPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeDocumentOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/KnowledgeStats"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more",
+          "stats"
+        ],
+        "title": "KnowledgeDocumentPage",
+        "description": "文档列表：游标分页 + 可见范围全量统计。"
+      },
+      "KnowledgeOwnerOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "display_name"
+        ],
+        "title": "KnowledgeOwnerOut",
+        "description": "文档归属人摘要；系统文档在文档对象里表现为 ``owner=null``。"
+      },
+      "KnowledgeRebuildOut": {
+        "properties": {
+          "documents": {
+            "type": "integer",
+            "title": "Documents"
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "elapsed_ms": {
+            "type": "integer",
+            "title": "Elapsed Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "documents",
+          "chunks",
+          "failed",
+          "elapsed_ms"
+        ],
+        "title": "KnowledgeRebuildOut"
+      },
+      "KnowledgeRebuildRequest": {
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "system",
+              "own"
+            ],
+            "title": "Scope"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scope"
+        ],
+        "title": "KnowledgeRebuildRequest"
+      },
+      "KnowledgeSearchFilters": {
+        "properties": {
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          }
+        },
+        "type": "object",
+        "title": "KnowledgeSearchFilters"
+      },
+      "KnowledgeSearchHitOut": {
+        "properties": {
+          "chunk_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Chunk Id"
+          },
+          "document_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Document Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "document_title": {
+            "type": "string",
+            "title": "Document Title"
+          },
+          "document_filename": {
+            "type": "string",
+            "title": "Document Filename"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "chunk_index": {
+            "type": "integer",
+            "title": "Chunk Index"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "chunk_id",
+          "document_id",
+          "title",
+          "document_title",
+          "document_filename",
+          "category",
+          "chunk_index",
+          "content",
+          "score",
+          "updated_at"
+        ],
+        "title": "KnowledgeSearchHitOut",
+        "description": "单条检索命中（10 字段，对齐前端 ``KnowledgeSearchHit``）。"
+      },
+      "KnowledgeSearchOut": {
+        "properties": {
+          "hits": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeSearchHitOut"
+            },
+            "type": "array",
+            "title": "Hits"
+          },
+          "elapsed_ms": {
+            "type": "integer",
+            "title": "Elapsed Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "hits",
+          "elapsed_ms"
+        ],
+        "title": "KnowledgeSearchOut"
+      },
+      "KnowledgeSearchRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Query"
+          },
+          "top_k": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 20.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top K"
+          },
+          "filters": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/KnowledgeSearchFilters"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "KnowledgeSearchRequest",
+        "description": "检索请求；范围与长度限制由 service 再兜底一次。"
+      },
+      "KnowledgeStats": {
+        "properties": {
+          "documents": {
+            "type": "integer",
+            "title": "Documents"
+          },
+          "chunks": {
+            "type": "integer",
+            "title": "Chunks"
+          },
+          "ready": {
+            "type": "integer",
+            "title": "Ready"
+          },
+          "indexing": {
+            "type": "integer",
+            "title": "Indexing"
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "documents",
+          "chunks",
+          "ready",
+          "indexing",
+          "pending",
+          "failed"
+        ],
+        "title": "KnowledgeStats",
+        "description": "列表统计（6 个键，可见范围内全量，不受 q/category/status 过滤影响）。"
       },
       "LastRunOut": {
         "properties": {

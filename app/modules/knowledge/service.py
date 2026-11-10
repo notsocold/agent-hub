@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,6 +60,17 @@ _DOCUMENT_STATUSES = frozenset({"pending", "indexing", "ready", "failed"})
 _REBUILD_SCOPES = frozenset({"all", "system", "own"})
 _MISSING_OBJECT_ERROR = "原始文件缺失，请重新上传"
 _GENERIC_FAILURE_ERROR = "文档处理失败，请检查文件内容或稍后重试"
+# 与数据库列宽一致：filename VARCHAR(255)、title VARCHAR(200)。超长会在 flush 时
+# 触发 ``DataError``（StringDataRightTruncation）而不是 IntegrityError，最终变成 500；
+# 因此必须在建行/落盘之前作为请求级错误拦下。
+_MAX_FILENAME_LENGTH = 255
+_MAX_TITLE_LENGTH = 200
+# 仅用于判断异常文案是否为中文；非中文的底层异常文案不直接透给最终用户。
+_CJK_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")
+
+
+def _has_cjk(text: str) -> bool:
+    return bool(_CJK_PATTERN.search(text))
 
 
 # --------------------------------------------------------------------- 公共工具
@@ -69,12 +82,18 @@ def _clip(message: str) -> str:
 def _failure_message(exc: Exception) -> str:
     """把内容级异常转成用户可见的中文文案。
 
-    ``ValueError``（解析/切分）与两个领域异常（embedding 不可用、对象缺失）的文案
-    按约定本身就是中文，可直接展示；其余底层异常（``RecursionError``、pypdf 的英文
-    异常等）绝不透出原文，统一中文兜底并记日志。
+    两个领域异常（embedding 不可用、对象缺失）的文案按约定本身就是中文，可直接展示；
+    ``ValueError`` 只在文案本身含中文时透传（解析/切分主动抛出的业务文案），
+    英文底层文案（如 pypdf 原始异常）统一中文兜底并记日志；其余异常绝不透出原文。
     """
-    if isinstance(exc, (ValueError, EmbeddingUnavailableError, ObjectNotFoundError)):
+    if isinstance(exc, (EmbeddingUnavailableError, ObjectNotFoundError)):
         return _clip(str(exc)) or _GENERIC_FAILURE_ERROR
+    if isinstance(exc, ValueError):
+        message = str(exc)
+        if _has_cjk(message):
+            return _clip(message) or _GENERIC_FAILURE_ERROR
+        logger.warning("知识库文档处理 ValueError 无中文文案，使用通用兜底：%r", message)
+        return _GENERIC_FAILURE_ERROR
     logger.exception("知识库文档处理出现未预期异常")
     return _GENERIC_FAILURE_ERROR
 
@@ -96,12 +115,22 @@ def _estimate_tokens(text: str) -> int:
 
 
 def _validate_upload(filename: str, raw: bytes, max_bytes: int) -> None:
-    """请求级校验：扩展名与大小；失败直接抛 4xx，不产生任何副作用。"""
+    """请求级校验：扩展名、文件名/标题长度与大小；失败直接抛 4xx，不产生副作用。"""
     suffix = Path(filename).suffix.lower()
     if suffix not in _SUPPORTED_SUFFIXES:
         supported = "、".join(_SUPPORTED_SUFFIXES)
         raise ValidationFailedError(
             f"不支持的文件类型：{suffix or '（无扩展名）'}；仅支持 {supported}"
+        )
+    if len(filename) > _MAX_FILENAME_LENGTH:
+        raise ValidationFailedError(
+            f"文件名长度不能超过 {_MAX_FILENAME_LENGTH} 个字符（当前 {len(filename)} 个）"
+        )
+    # 未显式传 title 时用 Path(filename).stem 派生标题，必须同样落在 title 列宽内。
+    derived_title = Path(filename).stem
+    if len(derived_title) > _MAX_TITLE_LENGTH:
+        raise ValidationFailedError(
+            f"文档标题长度不能超过 {_MAX_TITLE_LENGTH} 个字符（当前 {len(derived_title)} 个）"
         )
     if len(raw) > max_bytes:
         raise PayloadTooLargeError(f"上传文件超过大小上限（{max_bytes} 字节）")
@@ -294,15 +323,24 @@ async def ingest_upload(
 
 # --------------------------------------------------------------------- 查询
 async def _load_document(
-    db: AsyncSession, user: User, document_id: uuid.UUID, *, write: bool
+    db: AsyncSession,
+    user: User,
+    document_id: uuid.UUID,
+    *,
+    write: bool,
+    lock: bool = False,
 ) -> KnowledgeDocument:
-    """读取文档并做权限判定。
+    """读取文档并做权限判定；``lock=True`` 时用 ``FOR UPDATE`` 取行。
 
     - 他人私有文档一律 404（不泄露存在性）；
     - 系统文档所有人可读，但写操作（删除/重试）仅管理员；
-    - 管理员可读写任意文档。
+    - 管理员可读写任意文档；
+    - 重试等写路径在判定权限前先拿行锁，与管理员 rebuild 串行化同一文档的写入。
     """
-    document = await repository.get_document(db, document_id)
+    if lock:
+        document = await repository.lock_document(db, document_id)
+    else:
+        document = await repository.get_document(db, document_id)
     if document is None:
         raise NotFoundError("文档不存在")
     if user.role == "admin":
@@ -394,7 +432,8 @@ async def delete_document(db: AsyncSession, user: User, document_id: uuid.UUID) 
 # --------------------------------------------------------------------- 重试
 async def retry_document(db: AsyncSession, user: User, document_id: uuid.UUID) -> KnowledgeDocument:
     """从 storage_key 重读原文并重新入库；原文缺失/内容失败都落为 failed 文档。"""
-    document = await _load_document(db, user, document_id, write=True)
+    # 与 rebuild 相同的行锁：避免用户 retry 与管理员 rebuild 并发写同一文档。
+    document = await _load_document(db, user, document_id, write=True, lock=True)
     document.status = "indexing"
     document.chunk_count = 0
     # 先清旧分块：原文缺失时旧向量也不能残留（文档已不可检索，但不应占着库）。
@@ -436,11 +475,14 @@ async def search(
 
     settings = get_settings()
     effective_top_k = settings.vector_top_k if top_k is None else max(1, min(int(top_k), 20))
-    provider = get_embedding_provider()
     try:
+        # provider 构建也可能失败：显式 openai 无 key（ValueError）、非法 base_url（InvalidURL）。
+        provider = get_embedding_provider()
         vectors = await provider.embed([text])
-    except EmbeddingUnavailableError as exc:
+    except (EmbeddingUnavailableError, ValueError) as exc:
         raise ServiceUnavailableError(str(exc) or "Embedding 服务不可用") from exc
+    except httpx.InvalidURL as exc:
+        raise ServiceUnavailableError("Embedding 服务地址配置无效") from exc
     if len(vectors) != 1:
         raise ServiceUnavailableError("Embedding 服务返回的向量条数异常")
     # fake 分数不可解释（短 query 对长 chunk 余弦存在上界），只按排序取 top_k。

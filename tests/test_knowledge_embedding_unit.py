@@ -149,6 +149,29 @@ def test_placeholder_key_selects_fake_with_auto(monkeypatch) -> None:
     assert isinstance(get_embedding_provider(), FakeEmbeddingProvider)
 
 
+def test_dev_auto_placeholder_key_still_falls_back_to_fake(monkeypatch) -> None:
+    """dev 环境 auto + 占位符 key 仍回退 fake（生产环境才禁止静默降级）。"""
+    monkeypatch.setenv("ENV", "dev")
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "auto")
+    monkeypatch.setenv("EMBEDDING_API_KEY", "sk-xxx")
+    reset_settings_cache()
+    assert isinstance(get_embedding_provider(), FakeEmbeddingProvider)
+
+
+def test_prod_auto_without_usable_key_builds_real_provider() -> None:
+    """prod 的 auto 分支不回退 fake：保持真实分支，让运行期失败映射成 503。"""
+    settings = Settings(
+        _env_file=None,
+        env="prod",
+        database_url="postgresql+psycopg://u:p@localhost/x",
+        embedding_provider="auto",
+        embedding_api_key="sk-xxx",
+    )
+    provider = get_embedding_provider(settings)
+    assert isinstance(provider, OpenAIEmbeddingProvider)
+    assert not isinstance(provider, FakeEmbeddingProvider)
+
+
 def test_empty_key_selects_fake_with_auto(monkeypatch) -> None:
     monkeypatch.setenv("EMBEDDING_PROVIDER", "auto")
     monkeypatch.setenv("EMBEDDING_API_KEY", "")
@@ -277,6 +300,21 @@ async def test_openai_embed_raises_on_network_error() -> None:
         raise httpx.ConnectError("connection refused", request=request)
 
     provider = _openai_provider(httpx.MockTransport(_boom))
+    with pytest.raises(EmbeddingUnavailableError, match="Embedding"):
+        await provider.embed(["任意文本"])
+
+
+async def test_openai_embed_wraps_invalid_url_as_unavailable() -> None:
+    """``httpx.InvalidURL`` 不是 ``HTTPError`` 子类，必须显式包装成 503 语义。"""
+    provider = OpenAIEmbeddingProvider(
+        api_key=_USABLE_KEY,
+        base_url="http://[::1",
+        model="test-embedding",
+        dim=3,
+        timeout=5.0,
+        batch_size=2,
+        transport=httpx.MockTransport(_ok_responder),
+    )
     with pytest.raises(EmbeddingUnavailableError, match="Embedding"):
         await provider.embed(["任意文本"])
 

@@ -27,6 +27,7 @@ from app.core.storage import LocalFileStorage
 from app.db.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from app.db.models.user import User
 from app.db.session import get_session_factory
+from app.modules.knowledge import repository
 from app.modules.knowledge.embedding import EmbeddingUnavailableError
 from app.modules.knowledge.service import (
     delete_document,
@@ -300,6 +301,32 @@ async def test_retry_rereads_original_bytes_and_succeeds(
     assert retried.error is None
     assert retried.chunk_count >= 1
     assert len(await _chunks_of(db, document.id)) == retried.chunk_count
+
+
+async def test_retry_acquires_document_row_lock(
+    db: AsyncSession,
+    user: User,
+    fake_storage: LocalFileStorage,
+    fake_embedding: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """retry 开头必须与 rebuild 一样拿行锁，避免并发写同一文档。"""
+    document = await _ingest(db, user, filename="lock.md")
+    locked: list[uuid.UUID] = []
+    original = repository.lock_document
+
+    async def _spy_lock(
+        session: AsyncSession, document_id: uuid.UUID
+    ) -> KnowledgeDocument | None:
+        locked.append(document_id)
+        return await original(session, document_id)
+
+    monkeypatch.setattr(repository, "lock_document", _spy_lock)
+
+    retried = await retry_document(db, user, document.id)
+
+    assert retried.id == document.id
+    assert locked == [document.id]
 
 
 async def test_retry_missing_object_marks_failed(
