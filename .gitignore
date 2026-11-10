@@ -52,3 +52,6 @@ data/attachments/
 .dsh/sessions/**/*.tmp
 .dsh/sessions/.backup/
 .dsh/workspace-session.json
+
+# SDD 计划工作区（scratch，git 忽略）
+.superpowers/
