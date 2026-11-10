@@ -21,6 +21,7 @@ from app.core.config import get_settings
 from app.core.cursor import decode_cursor, encode_cursor
 from app.core.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.core.ssrf import resolve_headers
+from app.core.timeutil import elapsed_ms
 from app.db.models.remote import A2A_ACTIVE_STATES, A2aTask, RemoteAgent
 from app.db.models.user import User
 from app.modules.a2a import A2aClient, A2aError, fetch_agent_card
@@ -57,9 +58,9 @@ def _slugify(name: str) -> str:
 
 def _duration_ms(task: A2aTask) -> int | None:
     if task.finished_at and task.started_at:
-        return int((task.finished_at - task.started_at).total_seconds() * 1000)
+        return elapsed_ms(task.started_at, task.finished_at)
     if task.started_at:
-        return int((_now() - task.started_at).total_seconds() * 1000)
+        return elapsed_ms(task.started_at)
     return None
 
 

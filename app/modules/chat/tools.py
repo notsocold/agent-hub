@@ -22,6 +22,7 @@ from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, create_model
 
 from app.core.config import get_settings
+from app.core.timeutil import elapsed_ms
 from app.db.models.approval import Approval
 from app.db.models.mcp import McpServer
 from app.db.models.memory import ToolInvocation
@@ -212,7 +213,7 @@ class ToolRunner:
             status="error" if status == "error" else "ok",
             title=f"工具结果 {name}",
             subtitle=summary[:200],
-            duration_ms=int((_now() - started).total_seconds() * 1000),
+            duration_ms=elapsed_ms(started),
         )
         return ToolMessage(content=content, tool_call_id=tool_call_id, name=name)
 
@@ -257,7 +258,7 @@ class ToolRunner:
             if row is not None:
                 row.status = status
                 row.error = error
-                row.duration_ms = int((_now() - started).total_seconds() * 1000)
+                row.duration_ms = elapsed_ms(started)
                 row.finished_at = _now()
                 await db.commit()
 

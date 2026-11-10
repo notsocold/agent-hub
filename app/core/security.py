@@ -6,6 +6,8 @@ refresh token 通过 ``jti`` 落库，支持轮换与吊销。
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -18,6 +20,19 @@ from app.core.config import get_settings
 from app.core.errors import UnauthorizedError
 
 _password_hash = PasswordHash.recommended()
+
+# 系统时钟可能因 NTP 校正短暂回退（实测单次可达数百毫秒）。若不做补偿，
+# 刚签发的令牌 ``iat`` 会落在「未来」，解码时抛 ImmatureSignatureError，
+# 表现为随机 401「登录状态无效」。5 秒 leeway 足以覆盖这类抖动，同时
+# 远小于 access token 的 15 分钟有效期，不构成安全风险。
+_JWT_LEEWAY_SECONDS = 5
+
+# 诊断用：JWT 解码失败时记录密钥指纹与令牌时间，便于定位偶发 401。
+logger = logging.getLogger(__name__)
+
+
+def _secret_fingerprint(secret: str) -> str:
+    return hashlib.sha256(secret.encode()).hexdigest()[:8]
 
 TokenType = Literal["access", "refresh"]
 
@@ -83,10 +98,17 @@ def decode_token(token: str, expected_type: TokenType) -> TokenPayload:
             settings.resolved_jwt_secret,
             algorithms=[settings.jwt_algorithm],
             options={"require": ["exp", "sub", "jti", "type"]},
+            leeway=_JWT_LEEWAY_SECONDS,
         )
     except jwt.ExpiredSignatureError as exc:
         raise UnauthorizedError("登录状态已过期，请重新登录") from exc
     except jwt.InvalidTokenError as exc:
+        logger.warning(
+            "JWT 解码失败 type=%s secret_fp=%s token_len=%d",
+            type(exc).__name__,
+            _secret_fingerprint(settings.resolved_jwt_secret),
+            len(token),
+        )
         raise UnauthorizedError("登录状态无效，请重新登录") from exc
 
     if payload.get("type") != expected_type:

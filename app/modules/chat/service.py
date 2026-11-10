@@ -28,6 +28,7 @@ from app.core.errors import (
     ValidationFailedError,
     current_request_id,
 )
+from app.core.timeutil import elapsed_ms
 from app.db.models.approval import Approval
 from app.db.models.chat import Run, RunEvent
 from app.db.models.conversation import Conversation, Message
@@ -517,7 +518,7 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                 text = _content_text(chunk.content)
                 if text:
                     if first_token_ms is None:
-                        first_token_ms = int((_now() - started_at).total_seconds() * 1000)
+                        first_token_ms = elapsed_ms(started_at)
                     content_parts.append(text)
                     await publisher.emit(
                         "message.delta",
@@ -538,7 +539,7 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                     usage = dict(final_message.usage_metadata)
 
         now = _now()
-        duration_ms = int((now - started_at).total_seconds() * 1000)
+        duration_ms = elapsed_ms(started_at, now)
         notes = _usage_dict(usage)
         content = "".join(content_parts)
 
@@ -707,7 +708,7 @@ async def _finalize_canceled(
     run_id = context.run_id
     publisher = context.publisher
     now = _now()
-    duration_ms = int((now - started_at).total_seconds() * 1000)
+    duration_ms = elapsed_ms(started_at, now)
     async with get_session_factory()() as db:
         run = await db.get(Run, run_id)
         if run is None:
@@ -774,7 +775,7 @@ async def _finalize_interrupted(
     run_id = context.run_id
     publisher = context.publisher
     now = _now()
-    duration_ms = int((now - started_at).total_seconds() * 1000)
+    duration_ms = elapsed_ms(started_at, now)
     async with get_session_factory()() as db:
         run = await db.get(Run, run_id)
         if run is None:
@@ -844,7 +845,7 @@ async def _finalize_failed(
     run_id = context.run_id
     publisher = context.publisher
     now = _now()
-    duration_ms = int((now - started_at).total_seconds() * 1000)
+    duration_ms = elapsed_ms(started_at, now)
     message = "模型调用失败，请稍后重试"
     async with get_session_factory()() as db:
         run = await db.get(Run, run_id)
@@ -893,11 +894,7 @@ async def get_run(db: AsyncSession, user: User, run_id: uuid.UUID) -> RunOut:
     run = await _load_owned_run(db, user, run_id)
     now = _now()
     started_at = run.started_at or run.created_at
-    duration_ms = (
-        int((run.finished_at - started_at).total_seconds() * 1000)
-        if run.finished_at and started_at
-        else int((now - started_at).total_seconds() * 1000)
-    )
+    duration_ms = elapsed_ms(started_at, run.finished_at or now)
     usage = _usage_out(
         {
             "input_tokens": run.input_tokens,
@@ -1058,7 +1055,7 @@ async def cancel_run(db: AsyncSession, user: User, run_id: uuid.UUID) -> RunCanc
         raise RunNotCancelableError(run.status)
     now = _now()
     started_at = run.started_at or run.created_at
-    duration_ms = int((now - started_at).total_seconds() * 1000)
+    duration_ms = elapsed_ms(started_at, now)
     run.status = "canceled"
     run.canceled_at = now
     run.finished_at = now

@@ -93,6 +93,10 @@ async def db() -> AsyncIterator[Any]:
         await conn.run_sync(Base.metadata.create_all)
     async with get_session_factory()() as session:
         yield session
+    # 防御性顺序：先取消未结束的后台 run，再清库。后台任务若仍在写库会持有行锁，
+    # 让 TRUNCATE 等锁；虽然实测偶发失败的根因是系统时钟回退（见 app/core/timeutil.py），
+    # 但让清库发生在所有后台写入停下之后，语义上更干净。
+    await registry.shutdown()
     async with get_engine().begin() as conn:
         await conn.execute(text(f"TRUNCATE {_TABLES} RESTART IDENTITY CASCADE"))
     reset_memory_checkpointer()
@@ -101,7 +105,6 @@ async def db() -> AsyncIterator[Any]:
     from app.modules.a2a.client import clear_test_transports as clear_a2a_transports
 
     clear_a2a_transports()
-    await registry.shutdown()
     shutil.rmtree(Path("data/test-attachments"), ignore_errors=True)
     shutil.rmtree(Path("data/test-knowledge"), ignore_errors=True)
 

@@ -25,6 +25,7 @@ from app.core.errors import (
     ValidationFailedError,
 )
 from app.core.ssrf import normalize_headers, resolve_headers, validate_mcp_url
+from app.core.timeutil import elapsed_ms
 from app.db.models.mcp import McpServer, McpTool, UserCapabilityOverride
 from app.db.models.user import User
 from app.modules.mcp.client import StdioMcpClient, ToolInfo, build_client
@@ -542,7 +543,7 @@ async def _check_and_sync(
             last_checked_at=server.last_checked_at,
         )
     except Exception as exc:
-        elapsed = int((datetime.now(UTC) - started).total_seconds() * 1000)
+        elapsed = elapsed_ms(started)
         message = str(exc)[:400]
         server.health_status = "unhealthy"
         server.latency_ms = elapsed
