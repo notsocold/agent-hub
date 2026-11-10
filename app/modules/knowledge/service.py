@@ -16,9 +16,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +30,7 @@ from app.core.errors import (
     ForbiddenError,
     NotFoundError,
     PayloadTooLargeError,
+    ServiceUnavailableError,
     ValidationFailedError,
 )
 from app.core.storage import ObjectNotFoundError, get_storage
@@ -105,6 +108,17 @@ def _validate_upload(filename: str, raw: bytes, max_bytes: int) -> None:
 
 
 # ------------------------------------------------------------------ 失败状态落库
+async def _commit_and_refresh(db: AsyncSession, document: KnowledgeDocument) -> KnowledgeDocument:
+    """提交并刷新 ORM 对象。
+
+    ``updated_at`` 由数据库 ``onupdate=func.now()`` 生成，UPDATE 提交后该属性处于
+    过期状态；不刷新就序列化会触发同步懒加载（async 会话直接 MissingGreenlet）。
+    """
+    await db.commit()
+    await db.refresh(document)
+    return document
+
+
 async def _commit_failed(
     db: AsyncSession, document: KnowledgeDocument, message: str
 ) -> KnowledgeDocument:
@@ -132,6 +146,7 @@ async def _commit_failed(
         logger.exception("知识库失败状态提交失败，回滚后重试写入失败记录")
         await db.rollback()
     else:
+        await db.refresh(document)
         return document
 
     existing = await db.get(KnowledgeDocument, snapshot["id"])
@@ -142,8 +157,7 @@ async def _commit_failed(
         existing.status = "failed"
         existing.error = message
         existing.chunk_count = 0
-    await db.commit()
-    return existing
+    return await _commit_and_refresh(db, existing)
 
 
 # --------------------------------------------------------------- 单文档索引流水线
@@ -187,7 +201,7 @@ async def _index_document(db: AsyncSession, document: KnowledgeDocument, raw: by
 
 
 # ----------------------------------------------------------------------- 入库
-async def ingest_bytes(
+async def _ingest(
     db: AsyncSession,
     *,
     owner: User | None,
@@ -195,11 +209,10 @@ async def ingest_bytes(
     filename: str,
     category: str,
     raw: bytes,
-) -> KnowledgeDocument:
-    """入库一份文档字节；``owner=None`` 表示系统文档。
+) -> tuple[KnowledgeDocument, bool]:
+    """入库主流程；返回 ``(文档, 是否新建)``。
 
-    - 同归属同 checksum 已存在时直接返回已有文档（幂等，不重复写文件）；
-    - 内容级失败返回 ``status="failed"`` 的文档，不向调用方抛异常。
+    ``created=False`` 表示 checksum 幂等命中已有文档（HTTP 层据此返回 200 而不是 201）。
     """
     settings = get_settings()
     _validate_upload(filename, raw, settings.knowledge_max_upload_bytes)
@@ -208,7 +221,7 @@ async def ingest_bytes(
     checksum = hashlib.sha256(raw).hexdigest()
     existing = await repository.find_by_checksum(db, owner_user_id=owner_user_id, checksum=checksum)
     if existing is not None:
-        return existing
+        return existing, False
 
     document = KnowledgeDocument(
         owner_user_id=owner_user_id,
@@ -231,7 +244,7 @@ async def ingest_bytes(
             db, owner_user_id=owner_user_id, checksum=checksum
         )
         if existing is not None:
-            return existing
+            return existing, False
         raise
 
     document.storage_key = _storage_key(document.id, filename)
@@ -239,10 +252,44 @@ async def ingest_bytes(
         await get_storage().put(document.storage_key, raw)
         await _index_document(db, document, raw)
     except Exception as exc:
-        return await _commit_failed(db, document, _failure_message(exc))
+        return await _commit_failed(db, document, _failure_message(exc)), True
 
-    await db.commit()
+    return await _commit_and_refresh(db, document), True
+
+
+async def ingest_bytes(
+    db: AsyncSession,
+    *,
+    owner: User | None,
+    title: str,
+    filename: str,
+    category: str,
+    raw: bytes,
+) -> KnowledgeDocument:
+    """入库一份文档字节；``owner=None`` 表示系统文档。
+
+    - 同归属同 checksum 已存在时直接返回已有文档（幂等，不重复写文件）；
+    - 内容级失败返回 ``status="failed"`` 的文档，不向调用方抛异常。
+    """
+    document, _created = await _ingest(
+        db, owner=owner, title=title, filename=filename, category=category, raw=raw
+    )
     return document
+
+
+async def ingest_upload(
+    db: AsyncSession,
+    *,
+    owner: User | None,
+    title: str,
+    filename: str,
+    category: str,
+    raw: bytes,
+) -> tuple[KnowledgeDocument, bool]:
+    """API 上传入口：与 :func:`ingest_bytes` 行为一致，额外返回是否为新建文档。"""
+    return await _ingest(
+        db, owner=owner, title=title, filename=filename, category=category, raw=raw
+    )
 
 
 # --------------------------------------------------------------------- 查询
@@ -272,6 +319,20 @@ async def _load_document(
 async def get_document(db: AsyncSession, user: User, document_id: uuid.UUID) -> KnowledgeDocument:
     """按可见性读取文档详情。"""
     return await _load_document(db, user, document_id, write=False)
+
+
+async def load_owners(
+    db: AsyncSession, documents: Iterable[KnowledgeDocument]
+) -> dict[uuid.UUID, User]:
+    """批量读取文档归属人；系统文档（``owner_user_id`` 为空）不出现在结果中。
+
+    API 层用一次 ``IN`` 查询组装 ``owner`` 字段，避免列表接口逐条取用户的 N+1。
+    """
+    owner_ids = {document.owner_user_id for document in documents if document.owner_user_id}
+    if not owner_ids:
+        return {}
+    rows = await db.execute(select(User).where(User.id.in_(owner_ids)))
+    return {owner.id: owner for owner in rows.scalars()}
 
 
 async def list_documents(
@@ -350,8 +411,7 @@ async def retry_document(db: AsyncSession, user: User, document_id: uuid.UUID) -
     except Exception as exc:
         return await _commit_failed(db, document, _failure_message(exc))
 
-    await db.commit()
-    return document
+    return await _commit_and_refresh(db, document)
 
 
 # --------------------------------------------------------------------- 检索
@@ -363,7 +423,11 @@ async def search(
     top_k: int | None = None,
     categories: list[str] | None = None,
 ) -> list[SearchHit]:
-    """语义检索；范围恒为「系统 + 自己」，fake provider 下阈值降为 0。"""
+    """语义检索；范围恒为「系统 + 自己」，fake provider 下阈值降为 0。
+
+    Embedding 服务不可用（真实 provider 网络/鉴权失败）映射为
+    :class:`ServiceUnavailableError`，由 HTTP 层返回 503，而不是 500。
+    """
     text = (query or "").strip()
     if not text:
         raise ValidationFailedError("检索内容不能为空")
@@ -373,9 +437,12 @@ async def search(
     settings = get_settings()
     effective_top_k = settings.vector_top_k if top_k is None else max(1, min(int(top_k), 20))
     provider = get_embedding_provider()
-    vectors = await provider.embed([text])
+    try:
+        vectors = await provider.embed([text])
+    except EmbeddingUnavailableError as exc:
+        raise ServiceUnavailableError(str(exc) or "Embedding 服务不可用") from exc
     if len(vectors) != 1:
-        raise EmbeddingUnavailableError("Embedding 服务返回的向量条数异常")
+        raise ServiceUnavailableError("Embedding 服务返回的向量条数异常")
     # fake 分数不可解释（短 query 对长 chunk 余弦存在上界），只按排序取 top_k。
     threshold = (
         0.0 if isinstance(provider, FakeEmbeddingProvider) else settings.vector_score_threshold
@@ -443,7 +510,9 @@ __all__ = [
     "delete_document",
     "get_document",
     "ingest_bytes",
+    "ingest_upload",
     "list_documents",
+    "load_owners",
     "rebuild",
     "retry_document",
     "search",

@@ -12,6 +12,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.chat.router import router as chat_router
 from app.modules.conversations.router import router as conversations_router
 from app.modules.instructions.router import router as instructions_router
+from app.modules.knowledge.router import router as knowledge_router
 from app.modules.mcp.router import router as mcp_router
 from app.modules.memories.router import router as memories_router
 from app.modules.skills.router import router as skills_router
@@ -45,6 +46,10 @@ COMMON_ERROR_RESPONSES: dict[int | str, dict] = {
         "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
     },
     500: {"model": ErrorEnvelopeOut, "description": "服务器内部错误（internal_error）"},
+    503: {
+        "model": ErrorEnvelopeOut,
+        "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+    },
 }
 
 api_router = APIRouter()
@@ -54,6 +59,7 @@ api_router.include_router(chat_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(approvals_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(attachments_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(instructions_router, responses=COMMON_ERROR_RESPONSES)
+api_router.include_router(knowledge_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(memories_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(skills_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(mcp_router, responses=COMMON_ERROR_RESPONSES)
