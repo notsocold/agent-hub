@@ -9,6 +9,16 @@
   只有真实 Embedding 才能召回；没有可用的真实 key 时 skip 并在报告里如实说明，
   绝不把「跳过」当成「通过」，也不把 fake 的召回率当成语义能力证据；
 - 所有断言都只看「top-k 命中预期文档」，不依赖分数与阈值。
+
+手动跑语义组（使用真实 Embedding，会退出零网络基线）：
+
+    KNOWLEDGE_EVAL_REAL=1 TEST_DATABASE_URL=postgresql+psycopg://devuser:devpass@localhost:54321/agent_hub_test \\
+      EMBEDDING_PROVIDER=openai EMBEDDING_API_KEY=<真实 key> EMBEDDING_BASE_URL=<真实地址> \\
+      .venv/bin/python -m pytest tests/integration/test_knowledge_eval.py -k semantic -v
+
+``KNOWLEDGE_EVAL_REAL=1`` 由 ``tests/conftest.py`` 识别：置 1 后 conftest 不再强制
+fake provider/空 key，而是让 .env 或 shell 中的真实 Embedding 配置生效；不设置时
+仍保持「强制假向量、零网络」的默认基线。
 """
 
 from __future__ import annotations

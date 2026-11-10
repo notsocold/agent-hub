@@ -36,8 +36,15 @@ os.environ.setdefault("A2A_INPUT_TIMEOUT_SECONDS", "30")
 # 这里必须硬赋值而不是 setdefault：开发者 shell 里导出的同名变量会让测试写 S3 或发真实
 # Embedding 网络请求。DATABASE_URL 仍用 setdefault，以支持 TEST_DATABASE_URL 覆盖。
 os.environ["STORAGE_BACKEND"] = "local"
-os.environ["EMBEDDING_PROVIDER"] = "fake"
-os.environ["EMBEDDING_API_KEY"] = ""
+# 语义组评测逃生舱：仅当 KNOWLEDGE_EVAL_REAL=1 时放开 provider/key，让 .env 或 shell
+# 里的真实 Embedding 配置生效；否则保持硬赋值 fake + 空 key 的零网络基线。
+# 风险：置 1 后整套测试都会真实访问 Embedding 服务、不再零网络，只允许手动跑离线评测时
+# 使用，例如：
+#   KNOWLEDGE_EVAL_REAL=1 TEST_DATABASE_URL=... \
+#     .venv/bin/python -m pytest tests/integration/test_knowledge_eval.py -k semantic -v
+if os.environ.get("KNOWLEDGE_EVAL_REAL") != "1":
+    os.environ["EMBEDDING_PROVIDER"] = "fake"
+    os.environ["EMBEDDING_API_KEY"] = ""
 os.environ["KNOWLEDGE_DIR"] = "data/test-knowledge"
 
 import httpx
