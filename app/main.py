@@ -18,6 +18,7 @@ from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.metrics import setup_metrics
 from app.core.middleware import RequestContextMiddleware
+from app.core.observability import ObservabilityMiddleware
 from app.core.telemetry import configure_tracing, shutdown_tracing
 from app.db.session import dispose_engine, get_session_factory
 from app.modules.approvals.service import expire_pending
@@ -80,15 +81,19 @@ def create_app() -> FastAPI:
         description="面向用户的多智能体对话服务：LangGraph 编排 + A2A + pgvector",
         lifespan=lifespan,
     )
+    # add_middleware 每次插到最外层；按「内 → 外」顺序添加：
+    # Observability 需要 request_id 已生成，RequestContext 在其外层；
+    # CORS 放最外层，保证预检与错误响应也带 CORS 头。
+    app.add_middleware(ObservabilityMiddleware, metrics_path=settings.metrics_path)
+    app.add_middleware(RequestContextMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["X-Request-ID", "X-Run-ID"],
+        expose_headers=["X-Request-ID", "X-Run-ID", "X-Trace-ID"],
     )
-    app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)
     app.include_router(health_router)
     if settings.metrics_enabled:

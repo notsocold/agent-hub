@@ -257,13 +257,21 @@ def tool_metric_label(name: str, source: str) -> str:
     return "other"
 
 
-def record_http_request(method: str, route: str, status: int, duration_seconds: float) -> None:
+def record_http_request(
+    method: str,
+    route: str,
+    status: int,
+    duration_seconds: float,
+    *,
+    record_duration: bool = True,
+) -> None:
     HTTP_REQUESTS_TOTAL.labels(
         method=_short(method), route=_short(route), status=str(status)
     ).inc()
-    HTTP_REQUEST_DURATION.labels(method=_short(method), route=_short(route)).observe(
-        max(0.0, duration_seconds)
-    )
+    if record_duration:
+        HTTP_REQUEST_DURATION.labels(method=_short(method), route=_short(route)).observe(
+            max(0.0, duration_seconds)
+        )
 
 
 def record_sse_connection(delta: int) -> None:
