@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.middleware import RequestContextMiddleware
+from app.core.telemetry import configure_tracing, shutdown_tracing
 from app.db.session import dispose_engine, get_session_factory
 from app.modules.approvals.service import expire_pending
 from app.modules.chat.registry import registry
@@ -43,6 +44,7 @@ async def _approval_sweeper() -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings)
+    configure_tracing(settings)
     settings.validate_runtime()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.attachment_dir.mkdir(parents=True, exist_ok=True)
@@ -62,6 +64,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         sweeper.cancel()
         await asyncio.gather(sweeper, return_exceptions=True)
         await registry.shutdown()
+        await shutdown_tracing()
         await dispose_engine()
         logger.info("agent-hub 已停止")
 
