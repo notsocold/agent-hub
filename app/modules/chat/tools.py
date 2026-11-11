@@ -25,7 +25,7 @@ from sqlalchemy import select
 from app.core.config import get_settings
 from app.core.metrics import record_tool_call
 from app.core.prompt_guard import wrap_untrusted
-from app.core.telemetry import get_tracer
+from app.core.telemetry import start_span
 from app.core.timeutil import elapsed_ms
 from app.db.models.approval import Approval
 from app.db.models.mcp import McpServer
@@ -162,75 +162,77 @@ class ToolRunner:
         invocation = await self._create_invocation(
             tool_call_id, name, source, ref_slug, args
         )
-        span = get_tracer().start_span(
+        with start_span(
             "tool.execute",
             attributes={
                 "app.tool.name": name,
                 "app.tool.source": source,
                 "app.tool_call_id": tool_call_id,
             },
-        )
-        status = "ok"
-        summary = ""
-        error: str | None = None
-        outcome: ToolRunOutcome | None = None
-        try:
-            # 审批由 gate 创建；这里只读结果：approved/无记录才执行。
-            outcome = await self._approval_guard(tool_call_id)
-            if outcome is None:
-                if name == "save_memory":
-                    outcome = await self._run_save_memory(args)
-                elif name == "read_skill_file":
-                    outcome = await self._run_read_skill_file(args)
-                elif name == "search_knowledge":
-                    outcome = await self._run_search_knowledge(args)
-                elif name == "send_message":
-                    outcome = await self._run_send_message(tool_call_id, args)
+        ) as span:
+            status = "ok"
+            summary = ""
+            error: str | None = None
+            outcome: ToolRunOutcome | None = None
+            try:
+                # 审批由 gate 创建；这里只读结果：approved/无记录才执行。
+                outcome = await self._approval_guard(tool_call_id)
+                if outcome is None:
+                    if name == "save_memory":
+                        outcome = await self._run_save_memory(args)
+                    elif name == "read_skill_file":
+                        outcome = await self._run_read_skill_file(args)
+                    elif name == "search_knowledge":
+                        outcome = await self._run_search_knowledge(args)
+                    elif name == "send_message":
+                        outcome = await self._run_send_message(tool_call_id, args)
+                    else:
+                        outcome = await self._run_mcp(tool_call_id, name, args)
+                content, summary = outcome.content, outcome.summary
+                if outcome.status == "rejected":
+                    status = "rejected"
                 else:
-                    outcome = await self._run_mcp(tool_call_id, name, args)
-            content, summary = outcome.content, outcome.summary
-            if outcome.status == "rejected":
-                status = "rejected"
-            else:
-                content = self._wrap_external(name, source, content)
-        except asyncio.CancelledError:
-            span.set_attribute("app.tool.status", "canceled")
-            span.end()
-            record_tool_call(name, source, "canceled", elapsed_ms(started) / 1000)
-            await self._finish_invocation(invocation, "canceled", None, started)
-            raise
-        except Exception as exc:
-            logger.warning("工具执行失败 tool=%s：%s", name, exc)
-            status = "error"
-            error = str(exc)[:500]
-            summary = error[:200]
-            # 远程错误文本同样是外部数据，必须与成功结果一样包裹。
-            content = self._wrap_external(name, source, f"工具 {name} 执行失败：{error}")
-        await self._finish_invocation(invocation, status, error, started)
-        span.set_attribute("app.tool.status", status)
-        span.end()
-        record_tool_call(name, source, status, elapsed_ms(started) / 1000)
-        result_payload: dict[str, Any] = {
-            "tool_call_id": tool_call_id,
-            "tool": name,
-            "status": status,
-            "summary": summary[:500],
-            "source": source,
-            **extra,
-        }
-        # 检索类工具带整轮累计引用，前端 ToolResultData.citations 依赖它展示来源。
-        if outcome is not None and outcome.citations:
-            result_payload["citations"] = outcome.citations
-        await self.publisher.emit(
-            "tool.result",
-            result_payload,
-            event_type="tool",
-            status="error" if status == "error" else "ok",
-            title=f"工具结果 {name}",
-            subtitle=summary[:200],
-            duration_ms=elapsed_ms(started),
-        )
-        return ToolMessage(content=content, tool_call_id=tool_call_id, name=name)
+                    content = self._wrap_external(name, source, content)
+            except asyncio.CancelledError:
+                span.set_attribute("app.tool.status", "canceled")
+                record_tool_call(name, source, "canceled", elapsed_ms(started) / 1000)
+                await self._finish_invocation(invocation, "canceled", None, started)
+                raise
+            except Exception as exc:
+                logger.warning("工具执行失败 tool=%s：%s", name, exc)
+                status = "error"
+                error = str(exc)[:500]
+                summary = error[:200]
+                # 远程错误文本同样是外部数据，必须与成功结果一样包裹。
+                content = self._wrap_external(name, source, f"工具 {name} 执行失败：{error}")
+            await self._finish_invocation(invocation, status, error, started)
+            span.set_attribute("app.tool.status", status)
+            if status == "error":
+                from opentelemetry.trace import Status, StatusCode
+
+                span.set_status(Status(StatusCode.ERROR))
+            record_tool_call(name, source, status, elapsed_ms(started) / 1000)
+            result_payload: dict[str, Any] = {
+                "tool_call_id": tool_call_id,
+                "tool": name,
+                "status": status,
+                "summary": summary[:500],
+                "source": source,
+                **extra,
+            }
+            # 检索类工具带整轮累计引用，前端 ToolResultData.citations 依赖它展示来源。
+            if outcome is not None and outcome.citations:
+                result_payload["citations"] = outcome.citations
+            await self.publisher.emit(
+                "tool.result",
+                result_payload,
+                event_type="tool",
+                status="error" if status == "error" else "ok",
+                title=f"工具结果 {name}",
+                subtitle=summary[:200],
+                duration_ms=elapsed_ms(started),
+            )
+            return ToolMessage(content=content, tool_call_id=tool_call_id, name=name)
 
     def _classify(self, name: str, args: dict[str, Any] | None = None) -> tuple[str, str | None]:
         if name in {"save_memory", "read_skill_file", "search_knowledge"}:

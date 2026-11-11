@@ -19,7 +19,7 @@ def test_dockerfile_non_root_and_healthcheck() -> None:
 def test_compose_has_api_postgres_and_observability_profiles() -> None:
     text = (ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
     assert "pgvector/pgvector:pg16" in text
-    assert "stop_grace_period: 40s" in text
+    assert "stop_grace_period: 130s" in text
     assert "profiles: [\"observability\"]" in text
     assert "prometheus" in text and "grafana" in text
 

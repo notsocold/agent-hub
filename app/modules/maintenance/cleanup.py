@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.core.metrics import record_cleanup, record_cleanup_run
+from app.core.telemetry import start_span
 from app.db.models.attachment import Attachment
 from app.db.models.audit import AuditLog
 from app.db.models.chat import Run, RunEvent
@@ -147,6 +148,9 @@ async def cleanup_checkpoints(*, dry_run: bool = False) -> CleanupResult:
         )
         .order_by(Conversation.updated_at.asc())
         .limit(settings.cleanup_batch_size)
+        # 与 start_chat 插入 run 的 FK KEY SHARE 互斥：锁住会话后再确认没有
+        # 活跃 run，避免「查询时无 run、删除时新 run 已启动」的竞态。
+        .with_for_update()
     )
     async with get_session_factory()() as db:
         rows = list((await db.execute(statement)).scalars())
@@ -154,8 +158,22 @@ async def cleanup_checkpoints(*, dry_run: bool = False) -> CleanupResult:
             return CleanupResult(
                 "checkpoints", len(rows), "skipped" if not rows else "ok"
             )
-        await _delete_checkpoint_threads([row.id for row in rows])
+        deletable: list[Conversation] = []
         for row in rows:
+            still_active = await db.scalar(
+                select(Run.id)
+                .where(
+                    Run.conversation_id == row.id,
+                    Run.status.in_(_ACTIVE_RUN_STATUSES),
+                )
+                .limit(1)
+            )
+            if still_active is None:
+                deletable.append(row)
+        if not deletable:
+            return CleanupResult("checkpoints", 0, "skipped")
+        await _delete_checkpoint_threads([row.id for row in deletable])
+        for row in deletable:
             await db.execute(
                 update(Conversation)
                 .where(Conversation.id == row.id)
@@ -169,7 +187,7 @@ async def cleanup_checkpoints(*, dry_run: bool = False) -> CleanupResult:
                 )
             )
         await db.commit()
-    return CleanupResult("checkpoints", len(rows), "ok")
+    return CleanupResult("checkpoints", len(deletable), "ok")
 
 
 def _unlink_attachment(path: Path, root: Path) -> None:
@@ -190,7 +208,11 @@ async def cleanup_attachments(*, dry_run: bool = False) -> CleanupResult:
             (
                 await db.execute(
                     select(Attachment)
-                    .where(Attachment.expires_at.is_not(None), Attachment.expires_at < now)
+                    .where(
+                        Attachment.expires_at.is_not(None),
+                        Attachment.expires_at < now,
+                        Attachment.status != "deleted",
+                    )
                     .order_by(Attachment.expires_at.asc())
                     .limit(batch)
                 )
@@ -212,13 +234,15 @@ async def cleanup_attachments(*, dry_run: bool = False) -> CleanupResult:
             referenced = bool(
                 await db.scalar(
                     select(func.count(Message.id)).where(
-                        Message.attachments.contains([str(row.id)])
+                        Message.attachments.contains([{"id": str(row.id)}])
                     )
                 )
             )
             if referenced:
                 row.status = "deleted"
                 row.storage_path = ""
+                # 软删后不再参与下一轮过期选择，否则会反复占满 batch。
+                row.expires_at = None
             else:
                 await db.delete(row)
             deleted += 1
@@ -256,6 +280,19 @@ async def cleanup_refresh_tokens(*, dry_run: bool = False) -> CleanupResult:
 async def run_all(
     *, only: set[str] | None = None, dry_run: bool = False
 ) -> list[CleanupResult]:
+    with start_span(
+        "maintenance.cleanup",
+        attributes={
+            "app.cleanup.dry_run": dry_run,
+            "app.cleanup.only": ",".join(sorted(only)) if only else "all",
+        },
+    ):
+        return await _run_all_inner(only=only, dry_run=dry_run)
+
+
+async def _run_all_inner(
+    *, only: set[str] | None = None, dry_run: bool = False
+) -> list[CleanupResult]:
     handlers = {
         "checkpoints": cleanup_checkpoints,
         "run_events": cleanup_run_events,
@@ -272,10 +309,11 @@ async def run_all(
             logger.exception("清理失败 kind=%s", kind)
             result = CleanupResult(kind, 0, "error", str(exc)[:300])
         results.append(result)
-        record_cleanup(kind, result.deleted)
-        record_cleanup_run(result.status)
+        if not dry_run:
+            record_cleanup(kind, result.deleted)
+            record_cleanup_run(result.status)
     deleted_total = sum(result.deleted for result in results)
-    if deleted_total:
+    if deleted_total and not dry_run:
         async with get_session_factory()() as db:
             await write_audit(
                 db,

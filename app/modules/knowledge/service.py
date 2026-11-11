@@ -457,6 +457,20 @@ async def retry_document(db: AsyncSession, user: User, document_id: uuid.UUID) -
 
 
 # --------------------------------------------------------------------- 检索
+async def _embed_query(text: str):
+    """构建 provider 并 embed query；失败统一映射为 ServiceUnavailableError。"""
+    try:
+        provider = get_embedding_provider()
+        vectors = await provider.embed([text])
+    except (EmbeddingUnavailableError, ValueError) as exc:
+        raise ServiceUnavailableError(str(exc) or "Embedding 服务不可用") from exc
+    except httpx.InvalidURL as exc:
+        raise ServiceUnavailableError("Embedding 服务地址配置无效") from exc
+    if len(vectors) != 1:
+        raise ServiceUnavailableError("Embedding 服务返回的向量条数异常")
+    return provider, vectors[0]
+
+
 async def search(
     db: AsyncSession,
     user: User,
@@ -478,20 +492,6 @@ async def search(
 
     settings = get_settings()
     effective_top_k = settings.vector_top_k if top_k is None else max(1, min(int(top_k), 20))
-    try:
-        # provider 构建也可能失败：显式 openai 无 key（ValueError）、非法 base_url（InvalidURL）。
-        provider = get_embedding_provider()
-        vectors = await provider.embed([text])
-    except (EmbeddingUnavailableError, ValueError) as exc:
-        raise ServiceUnavailableError(str(exc) or "Embedding 服务不可用") from exc
-    except httpx.InvalidURL as exc:
-        raise ServiceUnavailableError("Embedding 服务地址配置无效") from exc
-    if len(vectors) != 1:
-        raise ServiceUnavailableError("Embedding 服务返回的向量条数异常")
-    # fake 分数不可解释（短 query 对长 chunk 余弦存在上界），只按排序取 top_k。
-    threshold = (
-        0.0 if isinstance(provider, FakeEmbeddingProvider) else settings.vector_score_threshold
-    )
     span = get_tracer().start_span(
         "knowledge.search",
         attributes={
@@ -501,9 +501,14 @@ async def search(
     )
     started = time.monotonic()
     try:
+        provider, vector = await _embed_query(text)
+        # fake 分数不可解释（短 query 对长 chunk 余弦存在上界），只按排序取 top_k。
+        threshold = (
+            0.0 if isinstance(provider, FakeEmbeddingProvider) else settings.vector_score_threshold
+        )
         results = await search_chunks(
             db,
-            embedding=vectors[0],
+            embedding=vector,
             user_id=user.id,
             top_k=effective_top_k,
             threshold=threshold,

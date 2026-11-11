@@ -106,7 +106,7 @@ class RunRegistry:
         context.task.cancel()
         return True
 
-    async def shutdown(self) -> None:
+    async def shutdown(self, timeout: float | None = None) -> None:
         tasks = [
             context.task
             for context in self._contexts.values()
@@ -115,7 +115,16 @@ class RunRegistry:
         for task in tasks:
             task.cancel()
         if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                if timeout is None:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                else:
+                    await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
+                        timeout=max(0.1, timeout),
+                    )
+            except TimeoutError:
+                logger.warning("取消剩余 run 超时（%ss），继续关闭", timeout)
         self._contexts.clear()
 
 

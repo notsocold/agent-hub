@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.core.config import Settings
 from app.db.models.audit import AuditLog
 from app.db.models.chat import Run, RunEvent
-from app.db.models.conversation import Conversation
+from app.db.models.conversation import Conversation, Message
 from app.db.models.user import RefreshToken
 from app.db.session import get_session_factory
 from app.modules.maintenance import cleanup
@@ -114,3 +114,94 @@ async def test_cleanup_refresh_tokens(db, user) -> None:
         await session.commit()
     result = await cleanup.cleanup_refresh_tokens()
     assert result.deleted == 1
+
+
+async def test_cleanup_attachments_soft_deletes_referenced(db, user) -> None:
+    from pathlib import Path
+
+    from app.core.config import get_settings
+    from app.db.models.attachment import Attachment
+
+    settings = get_settings()
+    root = Path(settings.attachment_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(UTC)
+    async with get_session_factory()() as session:
+        conversation = Conversation(user_id=user.id, title="附件")
+        session.add(conversation)
+        await session.flush()
+
+        referenced_id = uuid.uuid4()
+        referenced_path = root / f"{referenced_id}-a.txt"
+        referenced_path.write_bytes(b"referenced")
+        session.add(
+            Attachment(
+                id=referenced_id,
+                user_id=user.id,
+                filename="a.txt",
+                checksum="a",
+                storage_path=str(referenced_path),
+                status="ready",
+                expires_at=now - timedelta(days=1),
+            )
+        )
+        orphan_id = uuid.uuid4()
+        orphan_path = root / f"{orphan_id}-b.txt"
+        orphan_path.write_bytes(b"orphan")
+        session.add(
+            Attachment(
+                id=orphan_id,
+                user_id=user.id,
+                filename="b.txt",
+                checksum="b",
+                storage_path=str(orphan_path),
+                status="ready",
+                expires_at=now - timedelta(days=1),
+            )
+        )
+        await session.flush()
+        session.add(
+            Message(
+                conversation_id=conversation.id,
+                role="user",
+                content="带附件",
+                attachments=[{"id": str(referenced_id), "filename": "a.txt"}],
+            )
+        )
+        await session.commit()
+
+    result = await cleanup.cleanup_attachments()
+    assert result.deleted == 2
+    assert not referenced_path.exists()
+    assert not orphan_path.exists()
+    async with get_session_factory()() as session:
+        referenced = await session.get(Attachment, referenced_id)
+        assert referenced is not None
+        assert referenced.status == "deleted"
+        assert referenced.storage_path == ""
+        assert referenced.expires_at is None
+        assert await session.get(Attachment, orphan_id) is None
+
+
+async def test_cleanup_dry_run_does_not_audit(db, user) -> None:
+    from sqlalchemy import func
+
+    now = datetime.now(UTC)
+    async with get_session_factory()() as session:
+        session.add(
+            AuditLog(
+                actor_type="system",
+                actor_id="x",
+                action="old",
+                detail={},
+                created_at=now - timedelta(days=365),
+            )
+        )
+        await session.commit()
+    before = 0
+    async with get_session_factory()() as session:
+        before = int(await session.scalar(select(func.count(AuditLog.id))) or 0)
+    await cleanup.run_all(only={"audit"}, dry_run=True)
+    async with get_session_factory()() as session:
+        after = int(await session.scalar(select(func.count(AuditLog.id))) or 0)
+    assert after == before

@@ -53,10 +53,15 @@ async def test_chat_metrics_and_spans(client: httpx.AsyncClient, monkeypatch) ->
     assert 'tool="save_memory"' in text
     assert "agent_hub_llm_tokens_total" in text
 
-    span_names = {span.name for span in exporter.get_finished_spans()}
+    spans = exporter.get_finished_spans()
+    span_names = {span.name for span in spans}
     assert "chat.run" in span_names
     assert "tool.execute" in span_names
     assert "llm.chat" in span_names
+    chat_span = next(span for span in spans if span.name == "chat.run")
+    tool_span = next(span for span in spans if span.name == "tool.execute")
+    assert tool_span.parent is not None
+    assert tool_span.context.trace_id == chat_span.context.trace_id
 
 
 async def test_stream_events_do_not_leak_metrics_labels(client: httpx.AsyncClient) -> None:

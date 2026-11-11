@@ -38,3 +38,11 @@ def test_first_token_none_is_ignored() -> None:
     text = metrics.render_metrics()[0].decode()
     assert 'agent_hub_chat_runs_total{status="succeeded"} 1.0' in text
     assert "agent_hub_chat_first_token_seconds_count" not in text
+
+
+def test_http_method_label_whitelist() -> None:
+    metrics.reset_metrics()
+    metrics.record_http_request("WEIRD", "/x", 200, 0.01)
+    text = metrics.render_metrics()[0].decode()
+    assert 'method="OTHER"' in text
+    assert "WEIRD" not in text

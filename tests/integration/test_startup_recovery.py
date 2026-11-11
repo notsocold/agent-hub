@@ -99,3 +99,12 @@ async def test_interrupted_without_checkpoint_canceled_restart_lost(db, user) ->
     async with get_session_factory()() as session:
         run = await session.get(Run, run_id)
     assert run.status == "canceled"
+
+
+async def test_fail_orphaned_run_does_not_overwrite_succeeded(db, user) -> None:
+    from app.modules.chat.service import fail_orphaned_run
+
+    run_id = await _seed_run(status="succeeded")
+    assert await fail_orphaned_run(run_id) is False
+    async with get_session_factory()() as session:
+        assert (await session.get(Run, run_id)).status == "succeeded"

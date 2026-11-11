@@ -49,3 +49,45 @@ def test_disabled_passthrough() -> None:
     output_filter = StreamingOutputFilter(enabled=False)
     assert output_filter.feed("sk-abcdefghijklmnopqrstuvwxyz") == "sk-abcdefghijklmnopqrstuvwxyz"
     assert output_filter.flush() == ""
+
+
+PEM = (
+    "-----BEGIN RSA PRIVATE KEY-----\n"
+    "MIIEowIBAAKCAQEA1234567890abcdef\n"
+    "-----END RSA PRIVATE KEY-----"
+)
+
+
+@pytest.mark.parametrize("cut", range(1, len(PEM)))
+def test_pem_split_never_leaks(cut: int) -> None:
+    output_filter = StreamingOutputFilter()
+    out = output_filter.feed(PEM[:cut]) + output_filter.feed(PEM[cut:]) + output_filter.flush()
+    assert "MIIEowIBAAKCAQEA1234567890abcdef" not in out
+    assert "BEGIN RSA PRIVATE KEY" not in out
+
+
+def test_pem_at_stream_end_never_leaks() -> None:
+    output_filter = StreamingOutputFilter()
+    out = output_filter.feed(PEM) + output_filter.flush()
+    assert "BEGIN RSA PRIVATE KEY" not in out
+    assert "MIIEowIBAAKCAQEA1234567890abcdef" not in out
+
+
+@pytest.mark.parametrize("separator", ["\n", "\t", "  "])
+def test_bearer_whitespace_split_never_leaks(separator: str) -> None:
+    token = "abcdefghijklmnopqrstuvwxyz012345"
+    raw = f"Authorization: Bearer{separator}{token}"
+    output_filter = StreamingOutputFilter()
+    out = ""
+    for index in range(0, len(raw), 2):
+        out += output_filter.feed(raw[index : index + 2])
+    out += output_filter.flush()
+    assert token not in out
+
+
+@pytest.mark.parametrize("tag", ["script", "iframe", "style"])
+def test_unclosed_html_block_dropped_on_flush(tag: str) -> None:
+    output_filter = StreamingOutputFilter()
+    out = output_filter.feed(f"hello <{tag}>alert(1)") + output_filter.flush()
+    assert f"<{tag}>" not in out
+    assert "alert(1)" not in out

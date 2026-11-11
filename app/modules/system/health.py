@@ -106,21 +106,30 @@ async def _check_storage(timeout: float) -> dict[str, Any]:
     return {"name": "storage", "status": "ok"}
 
 
-async def _safe_check(check, timeout: float) -> dict[str, Any]:
+async def _safe_check(name: str, check, timeout: float) -> dict[str, Any]:
     try:
         return await asyncio.wait_for(check(timeout), timeout=timeout)
     except TimeoutError:
-        return {"name": getattr(check, "__name__", "check"), "status": "error", "detail": "超时"}
+        return {"name": name, "status": "error", "detail": "超时"}
     except Exception as exc:
-        logger.warning("就绪检查异常：%s", exc)
-        return {"name": getattr(check, "__name__", "check"), "status": "error", "detail": str(exc)}
+        logger.warning("就绪检查异常 name=%s：%s", name, exc)
+        return {"name": name, "status": "error", "detail": str(exc)}
 
 
 async def readiness_components() -> list[dict[str, Any]]:
     settings = get_settings()
     timeout = settings.readiness_timeout_seconds
-    checks = (_check_database, _check_migrations, _check_checkpoint, _check_storage)
-    return list(await asyncio.gather(*(_safe_check(check, timeout) for check in checks)))
+    checks = (
+        ("database", _check_database),
+        ("migrations", _check_migrations),
+        ("checkpoint", _check_checkpoint),
+        ("storage", _check_storage),
+    )
+    return list(
+        await asyncio.gather(
+            *(_safe_check(name, check, timeout) for name, check in checks)
+        )
+    )
 
 
 @router.get("/healthz")

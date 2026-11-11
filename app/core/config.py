@@ -220,6 +220,7 @@ class Settings(BaseSettings):
 
     # ------------------------------------------------------------------ 运行期（M6）
     shutdown_grace_seconds: int = 30
+    shutdown_finalize_timeout_seconds: int = 10
     startup_recovery_enabled: bool = True
     startup_recovery_max_runs: int = 100
     recovery_interval_seconds: int = 300

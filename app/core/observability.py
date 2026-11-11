@@ -12,6 +12,7 @@ from typing import Any
 
 from opentelemetry.trace import SpanKind, Status, StatusCode, use_span
 
+from app.core.errors import request_id_ctx
 from app.core.metrics import (
     record_http_request,
     record_sse_connection,
@@ -93,7 +94,10 @@ class ObservabilityMiddleware:
                 route = _route_of(scope)
                 span.set_attribute("http.route", route)
                 span.set_attribute("http.response.status_code", status_code)
-                span.set_attribute("app.request_id", response_map.get("x-request-id", "-"))
+                span.set_attribute(
+                    "app.request_id",
+                    response_map.get("x-request-id") or request_id_ctx.get() or "-",
+                )
                 if status_code >= 500:
                     span.set_status(Status(StatusCode.ERROR))
 

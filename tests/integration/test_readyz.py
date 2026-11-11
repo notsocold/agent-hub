@@ -62,3 +62,40 @@ async def test_readyz_migrations_enabled_reports_missing(
         item for item in response.json()["components"] if item["name"] == "migrations"
     )
     assert migrations["status"] == "error"
+
+
+async def test_readyz_database_timeout_is_critical_503(
+    client: httpx.AsyncClient, monkeypatch
+) -> None:
+    from app.core.config import get_settings
+    from app.modules.system import health
+
+    async def _slow(timeout: float):
+        import asyncio
+
+        await asyncio.sleep(timeout + 1)
+        return {"name": "database", "status": "ok"}
+
+    monkeypatch.setattr(health, "_check_database", _slow)
+    monkeypatch.setattr(get_settings(), "readiness_timeout_seconds", 0.01)
+    response = await client.get("/readyz")
+    assert response.status_code == 503
+    database = next(item for item in response.json()["components"] if item["name"] == "database")
+    assert database["status"] == "error"
+
+
+async def test_startup_migration_check_rejects_unmigrated_db(db) -> None:
+    import os
+
+    import pytest
+
+    from app.core.config import Settings
+    from app.core.migrations import ensure_migrations_current
+
+    settings = Settings(
+        database_url=os.environ["DATABASE_URL"],
+        readiness_check_migrations=True,
+        _env_file=None,
+    )
+    with pytest.raises(RuntimeError):
+        await ensure_migrations_current(settings)

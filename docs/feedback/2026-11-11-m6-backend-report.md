@@ -33,7 +33,7 @@
 
 ```text
 TEST_DATABASE_URL=... .venv/bin/python -m pytest -q
-→ 471 passed, 1 skipped in 94.73s
+→ 578 passed, 1 skipped in 92.27s
 
 .venv/bin/python -m ruff check .
 → All checks passed!
@@ -42,10 +42,7 @@ docker compose -f docker-compose.prod.yml config
 → exit 0
 ```
 
-- 基线 M5 395 项 → M6 **471 项**（+76）；
-- 收尾时本机 `dev_postgres` 已停止（遵守「不擅自启动容器」），最后一次复跑为
-  `236 passed, 236 skipped`（集成用例因无测试库跳过）；**471 全量证据为 2026-11-11 上午运行结果**，
-  此后只有文档/注释变更；
+- 基线 M5 395 项 → M6 **578 项**（+183；含流式过滤切分点参数化与审查回归用例）；
 - 唯一 skip 仍是知识库语义评测组（需真实 Embedding key，与 M4 一致）；
 - 迁移基线：临时库空库 `alembic upgrade head` 成功，`alembic check` 输出
   `No new upgrade operations detected.`；M6 未新增迁移，head 仍为 `c4e7a91b2f36`；
@@ -78,9 +75,9 @@ docker compose -f docker-compose.prod.yml config
 | 成功 | 50 |
 | 错误率 | 0% |
 | 状态码 | 200×50 |
-| 首 token P50 / P95 / P99 | 2079ms / 2183ms / 2186ms |
-| 总时长 P50 / P95 / P99 | 3213ms / 3464ms / 3466ms |
-| 总耗时 | 7.62s |
+| 首 token P50 / P95 / P99 | 2223ms / 2403ms / 2445ms |
+| 总时长 P50 / P95 / P99 | 3307ms / 3421ms / 3429ms |
+| 总耗时 | 7.36s |
 
 > 口径：本机单实例 + 假模型，样本为 1 轮 50 并发；不代表真实模型/多实例容量。
 > 结果满足 roadmap 「错误率 < 1%」，首 token P95 也低于 M1 的 3s 目标。
@@ -108,9 +105,20 @@ round 1: 在跑 SSE done=1，另一实例成功=3/3，被停实例 exit=-15
 结果：PASS
 ```
 
-- 在跑 SSE 均收到 `message.done`（排水窗口生效）；
+- 在跑 SSE 均收到 `message.done`（uvicorn 连接排水 + app drain 的总效果；演练脚本显式设置 90s graceful timeout）；
 - 排水期间另一实例 0 失败；被停实例重启后 `/readyz` 恢复；
 - `exit=-15` 是 SIGTERM 终止信号，属预期；Compose 的 `stop_grace_period` 与其对应。
+
+### 2.5 审查修复回归
+
+整分支独立审查后修复并复跑：
+
+- Critical：PEM 私钥在任意切分点/流末尾泄漏、`Bearer\n`/`\t`/多空格跨 chunk 泄漏、
+  未闭合 `<script>/<iframe>/<style>` 在 `flush()` 泄漏；新增 100+ 个切分点/变体测试；
+- Important：`/readyz` 超时组件名导致 200、checkpoint 清理 select/delete 竞态、附件 JSONB
+  引用查询错误、启动不校验迁移、孤儿 run 覆盖终态、停机预算不匹配、Trace 父子关系/缺失 span、
+  `registry.shutdown()` 无上限、无引号事件属性未过滤；
+- 复跑：**578 passed, 1 skipped**；ruff 全绿。
 
 ### 2.5 Trace
 

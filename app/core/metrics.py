@@ -193,6 +193,7 @@ STARTUP_RECOVERY_TOTAL = Counter(
 )
 
 _BUILTIN_TOOLS = frozenset({"save_memory", "read_skill_file", "search_knowledge", "send_message"})
+_HTTP_METHODS = frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})
 _setup_done = False
 _ALL_METRICS = (
     BUILD_INFO,
@@ -265,11 +266,12 @@ def record_http_request(
     *,
     record_duration: bool = True,
 ) -> None:
+    method_label = method.upper() if method.upper() in _HTTP_METHODS else "OTHER"
     HTTP_REQUESTS_TOTAL.labels(
-        method=_short(method), route=_short(route), status=str(status)
+        method=method_label, route=_short(route), status=str(status)
     ).inc()
     if record_duration:
-        HTTP_REQUEST_DURATION.labels(method=_short(method), route=_short(route)).observe(
+        HTTP_REQUEST_DURATION.labels(method=method_label, route=_short(route)).observe(
             max(0.0, duration_seconds)
         )
 

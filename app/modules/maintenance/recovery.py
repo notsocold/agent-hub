@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.core.metrics import record_recovery
+from app.core.telemetry import start_span
 from app.db.models.approval import Approval
 from app.db.models.chat import Run
 from app.db.session import get_session_factory
@@ -46,6 +47,11 @@ async def _candidate_ids(*, statuses: tuple[str, ...], cutoff: datetime | None, 
 
 
 async def recover(*, startup: bool) -> RecoveryStats:
+    with start_span("startup.recovery", attributes={"app.recovery.startup": startup}):
+        return await _recover_inner(startup=startup)
+
+
+async def _recover_inner(*, startup: bool) -> RecoveryStats:
     settings = get_settings()
     if not settings.startup_recovery_enabled:
         return RecoveryStats()

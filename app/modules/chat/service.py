@@ -12,6 +12,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 from langgraph.types import Command
+from opentelemetry import trace
 from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +38,7 @@ from app.core.metrics import record_approval, record_chat_run
 from app.core.prompt_guard import SUSPICIOUS_INPUT_NOTE, sanitize_output, scan_injection
 from app.core.rate_limit import limiter
 from app.core.stream_filter import StreamingOutputFilter
-from app.core.telemetry import start_span
+from app.core.telemetry import get_tracer, start_span
 from app.core.timeutil import elapsed_ms
 from app.db.models.approval import Approval
 from app.db.models.chat import Run, RunEvent
@@ -741,6 +742,9 @@ async def _stream_graph_inner(
             if text:
                 if first_token_ms is None:
                     first_token_ms = elapsed_ms(started_at)
+                    from opentelemetry import trace
+
+                    trace.get_current_span().set_attribute("app.first_token_ms", first_token_ms)
                 filtered_text = text_filter.feed(text)
                 if filtered_text:
                     content_parts.append(filtered_text)
@@ -1248,6 +1252,7 @@ async def _finalize_success(
                 conversation.message_count += 1
         model_name = run.model if run is not None else ""
         await db.commit()
+    trace.get_current_span().set_attribute("app.run.status", "succeeded")
     record_chat_run(
         "succeeded",
         duration_ms / 1000,
@@ -1327,6 +1332,7 @@ async def _finalize_canceled(
         duration_ms=duration_ms,
         tokens=usage,
     )
+    trace.get_current_span().set_attribute("app.run.status", "canceled")
     record_chat_run(
         "canceled",
         duration_ms / 1000,
@@ -1400,6 +1406,7 @@ async def _finalize_failed(
         title="运行失败",
         error={"code": code, "message": error_message},
     )
+    trace.get_current_span().set_attribute("app.run.status", "failed")
     record_chat_run(
         "failed",
         duration_ms / 1000,
@@ -1679,8 +1686,18 @@ async def fail_orphaned_run(
 ) -> bool:
     """单实例启动/巡检发现无人认领的 run：写失败终态，避免会话永久占锁。"""
     async with get_session_factory()() as db:
+        # 条件 UPDATE 抢占：只有仍处于 queued/running 的 run 才允许被恢复失败，
+        # 避免周期巡检把已成功/已取消的 run 覆盖成 failed。
+        claimed = await db.execute(
+            update(Run)
+            .where(Run.id == run_id, Run.status.in_(("queued", "running")))
+            .values(status="failed")
+        )
+        await db.commit()
+        if not claimed.rowcount:
+            return False
         run = await db.get(Run, run_id)
-        if run is None or run.status not in {"queued", "running"}:
+        if run is None:
             return False
         assistant = (
             await db.get(Message, run.assistant_message_id) if run.assistant_message_id else None
@@ -1777,6 +1794,24 @@ async def resume_run(
 
 
 async def stream_run_events(run_id: uuid.UUID, *, after_seq: int = 0) -> AsyncIterator[str]:
+    """SSE 生成器：包一层 ``sse.stream`` span，内部回放 + 实时跟随。"""
+    span = get_tracer().start_span(
+        "sse.stream",
+        attributes={"app.run_id": str(run_id), "app.sse.after_seq": after_seq},
+    )
+    events = 0
+    try:
+        async for frame in _stream_run_events_inner(run_id, after_seq=after_seq):
+            events += 1
+            yield frame
+    finally:
+        span.set_attribute("app.sse.events", events)
+        span.end()
+
+
+async def _stream_run_events_inner(
+    run_id: uuid.UUID, *, after_seq: int = 0
+) -> AsyncIterator[str]:
     """SSE 生成器：先回放已落库事件，再跟随实时事件。"""
     settings = get_settings()
     queue = await bus.subscribe(run_id)

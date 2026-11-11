@@ -3,7 +3,8 @@
 在模型 delta 发往前端之前处理高置信密钥与危险 HTML，支持跨 chunk 切割：
 
 - 密钥：持有「正在形成的锚点/匹配」的尾部，完整后再交给 ``sanitize_output`` 打码；
-- HTML：``<script>`` / ``<iframe>`` / ``<style>`` 整段丢弃，未闭合标签先扣留；
+- PEM 私钥：从 ``-----BEGIN`` 起扣留，直到完整 ``-----END ... PRIVATE KEY-----``；
+- HTML：``<script>`` / ``<iframe>`` / ``<style>`` 整段丢弃，未闭合块在 ``flush()`` 也丢弃；
 - 正常文本只扣留锚点前缀（≤ 11 字符）或未闭合标签，不影响流式体验。
 
 落库前仍会跑一次完整 ``sanitize_output``，本模块是流式层的额外防线，不是唯一防线。
@@ -11,25 +12,28 @@
 
 from __future__ import annotations
 
+import re
+
 from app.core.prompt_guard import sanitize_output
 
 _MAX_TAG = 2 * 1024
 _MAX_BLOCK = 16 * 1024
-_MAX_SECRET = 256
 _MAX_HOLD = 64 * 1024
 
-# 锚点：(文本, 允许的 token 字符集, 最短长度)。Bearer 用点/下划线/连字符。
-_ANCHORS: tuple[tuple[str, frozenset[str], int], ...] = (
-    ("sk-", frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"), 16),
-    ("AKIA", frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"), 16),
-    ("ghp_", frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"), 20),
-    (
-        "Bearer ",
-        frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"),
-        20,
-    ),
+# 普通 token 锚点：(文本, 允许的 token 字符集)。Bearer 有独立的空白状态机。
+_ANCHORS: tuple[tuple[str, frozenset[str]], ...] = (
+    ("sk-", frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")),
+    ("AKIA", frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")),
+    ("ghp_", frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")),
+)
+_BEARER = "Bearer"
+_BEARER_ALLOWED = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
 )
 _PRIVATE_BEGIN = "-----BEGIN "
+_PRIVATE_BLOCK = re.compile(
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
+)
 _BLOCK_TAGS: tuple[tuple[str, str], ...] = (
     ("script", "</script>"),
     ("iframe", "</iframe>"),
@@ -50,47 +54,67 @@ def _strip_blocks(buffer: str) -> tuple[str, int | None, set[str]]:
         if found is None:
             return buffer, None, rules
         index, tag, close = found
+        rules.add(f"html_{tag}")
         close_index = lower.find(close, index)
         if close_index < 0:
             if len(buffer) - index > _MAX_BLOCK:
-                # 长时间未闭合：整段丢弃，避免无限缓存。
-                rules.add(f"html_{tag}")
-                return "", None, rules
+                # 异常长的未闭合块：丢弃块本身，保留块前文本。
+                return buffer[:index], None, rules
             return buffer, index, rules
         buffer = buffer[:index] + buffer[close_index + len(close) :]
-        rules.add(f"html_{tag}")
+
+
+def _private_key_hold(buffer: str) -> int:
+    """返回 PEM 私钥必须扣留的起点；没有未完成私钥时返回 len(buffer)。"""
+    hold = len(buffer)
+    last_begin = buffer.rfind(_PRIVATE_BEGIN)
+    if last_begin >= 0 and _PRIVATE_BLOCK.match(buffer, last_begin) is None:
+        hold = min(hold, last_begin)
+
+    # 末尾是 BEGIN 前缀（例如 "-----BEG"）：只有它不属于已完整私钥时才扣留。
+    for length in range(min(len(_PRIVATE_BEGIN) - 1, len(buffer)), 0, -1):
+        if not buffer.endswith(_PRIVATE_BEGIN[:length]):
+            continue
+        start = len(buffer) - length
+        match = _PRIVATE_BLOCK.search(buffer)
+        if match is None or start >= match.end():
+            hold = min(hold, start)
+        break
+    return hold
 
 
 def _partial_secret_start(buffer: str) -> int:
     """返回必须扣留的起点；没有正在形成的密钥时返回 len(buffer)。"""
-    hold = len(buffer)
+    hold = _private_key_hold(buffer)
 
-    for anchor, allowed, _minimum in _ANCHORS:
+    for anchor, allowed in _ANCHORS:
         index = buffer.rfind(anchor)
         if index < 0:
             continue
         tail = buffer[index + len(anchor) :]
-        # 空 tail（刚出现 "-" / " "）或全是 token 字符（尚无终止符）都要扣留；
-        # 一旦出现非 token 字符，完整密钥已可交给 sanitize_output。
         if all(char in allowed for char in tail):
             hold = min(hold, index)
 
-    begin = buffer.rfind(_PRIVATE_BEGIN)
-    if begin >= 0 and "PRIVATE KEY-----" in buffer[begin : begin + 64]:
-        if "-----END" not in buffer[begin:]:
-            hold = min(hold, begin)
+    # Bearer 后允许任意空白（含换行/制表符/多空格），再到 token。
+    bearer = buffer.rfind(_BEARER)
+    if bearer >= 0:
+        position = bearer + len(_BEARER)
+        while position < len(buffer) and buffer[position].isspace():
+            position += 1
+        tail = buffer[position:]
+        if all(char in _BEARER_ALLOWED for char in tail):
+            hold = min(hold, bearer)
 
     # buffer 末尾是某个锚点的前缀（如 "s"、"Bear"）时也要扣留。
-    for anchor, _allowed, _minimum in _ANCHORS:
+    for anchor, _allowed in _ANCHORS:
         for length in range(min(len(anchor) - 1, len(buffer)), 0, -1):
             if buffer.endswith(anchor[:length]):
                 hold = min(hold, len(buffer) - length)
                 break
-    for length in range(min(len(_PRIVATE_BEGIN) - 1, len(buffer)), 0, -1):
-        if buffer.endswith(_PRIVATE_BEGIN[:length]):
+    for length in range(min(len(_BEARER) - 1, len(buffer)), 0, -1):
+        if buffer.endswith(_BEARER[:length]):
             hold = min(hold, len(buffer) - length)
             break
-
     return hold
 
 
@@ -154,7 +178,24 @@ class StreamingOutputFilter:
     def flush(self) -> str:
         if not self.enabled or not self._buffer:
             return ""
-        content, hits = sanitize_output(self._buffer)
+        cleaned, block_start, block_rules = _strip_blocks(self._buffer)
+        self._rules.update(block_rules)
+        if block_start is not None:
+            # 流结束仍未闭合的危险块：整段丢弃（含块后内容）。
+            cleaned = cleaned[:block_start]
+
+        last_begin = cleaned.rfind(_PRIVATE_BEGIN)
+        if last_begin >= 0 and _PRIVATE_BLOCK.match(cleaned, last_begin) is None:
+            # 未完成的私钥不能交给通用正则（它会匹配不到而泄漏）；截断并打码。
+            cleaned = f"{cleaned[:last_begin]}***"
+            self._rules.add("private_key")
+
+        tag_start = _incomplete_tag_start(cleaned)
+        if tag_start is not None:
+            cleaned = cleaned[:tag_start]
+            self._rules.add("html_unclosed")
+
+        content, hits = sanitize_output(cleaned)
         self._rules.update(hits)
         self._buffer = ""
         return content

@@ -30,6 +30,7 @@ def test_m6_defaults() -> None:
     assert s.readiness_check_migrations is False
     assert s.readiness_timeout_seconds == 2.0
     assert s.shutdown_grace_seconds == 30
+    assert s.shutdown_finalize_timeout_seconds == 10
     assert s.startup_recovery_enabled is True
     assert s.startup_recovery_max_runs == 100
     assert s.recovery_interval_seconds == 300

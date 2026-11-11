@@ -105,6 +105,9 @@ def _start(name: str, port: int, base_env: dict[str, str]) -> tuple[subprocess.P
             "127.0.0.1",
             "--port",
             str(port),
+            # 与生产镜像一致：先由 uvicorn 等待在跑连接，再进入 lifespan 排水。
+            "--timeout-graceful-shutdown",
+            "90",
         ],
         env=_child_env(name, base_env),
         stdout=log,

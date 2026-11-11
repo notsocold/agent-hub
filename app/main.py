@@ -18,6 +18,7 @@ from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
 from app.core.metrics import setup_metrics
 from app.core.middleware import RequestContextMiddleware
+from app.core.migrations import ensure_migrations_current
 from app.core.observability import ObservabilityMiddleware
 from app.core.telemetry import configure_tracing, shutdown_tracing
 from app.db.session import dispose_engine, get_session_factory
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     configure_tracing(settings)
     setup_metrics(settings)
     settings.validate_runtime()
+    await ensure_migrations_current(settings)
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.attachment_dir.mkdir(parents=True, exist_ok=True)
     if settings.knowledge_enabled:
@@ -102,7 +104,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.warning(
                 "排水超时（%ss），取消剩余 run", settings.shutdown_grace_seconds
             )
-        await registry.shutdown()
+        await registry.shutdown(settings.shutdown_finalize_timeout_seconds)
         await shutdown_tracing()
         await dispose_engine()
         logger.info("agent-hub 已停止")

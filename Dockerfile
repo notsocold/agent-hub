@@ -46,4 +46,4 @@ CMD ["uvicorn", "app.main:app", \
      "--port", "8000", \
      "--proxy-headers", \
      "--forwarded-allow-ips=*", \
-     "--timeout-graceful-shutdown", "35"]
+     "--timeout-graceful-shutdown", "90"]

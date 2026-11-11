@@ -1013,8 +1013,8 @@ git commit -m "feat: M6 流式输出实时过滤"
 - Test: `tests/test_deploy_assets_unit.py`
 
 **Interfaces:**
-- Dockerfile：多阶段 `ghcr.io/astral-sh/uv:0.9.26` + `python:3.13-slim`；非 root `app`；`/app/data`；`HEALTHCHECK` 用 `python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"`；CMD 含 `--timeout-graceful-shutdown 35`。
-- Compose：`postgres`（pgvector/pg16、healthcheck、volume）、`api`（build、env_file、depends_on healthy、`stop_grace_period: 40s`、volume、restart）；`prometheus`/`grafana` profile `observability`；`nginx` profile `proxy`。
+- Dockerfile：多阶段 `ghcr.io/astral-sh/uv:0.9.26` + `python:3.13-slim`；非 root `app`；`/app/data`；`HEALTHCHECK` 用 `python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"`；CMD 含 `--timeout-graceful-shutdown 90`。
+- Compose：`postgres`（pgvector/pg16、healthcheck、volume）、`api`（build、env_file、depends_on healthy、`stop_grace_period: 130s`、volume、restart）；`prometheus`/`grafana` profile `observability`；`nginx` profile `proxy`。
 - Grafana dashboard：JSON 可解析，至少 6 个 panel（HTTP RPS、HTTP P95、SSE active、chat P95、LLM tokens、tool errors），datasource 变量 `Prometheus`。
 - Nginx：SSE `proxy_buffering off`、`proxy_read_timeout 900s`、`X-Accel-Buffering no`。
 
