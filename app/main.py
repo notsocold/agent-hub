@@ -42,7 +42,7 @@ async def _approval_sweeper() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
-    configure_logging(settings.debug)
+    configure_logging(settings)
     settings.validate_runtime()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.attachment_dir.mkdir(parents=True, exist_ok=True)

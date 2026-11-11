@@ -31,6 +31,7 @@ from app.core.errors import (
     ValidationFailedError,
     current_request_id,
 )
+from app.core.log_context import bind_run_context, run_id_ctx
 from app.core.prompt_guard import SUSPICIOUS_INPUT_NOTE, sanitize_output, scan_injection
 from app.core.rate_limit import limiter
 from app.core.timeutil import elapsed_ms
@@ -885,14 +886,15 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
             graph = _build_graph_for(runtime, saver)
             config = {"configurable": {"thread_id": str(runtime.conversation_id)}}
             await _clear_stale_interrupt(saver, runtime, config)
-            await _stream_graph(
-                context,
-                runtime,
-                graph,
-                config,
-                {"messages": [HumanMessage(content=runtime.model_input)]},
-                is_new_conversation=is_new_conversation,
-            )
+            with bind_run_context(runtime.run_id, runtime.conversation_id):
+                await _stream_graph(
+                    context,
+                    runtime,
+                    graph,
+                    config,
+                    {"messages": [HumanMessage(content=runtime.model_input)]},
+                    is_new_conversation=is_new_conversation,
+                )
     except asyncio.CancelledError:
         logger.info("运行被取消 run_id=%s", run_id)
         await asyncio.shield(
@@ -979,14 +981,15 @@ async def resume_after_decision(context: RunContext) -> None:
                     )
                     await db.commit()
                 return
-            await _stream_graph(
-                context,
-                runtime,
-                graph,
-                config,
-                Command(resume={"decision": "resume"}),
-                resumed=True,
-            )
+            with bind_run_context(runtime.run_id, runtime.conversation_id):
+                await _stream_graph(
+                    context,
+                    runtime,
+                    graph,
+                    config,
+                    Command(resume={"decision": "resume"}),
+                    resumed=True,
+                )
     except asyncio.CancelledError:
         logger.info("恢复任务被取消 run_id=%s", run_id)
         await asyncio.shield(
@@ -1584,6 +1587,8 @@ async def stream_run_events(run_id: uuid.UUID, *, after_seq: int = 0) -> AsyncIt
     settings = get_settings()
     queue = await bus.subscribe(run_id)
     last_seq = after_seq
+    # SSE 请求内产生的日志都带 run_id，便于和后台 run 任务串起来。
+    run_token = run_id_ctx.set(str(run_id))
     try:
         async with get_session_factory()() as db:
             rows = list(
@@ -1632,4 +1637,5 @@ async def stream_run_events(run_id: uuid.UUID, *, after_seq: int = 0) -> AsyncIt
             if event_name in TERMINAL_EVENTS:
                 return
     finally:
+        run_id_ctx.reset(run_token)
         await bus.unsubscribe(run_id, queue)
