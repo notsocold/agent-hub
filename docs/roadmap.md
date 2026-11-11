@@ -14,9 +14,12 @@
 | M1.5 个人能力层 | 已完成（2026-11-09） | 指令/记忆/技能/MCP/附件/HITL；85 个测试 + `smoke:m15` 68 项；遗留项见 M1.5 报告 §6 |
 | M2 A2A 出站 | 已完成（2026-11-10） | Agent Card/客户端/`send_message`/任务 API；101 个测试 + 假 Agent 真实联调；同日出站客户端迁移到 `a2a-sdk` 1.3.0（108 测试） |
 | M3 A2A 入站 | 已取消（2026-11-10 需求变更） | 本服务只做 A2A 出站 Client，不发布 Agent Card、不提供 JSON-RPC 入站；原范围/验收不适用，M4 顺延 |
-| M4 知识库 RAG | 后端已完成（2026-11-10）；前端待做 | 模型/pgvector 迁移/解析/切分/双通道 Embedding/7 个 API/`search_knowledge`/引用落库/`build_kb.py`/离线评测；323 测试通过、修复时钟抖动后全量 10 连跑 0 失败；语义召回率因无真实 Embedding key **未取得证据** |
-| M5 审批与安全加固 | 后端已完成（2026-11-10） | HITL 迁移到 `interrupt()`/`Command(resume=...)`；超时取消、聊天限流、注入检测/输出打码、平台密钥、审计检索；395 测试通过；跨实例启动保活与前端留后续（见 M5 报告） |
+| M4 知识库 RAG | 后端已完成（2026-11-10）；前端已联调 | 模型/pgvector 迁移/解析/切分/双通道 Embedding/7 个 API/`search_knowledge`/引用落库/`build_kb.py`/离线评测；323 测试通过、修复时钟抖动后全量 10 连跑 0 失败；语义召回率因无真实 Embedding key **未取得证据**；前端知识库页与引用展示已联调（2026-11-10） |
+| M5 审批与安全加固 | 后端已完成（2026-11-10） | HITL 迁移到 `interrupt()`/`Command(resume=...)`；超时取消、聊天限流、注入检测/输出打码、平台密钥、审计检索；395 测试通过；跨实例启动保活已并入 M6；前端 M5 已联调（2026-11-11） |
 | M6 生产化与可观测 | 后端已完成（2026-11-11） | 日志/OTel/指标/readyz/Dockerfile+Compose/清理/启动恢复/流式过滤/压测/CI；582 测试通过；Grafana 与真实 LB 滚动未实测 |
+| M7 契约补齐与安全收口 | 已立项（2026-11-11），未开始 | 事件回放 `event` + SSE 续流端点、agents/tasks 写操作 RBAC、审批事件字段、A2A 授权 URL 白名单；无迁移 |
+| M8 管理台后端（原 X2） | 已立项（2026-11-11），未开始 | 用户/角色、系统指令/技能/MCP/Agent、只读概览；依赖 M7 的 RBAC |
+| M9 工作流后端（原 X1） | 已立项（2026-11-11），未开始 | 轻量步骤模板 MVP（检索/工具/A2A/审批/回答）；先 spike，不引入外部引擎 |
 
 > 注：M1.5 是追加的中间里程碑，排在 M1 之后、M2 之前，不改动原 M2–M6 的编号含义。
 
@@ -135,13 +138,13 @@
 - [-] 取消请求能停止图执行；
 - [-] 未授权请求返回 401/403，不泄露内部信息。
 
-## M4 知识库 RAG（后端已完成，2026-11-10；前端待做）
+## M4 知识库 RAG（后端已完成、前端已联调，2026-11-10）
 
 **目标**：知识库入库、检索、回答带来源。
 
 > 交付证据见 [M4 后端交付报告](feedback/2026-11-10-m4-backend-report.md)，设计见
 > [知识库 RAG 设计](superpowers/specs/2026-11-10-m4-knowledge-rag-design.md)。
-> 本轮只做后端；前端知识库页与引用展示留待前端 M4。
+> 后端先交付，前端知识库页与引用展示已于同日联调完成（`smoke:m4` + `test:real`）。
 
 范围：
 
@@ -150,7 +153,7 @@
 - [x] `scripts/build_kb.py`（支持 `--dry-run` / `--rebuild` / `--owner`）
 - [x] `search_knowledge` 工具（含分类默认过滤、去重重编号、失败降级）
 - [x] `POST /knowledge/search` 调试接口（外加文档 CRUD/retry/rebuild 共 7 个端点）
-- [ ] 前端展示来源引用 —— 后端契约（`message.done.citations` + 落库 `messages.citations`）已就绪并实测，前端实现留待前端 M4
+- [x] 前端展示来源引用 —— 后端契约（`message.done.citations` + 落库 `messages.citations`）已就绪并实测；前端 M4 已联调
 
 验收：
 
@@ -165,7 +168,7 @@
 > 交付证据见 [M5 后端交付报告](feedback/2026-11-10-m5-backend-report.md)，设计见
 > [M5 审批与安全加固设计](superpowers/specs/2026-11-10-m5-approval-security-design.md)。
 > M1.5 已提前落地 `audit_logs` / `approvals` 最小切片与审批端点，M5 在其上完成 interrupt 迁移与安全加固。
-> 遗留：启动时扫描 interrupted run 保活、流式输出实时过滤留 M6；管理控制台前端与前端事件适配待前端 M5。
+> 遗留：启动时扫描 interrupted run 保活、流式输出实时过滤已并入 M6；前端 M5 审批中心与安全 UX 已联调（2026-11-11）。
 
 范围：
 
@@ -218,14 +221,72 @@
 - [x] 故障演练：数据库短时不可用后自动恢复：TCP 代理切断后 `/readyz` 503、业务请求 503
   `database_unavailable`，恢复后 `/readyz` 200 且聊天成功，API 进程未重启。
 
+## M7 契约补齐与安全收口（已立项，2026-11-11；未开始）
+
+**目标**：补齐前端已提出的契约缺口，给写操作真正的权限边界。
+
+> 立项设计见 [M7–M9 立项](superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md) §3，
+> 实施计划见 [M7 实施计划](superpowers/plans/2026-11-11-m7-contract-security.md)。
+
+范围：
+
+- [ ] `GET /runs/{id}/events` 新增 `event` 字段；新增 `GET /runs/{id}/stream?after_seq=` SSE 续流端点
+- [ ] agents/tasks 写接口收紧到 `AdminUser`（403 `forbidden`），读接口不变
+- [ ] `approval.required` 补 `tool_display_name/executor/target/side_effect/payload_preview`
+- [ ] A2A `authorization_url` 协议/域名白名单，违规置空并审计
+- [ ] 契约文档、OpenAPI、前端 handoff 同步
+
+验收：
+
+- [ ] 前端断线后可从 `lastSeq` 逐字续流；非本人 run 404、未登录 401
+- [ ] 普通用户写 agents/tasks 返回 403；管理员成功且写审计
+- [ ] `openapi.json` 与代码一致；全量测试 ≥ 582 passed；无迁移
+
+## M8 管理台后端（原 X2，已立项 2026-11-11；未开始）
+
+**目标**：给前端管理控制台提供真实契约，替代运维脚本/DB 配置。
+
+> 设计见 [M7–M9 立项](superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md) §4。
+
+范围：
+
+- [ ] 用户列表/详情/角色与状态调整（不能改自己、不能禁用最后一个 admin）
+- [ ] 平台指令、系统技能、系统 MCP、全局 Agent 的查询与管理（复用 `scope`/`force_disabled`/`system_settings`）
+- [ ] `GET /admin/overview` 只读统计
+- [ ] 管理端审计与 403 契约
+
+验收：
+
+- [ ] 管理员可完成上述操作且关键写操作有审计；普通用户访问 `/admin/*` 全 403
+- [ ] 预计无迁移；OpenAPI/文档/前端 handoff 同步
+
+## M9 工作流后端（原 X1，已立项 2026-11-11；未开始）
+
+**目标**：把技能、检索、A2A、MCP 与审批编排成轻量步骤模板。
+
+> 设计见 [M7–M9 立项](superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md) §5。
+> 启动前先做 1 天技术 spike，确认模板注入不破坏主图工具选择。
+
+范围（MVP）：
+
+- [ ] `workflows` / `workflow_runs` 表与迁移（可逆）
+- [ ] 步骤类型：`knowledge_search` / `tool` / `a2a` / `approval` / `answer`
+- [ ] CRUD/启停/运行入口（`POST /chat/stream` 的 `workflow_id`）/运行历史
+- [ ] `workflow.step` 事件与前端 handoff
+
+验收：
+
+- [ ] 3 步模板（检索 → A2A → 审批）跑通，取消/失败/审批超时语义一致
+- [ ] 不做 DAG/并行/外部引擎；迁移可逆；全量测试通过
+
 ## 待决策 / 开放问题
 
 > 以下问题不随里程碑完成状态变化，仍需单独拍板。
 
 | 问题 | 选项 | 当前倾向 |
 |---|---|---|
-| 多实例 SSE | 粘性会话 / Redis 事件总线 / 前端轮询 | 先单实例，M6 评估 Redis Stream |
-| 复杂任务编排 | 单主图 / planner-executor 子图 / 外部工作流引擎 | M5 后按实际任务复杂度评估 |
+| 多实例 SSE | 粘性会话 / Redis 事件总线 / 前端轮询 | 先单实例；扩容需求触发后再立项（候选 M10+） |
+| 复杂任务编排 | 单主图 / planner-executor 子图 / 外部工作流引擎 | 已立项为 M9（轻量步骤模板 MVP，不引入外部引擎） |
 | 远程 Agent 鉴权（出站） | API Key / OAuth2 / mTLS | M2 已实现 `none` / `api_key`；OAuth2 出站预留，mTLS 交给反向代理 |
 | 文件与多模态 | 对象存储 + 签名 URL / 直传 | M4 后 |
 | 计费与配额 | 按 token / 按调用次数 | 暂不做 |

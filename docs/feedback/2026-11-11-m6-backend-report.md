@@ -45,7 +45,8 @@ docker compose -f docker-compose.prod.yml config
 - 基线 M5 395 项 → M6 **582 项**（+187；含流式过滤切分点参数化与审查回归用例）；
 - 唯一 skip 仍是知识库语义评测组（需真实 Embedding key，与 M4 一致）；
 - 迁移基线：临时库空库 `alembic upgrade head` 成功，`alembic check` 输出
-  `No new upgrade operations detected.`；M6 未新增迁移，head 仍为 `c4e7a91b2f36`；
+  `No new upgrade operations detected.`；M6 未新增迁移；迁移 head 以 `alembic current`
+  为准（2026-11-11 复核为 `2d8f6a1c3e70`；M4 迁移 `c4e7a91b2f36` 在链中位于 M5 迁移之前）；
 - 新增/更新关键用例：
 
 | 用例 | 覆盖 |
@@ -167,7 +168,7 @@ M6 **无破坏性变更**，前端无需适配；新增可选项：
 - **运行中 run 的断点续跑**：崩溃的 `running` 一律 failed，不尝试恢复 LLM 流；
 - **消息/运行正文保留策略**：M6 只清理运维类数据（checkpoint/事件/审计/附件/token）；
 - **对象存储孤儿文件巡检**：M4 遗留，M6 只做附件过期清理；
-- **前端 M4/M5 适配**：仍在 `agent-hub-web` 侧。
+- **前端 M4/M5 适配**：截至 2026-11-11 前端 M4/M5/M6 已完成并联调，此项不再是遗留。
 
 ## 6. 部署注意
 

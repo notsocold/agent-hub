@@ -663,10 +663,11 @@ uv run alembic current
 uv run alembic history
 ```
 
-M5 新增迁移：
+M4/M5 新增迁移：
 
 | revision | 内容 |
 |---|---|
+| `c4e7a91b2f36` | `knowledge_documents` / `knowledge_chunks`、pgvector HNSW / GIN、部分唯一索引 |
 | `9c1d4e7a2b60` | `platform_secrets` 表 |
 | `2d8f6a1c3e70` | `approvals.tool_call_id` + 部分唯一索引 |
 

@@ -227,13 +227,15 @@ M5 起审批恢复走 LangGraph `Command(resume=...)`，决定接口的 `resumed
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET/PUT | `/api/v1/admin/settings/instruction` | 平台默认指令 |
+| GET/PUT | `/api/v1/admin/settings/instruction` | 平台默认指令（未实现，随 X2 立项为 M8） |
 | GET | `/api/v1/admin/audit-logs` | 全局审计检索（M5） |
 | GET/POST/PATCH/DELETE | `/api/v1/admin/secrets[...]` | 平台密钥管理（M5，永不回显明文） |
-| GET | `/api/v1/admin/skills` | 系统技能列表 |
-| PUT | `/api/v1/admin/skills/{id}/enabled` | 系统技能启停 |
-| PUT | `/api/v1/admin/skills/{id}/force-disable` | 强制停用（压过用户覆盖） |
+| GET | `/api/v1/admin/skills` | 系统技能列表（未实现，随 X2 立项为 M8） |
+| PUT | `/api/v1/admin/skills/{id}/enabled` | 系统技能启停（未实现，随 X2 立项为 M8） |
+| PUT | `/api/v1/admin/skills/{id}/force-disable` | 强制停用（未实现，随 X2 立项为 M8） |
 
+> 表中标注「未实现」的端点属于完整管理控制台（X2），已于 2026-11-11 立项为 **M8**；
+> 当前实际可用的 `/admin/*` 只有 `audit-logs` 与 `secrets`。
 > 系统 MCP 的 `/admin/mcp/servers*` 接口**当前未实现**（旧文档误列）；M5 只提供密钥本体管理，
 > 系统 MCP 的 `secret:` 引用通过运维脚本/数据库配置，管理员自建 MCP 可直接使用。
 
@@ -639,7 +641,7 @@ GET /api/v1/instructions
 - 取消后 `message.done.finish_reason=canceled`，已生成内容保留；
 - 相同 `conversation_id + client_message_id` 返回同一 run 的事件回放，不创建新消息；
 - 致命错误只发 `error`，不发 `message.done`；
-- `reasoning.delta/done`、`tool.*`、`a2a.*`、`skill.activated`、`approval.required`、`memory.saved`、`notice` 已在 M1.5/M2 接入（详见 §8.2）；`workflow.step` 仍待 M5+。
+- `reasoning.delta/done`、`tool.*`、`a2a.*`、`skill.activated`、`approval.required`、`memory.saved`、`notice` 已在 M1.5/M2 接入（详见 §8.2）；`workflow.step` 尚未实现，工作流已立项为 M9。
 
 ### 7.4 能力开关
 
@@ -771,8 +773,8 @@ GET /api/v1/instructions
 - 新事件：`skill.activated`（首个 `message.delta` 之前）、`memory.saved`、`notice`、`tool.start`/`tool.result`（`source` ∈ native/skill/mcp/a2a；MCP 带 `server`）、`approval.required`；
 - `tool.result` 在工具产生了知识库引用时带 `citations` 字段（与 `message.done.citations` 同形状）；
 - `approval.required.data`：`approval_id`、`tool_call_id`、`tool`、`source`、`risk`、`reason`、`payload`、`expires_at`；
-- 审批超时后 `message.done.finish_reason=interrupted`（`reason=approval_timeout`），run 状态 `interrupted`；
-- `message.done` 保持 M1 字段，新增 `reason`（仅 interrupted 时出现）。
+- 审批超时后 `message.done.finish_reason="canceled"`（`reason="approval_timeout"`），run 状态 `canceled`；
+- `message.done` 保持 M1 字段，新增 `reason`（审批超时/取消等场景出现）。
 
 ### 8.3 与设计稿的偏差（M1.5 实测）
 
@@ -783,7 +785,7 @@ GET /api/v1/instructions
 | MCP 协议库 | 官方 `mcp` SDK | 自研 JSON-RPC 2.0 over httpx（initialize → notifications/initialized → tools/list → tools/call） | 任务口径；少一个重依赖，测试可注入 transport |
 | 系统 MCP 写工具 | 动态过滤 | `mcp_tools.admin_only/user_allowed` 落库字段 | 列表接口需展示置灰原因，前端友好 |
 | stdio | 管理员全功能 | 支持创建/校验/客户端实现；命令白名单 `MCP_STDIO_ALLOWED_COMMANDS` | v1 无隔离保证，默认关闭 |
-| 管理端 | `/api/v1/admin/…` 全套 | M1.5 未实现管理端路由；`users.role` 与数据模型已就绪，系统项可直接写库 | 任务范围仅用户侧；M2 会话补管理端 |
+| 管理端 | `/api/v1/admin/…` 全套 | M1.5 未实现管理端路由；`users.role` 与数据模型已就绪，系统项可直接写库 | 任务范围仅用户侧；完整管理控制台已立项为 M8（M5 只交付审计与平台密钥） |
 | 附件删除 | 未定义 | 被消息引用 → 软删（status=deleted + 移除磁盘文件）；未引用 → 物理删除 | 历史消息快照仍可展示元数据 |
 
 ### 8.4 数据层差异
@@ -821,7 +823,8 @@ GET /api/v1/instructions
 - `run.interrupted`（非终态）：`run_id`、`conversation_id`、`message_id`、`status`、`approvals`；
   收到后 **SSE 保持连接**（按 D8，空闲 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭）；
 - `run.resumed`（非终态）：审批决定后恢复执行；
-- 断线后 `GET /runs/{id}/events?after_seq=` 回放并继续跟随；
+- 断线后 `GET /runs/{id}/events?after_seq=` 分页回放已落库事件；**不跟随实时流**。
+  SSE 续流端点（`GET /runs/{id}/stream?after_seq=`）与回放的 `event` 字段已立项为 M7；
 - `POST /runs/{id}/resume` 仍为占位（409），审批恢复无需调用它。
 
 ### 10.3 安全能力
@@ -838,7 +841,8 @@ GET /api/v1/instructions
 
 1. 收到 `approval.required` 后，等待 `run.interrupted`（run=`interrupted`），**不会**再收到
    `message.done(finish_reason="interrupted")`；
-2. 审批决定后监听 `run.resumed` 与后续 `message.delta`/`message.done`；断线用事件回放续接；
+2. 审批决定后监听 `run.resumed` 与后续 `message.delta`/`message.done`；断线用事件回放**查询**补历史事件，
+   逐字续流待 M7 提供 SSE 续流端点；
 3. 审批超时：`message.done.finish_reason="canceled"`、`reason="approval_timeout"`；
 4. 新端点：`GET /audit-logs`、`GET /admin/audit-logs`、`/admin/secrets` CRUD；
 5. 聊天 429：`rate_limited`，`details.retry_after_seconds`；

@@ -1894,7 +1894,7 @@
         },
         "responses": {
           "200": {
-            "description": "Server-Sent Events 流，`Content-Type: text/event-stream`。\n\n**事件顺序**：`conversation.created`（仅新会话）→ `run.started` → `message.created` → `message.started` → `message.delta`（0..n）→ `message.done`；致命错误只发送 `error` 并关闭流。\n\n**HITL（M5）**：需要审批时插入 `approval.required` → `run.interrupted`（非终态，SSE 保持连接，空闲 15 分钟后关闭）；审批决定后 `run.resumed` → 后续 `message.delta` → `message.done`。审批超时取消时 `message.done.finish_reason=canceled`、`reason=approval_timeout`。\n\n**帧格式**：`id: <seq>`、`event: <事件名>`、`data: <JSON>`，心跳为注释帧 `: ping`（每 15 秒，不占 `seq`）。`seq` 从 1 开始单调递增；`message.delta` 不落库，事件回放的 `seq` 允许跳号。\n\n**幂等**：相同 `conversation_id + client_message_id` 再次请求时返回同一 run 的事件回放（HTTP 200，`X-Run-ID` 不变，`seq` 从 1 开始），不会创建新消息。\n\n**断开**：客户端断开不会取消运行；用 `GET /runs/{id}` 与 `GET /runs/{id}/events?after_seq=` 回放并续接（含审批挂起前后的全部事件）；已发出的 delta 不回溯，挂起时已产出的内容会落库。\n\n**事件 data 关键字段**：`conversation.created` → `conversation_id`、`title`；`run.started` → `run_id`、`conversation_id`、`user_message_id`、`client_message_id`、`model`、`reasoning_effort`；`message.created` → `message_id`、`role`；`message.started` → `message_id`；`message.delta` → `message_id`、`delta`；`message.done` → `run_id`、`message_id`、`conversation_id`、`usage`、`finish_reason`、`model`、`first_token_ms`、`duration_ms`、`active_duration_ms`、`citations`、`artifacts`、`reasoning`；`error` → `code`、`message`、`request_id`。完整字段与示例见 `docs/api.md` §3.3、§7.3、§7.9。",
+            "description": "Server-Sent Events 流，`Content-Type: text/event-stream`。\n\n**事件顺序**：`conversation.created`（仅新会话）→ `run.started` → `message.created` → `message.started` → `message.delta`（0..n）→ `message.done`；致命错误只发送 `error` 并关闭流。\n\n**HITL（M5）**：需要审批时插入 `approval.required` → `run.interrupted`（非终态，SSE 保持连接，空闲 15 分钟后关闭）；审批决定后 `run.resumed` → 后续 `message.delta` → `message.done`。审批超时取消时 `message.done.finish_reason=canceled`、`reason=approval_timeout`。\n\n**帧格式**：`id: <seq>`、`event: <事件名>`、`data: <JSON>`，心跳为注释帧 `: ping`（每 15 秒，不占 `seq`）。`seq` 从 1 开始单调递增；`message.delta` 不落库，事件回放的 `seq` 允许跳号。\n\n**幂等**：相同 `conversation_id + client_message_id` 再次请求时返回同一 run 的事件回放（HTTP 200，`X-Run-ID` 不变，`seq` 从 1 开始），不会创建新消息。\n\n**断开**：客户端断开不会取消运行；用 `GET /runs/{id}` 与 `GET /runs/{id}/events?after_seq=` 分页回放已落库事件（不跟随实时流；SSE 续流端点已在 M7 立项）；已发出的 delta 不回溯，挂起时已产出的内容会落库。\n\n**事件 data 关键字段**：`conversation.created` → `conversation_id`、`title`；`run.started` → `run_id`、`conversation_id`、`user_message_id`、`client_message_id`、`model`、`reasoning_effort`；`message.created` → `message_id`、`role`；`message.started` → `message_id`；`message.delta` → `message_id`、`delta`；`message.done` → `run_id`、`message_id`、`conversation_id`、`usage`、`finish_reason`、`model`、`first_token_ms`、`duration_ms`、`active_duration_ms`、`citations`、`artifacts`、`reasoning`；`error` → `code`、`message`、`request_id`。完整字段与示例见 `docs/api.md` §3.3、§7.3、§7.9。",
             "headers": {
               "X-Run-ID": {
                 "description": "本次（或幂等重放命中的）运行 ID，建连时即返回",
@@ -17856,13 +17856,13 @@
           "agents": {
             "type": "boolean",
             "title": "Agents",
-            "description": "远程智能体能力是否启用；M2 前恒为 false。该键始终返回，前端按可选布尔消费",
+            "description": "远程智能体能力是否启用；该键始终返回，前端按可选布尔消费",
             "default": false
           },
           "tasks": {
             "type": "boolean",
             "title": "Tasks",
-            "description": "A2A 任务能力是否启用；M2 前恒为 false。该键始终返回，前端按可选布尔消费",
+            "description": "A2A 任务能力是否启用；该键始终返回，前端按可选布尔消费",
             "default": false
           }
         },

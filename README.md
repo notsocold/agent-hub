@@ -9,8 +9,10 @@
 > （指令/记忆/技能/MCP/附件）、A2A 出站、知识库 RAG、审批与安全加固，以及 M6 的
 > 结构化日志 / Prometheus 指标 / OTel Trace、`/readyz`、Dockerfile + 生产 Compose、
 > 优雅停机、启动恢复、数据清理、流式实时过滤、压测与故障演练脚本、CI。
-> 全量 **582 passed, 1 skipped**；ruff 全绿；迁移 head `c4e7a91b2f36`。
-> 前端 M4/M5 适配仍在 `agent-hub-web` 侧；M6 无前端契约变更。
+> 全量 **582 passed, 1 skipped**；ruff 全绿；迁移 head `2d8f6a1c3e70`。
+> 前端 M4/M5/M6 已完成并联调（2026-11-11）；M6 无破坏性前端契约变更。
+> 后续 **M7（契约补齐）/ M8（管理台）/ M9（工作流）已于 2026-11-11 立项、未开始**，
+> 见 [M7–M9 立项](docs/superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md)。
 
 ## 1. 项目定位
 
@@ -155,8 +157,8 @@ curl http://localhost:8000/api/v1/system/info   # 需要先登录拿 Bearer toke
 | M1.5 个人能力层 | 已完成 |
 | M2 A2A 出站 | 已完成 |
 | M3 A2A 入站 | 已取消（仅出站） |
-| M4 知识库 RAG | 后端已完成；前端引用展示待做 |
-| M5 审批与安全加固 | 后端已完成；前端事件适配待做 |
+| M4 知识库 RAG | 后端已完成；前端已联调（2026-11-10） |
+| M5 审批与安全加固 | 后端已完成；前端已联调（2026-11-11） |
 | M6 生产化与可观测 | 后端已完成（2026-11-11） |
 
 M6 交付：
@@ -178,9 +180,10 @@ M6 交付：
 明确未包含：
 
 - [-] M3：A2A 入站 Server（需求变更取消）；
-- [ ] 前端 M4 知识库页与引用展示、M5 审批事件/审计页适配；
+- [-] 前端 M4/M5/M6：已完成并联调（2026-11-10 ~ 2026-11-11）；
 - [ ] 多实例（Redis 事件总线/共享限流/跨实例 resume）、Helm；
-- [ ] 真实 Grafana/Tempo 可视化与滚动发布 LB 演练（配置已交付，受「不新起容器」约束未实测）。
+- [ ] 真实 Grafana/Tempo 可视化与滚动发布 LB 演练（配置已交付，受「不新起容器」约束未实测）；
+- [ ] M7/M8/M9：已立项、未开始（见 [路线图](docs/roadmap.md) 与 [立项文档](docs/superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md)）。
 
 本地假 Agent 联调（详见 [M2 交付报告](docs/feedback/2026-11-09-m2-backend-report.md)）：
 
@@ -222,6 +225,9 @@ curl -X POST http://127.0.0.1:8000/api/v1/agents \
 | [后端热修响应](docs/feedback/2026-11-09-backend-hotfix-response.md) | 分页 500 修复、OpenAPI/文档补齐、500 request_id、限流配置与复验结果 |
 | [OpenAPI](docs/openapi.json) | 实际接口契约（由 FastAPI 导出） |
 | [M6 交付报告](docs/feedback/2026-11-11-m6-backend-report.md) | M6 实测证据、决策、未做项 |
+| [项目整理（2026-11-11）](docs/feedback/2026-11-11-project-status-review.md) | M6 收尾后的未做项、风险、前端对齐清单与文档修正记录 |
+| [M7–M9 立项](docs/superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md) | 契约补齐/管理台/工作流的目标、范围、验收与依赖 |
+| [M7 实施计划](docs/superpowers/plans/2026-11-11-m7-contract-security.md) | 事件续流、RBAC、审批字段、授权 URL 白名单的任务拆分 |
 
 ## 9. 下一步
 
@@ -229,8 +235,9 @@ curl -X POST http://127.0.0.1:8000/api/v1/agents \
 
 1. 按 [生产部署](docs/deployment.md) 在目标环境执行 `alembic upgrade head`、配置 JWT/LLM/OTLP 与 Compose；
 2. 在部署环境验证 Grafana 看板、告警与真实 LB 滚动发布（本地只做了排水与故障演练）；
-3. 前端 `agent-hub-web` 适配 M4 知识库/引用、M5 审批事件与审计页；
-4. 需要多实例时再单独设计 Redis 事件总线/共享限流/跨实例 resume，不在 M6 范围。
+3. 前端 M4/M5/M6 已完成；下一步由后端推进 M7（契约补齐），前端接续流、403 与审批事件字段；
+4. 需要多实例时再单独设计 Redis 事件总线/共享限流/跨实例 resume，不在 M6 范围；
+5. M8（管理台后端）与 M9（工作流后端）按立项顺序启动，均需先冻结契约。
 
 编码前建议阅读：
 

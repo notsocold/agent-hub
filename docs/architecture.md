@@ -161,7 +161,8 @@ sequenceDiagram
 - 用户批准/拒绝后，`POST /approvals/{id}/decision` 落库决定；当该 run 已无 pending 审批时，
   后台任务以 `Command(resume=...)` 恢复同一条 run（发 `run.resumed`），继续输出 `message.delta`；
 - 图挂起时 run → `interrupted`，发非终态 `run.interrupted`；SSE 按 D8 保持连接，
-  空闲 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭，前端用事件回放续接；
+  空闲 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭，前端用事件分页回放 + 终态刷新补齐
+  （逐字续流端点 `GET /runs/{id}/stream` 已立项 M7）；
 - 超时未处理：定时巡检把审批置 `expired`，run → `canceled`，发
   `message.done(finish_reason="canceled", reason="approval_timeout")`；
 - 取消/超时后用**专用 halt gate** 清理 checkpoint 挂起（补「已取消」ToolMessage），
@@ -263,10 +264,12 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 ### 8.4 断线恢复
 
 - 前端 SSE 断开不影响后端执行（默认策略）；
-- 前端重连后用 `GET /api/v1/runs/{run_id}` 获取状态，或 `GET /api/v1/runs/{run_id}/events?after_seq=` 回放（已实现）；
+- 前端重连后用 `GET /api/v1/runs/{run_id}` 获取状态，或
+  `GET /api/v1/runs/{run_id}/events?after_seq=` 分页回放（已实现）；
+  SSE 续流 `GET /runs/{id}/stream?after_seq=` 已立项 M7；
 - 图执行状态由 checkpointer 保证；M5 的审批恢复不依赖进程内 waiter，决定接口即可触发
   `Command(resume=...)`（同进程/同线程 checkpoint 均可恢复）；
-- 进程启动时扫描 interrupted run 并保活留 M6（当前需要用户重新触发决定/取消）。
+- 进程启动恢复已在 M6 实现：孤儿 `running` 一律 `failed`，`interrupted` 走 resume / `restart_lost` 取消。
 
 ## 9. 安全边界
 
