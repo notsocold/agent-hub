@@ -14,3 +14,16 @@
 | `export_openapi.py` | 已实现：导出 `docs/openapi.json`，作为前后端契约源 |
 
 脚本必须通过 `app.core.config.get_settings()` 读取配置，不重复实现环境变量解析。
+
+## M6 压测与演练
+
+```bash
+# 50 并发 SSE（服务端需 RATE_LIMIT_ENABLED=false、LLM_PROVIDER=fake）
+python scripts/load_test_sse.py --concurrency 50 --rounds 1 --json-out .tmp/m6-load.json
+
+# 数据库短时不可用：TCP 代理切断后恢复，服务进程不重启
+python scripts/db_outage_drill.py
+
+# 优雅停机：两个 uvicorn 实例，先摘流量再 SIGTERM
+python scripts/graceful_shutdown_drill.py
+```
