@@ -74,6 +74,23 @@ class RunRegistry:
         context = self._contexts.get(run_id)
         return bool(context and context.task and not context.task.done())
 
+    async def drain(self, timeout: float) -> bool:
+        """等待所有已注册 run 任务结束；超时返回 False，不取消任务。"""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + max(0.0, timeout)
+        while True:
+            tasks = [
+                context.task
+                for context in list(self._contexts.values())
+                if context.task is not None and not context.task.done()
+            ]
+            if not tasks:
+                return True
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return False
+            await asyncio.wait(tasks, timeout=min(remaining, 1.0))
+
     def cancel(self, run_id: uuid.UUID) -> bool:
         context = self._contexts.get(run_id)
         if context is None or context.task is None or context.task.done():

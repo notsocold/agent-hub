@@ -71,6 +71,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.draining = True
         sweeper.cancel()
         await asyncio.gather(sweeper, return_exceptions=True)
+        drained = await registry.drain(settings.shutdown_grace_seconds)
+        if not drained:
+            logger.warning(
+                "排水超时（%ss），取消剩余 run", settings.shutdown_grace_seconds
+            )
         await registry.shutdown()
         await shutdown_tracing()
         await dispose_engine()
