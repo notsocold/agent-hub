@@ -1,9 +1,10 @@
-"""管理台业务：用户列表/详情/角色与状态更新，以及只读概览。
+"""管理台业务：用户列表/详情/角色与状态更新、只读概览与平台指令视图装配。
 
 唯一新增的管理台业务 SQL 都在这里：列表按 ``created_at DESC, id DESC`` 游标分页，
 ``stats`` 用一次聚合查询按当前筛选条件计数；PATCH 负责自操作与「最后一个活跃
 管理员」保护，并在真实变更时写 ``admin.user.update`` 审计。概览按表各执行一条
-聚合查询（共 8 条），只取计数与求和，不加载 ORM 行。
+聚合查询（共 8 条），只取计数与求和，不加载 ORM 行。平台默认指令的校验、写入
+与审计留在 ``app.modules.instructions.service``，这里只装配管理端视图。
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.cursor import decode_cursor, encode_cursor
 from app.core.errors import ConflictError, NotFoundError, ValidationFailedError
 from app.db.models.attachment import Attachment
@@ -24,8 +26,10 @@ from app.db.models.chat import Run
 from app.db.models.conversation import Conversation, Message
 from app.db.models.knowledge import KnowledgeChunk, KnowledgeDocument
 from app.db.models.remote import A2A_TASK_STATES, A2aTask
+from app.db.models.system import UserSetting
 from app.db.models.user import User
 from app.modules.admin.schemas import (
+    AdminInstructionOut,
     AdminOverviewA2aTasks,
     AdminOverviewAttachments,
     AdminOverviewConversations,
@@ -38,6 +42,10 @@ from app.modules.admin.schemas import (
     AdminUserPage,
     AdminUserPatchRequest,
     AdminUserStats,
+)
+from app.modules.instructions.service import (
+    get_platform_instruction,
+    set_platform_instruction,
 )
 
 _RUN_STATUSES = ("queued", "running", "succeeded", "failed", "canceled", "interrupted")
@@ -242,6 +250,41 @@ async def update_user(
     return _to_out(target)
 
 
+async def get_admin_instruction(db: AsyncSession) -> AdminInstructionOut:
+    """装配平台默认指令视图：文本、来源、上限、个人覆盖计数与最后修改人。"""
+    content, row = await get_platform_instruction(db)
+    user_override_count = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(UserSetting)
+            .where(UserSetting.instructions.is_not(None))
+        )
+        or 0
+    )
+    updated_by = row.updated_by if row is not None else None
+    updated_by_email = None
+    if updated_by is not None:
+        updater = await db.get(User, updated_by)
+        updated_by_email = updater.email if updater is not None else None
+    return AdminInstructionOut(
+        content=content,
+        is_default=row is None,
+        max_chars=get_settings().instruction_max_chars,
+        user_override_count=user_override_count,
+        updated_by=updated_by,
+        updated_by_email=updated_by_email,
+        updated_at=row.updated_at if row is not None else None,
+    )
+
+
+async def update_admin_instruction(
+    db: AsyncSession, admin: User, content: str | None
+) -> AdminInstructionOut:
+    """保存/恢复平台默认指令，然后返回与管理端 GET 同形的视图。"""
+    await set_platform_instruction(db, admin, content)
+    return await get_admin_instruction(db)
+
+
 def _counts_by_status(rows: Any) -> dict[str, int]:
     """把 ``GROUP BY status`` 的 ``(status, count)`` 行汇总成字典。
 
@@ -395,4 +438,11 @@ async def build_overview(db: AsyncSession) -> AdminOverviewOut:
     )
 
 
-__all__ = ["build_overview", "get_user", "list_users", "update_user"]
+__all__ = [
+    "build_overview",
+    "get_admin_instruction",
+    "get_user",
+    "list_users",
+    "update_admin_instruction",
+    "update_user",
+]

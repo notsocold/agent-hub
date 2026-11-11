@@ -11,7 +11,9 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.modules.skills.schemas import SkillOut
 
 AdminUserRole = Literal["user", "admin"]
 AdminUserStatus = Literal["active", "disabled"]
@@ -59,6 +61,64 @@ class AdminUserPatchRequest(BaseModel):
         if self.role is None and self.status is None:
             raise ValueError("至少需要修改 role 或 status 中的一项")
         return self
+
+
+class AdminInstructionOut(BaseModel):
+    """平台默认指令视图；GET/PUT 同形。
+
+    ``content`` 就是无个人覆盖用户实际注入的文本，与 ``effective_preview`` 同义，
+    故不再额外返回（R5）。``user_override_count`` 统计
+    ``user_settings.instructions IS NOT NULL`` 的用户数；``updated_by`` 为最后
+    保存该配置的管理员，用户已删除时为 null。
+    """
+
+    content: str
+    is_default: bool
+    max_chars: int
+    user_override_count: int
+    updated_by: uuid.UUID | None
+    updated_by_email: str | None
+    updated_at: datetime | None
+
+
+class AdminInstructionUpdateRequest(BaseModel):
+    """管理员保存平台默认指令：``content`` 必填但可显式 null。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str | None = Field(
+        description="平台默认正文；null 或 strip 后空串表示恢复内置默认"
+    )
+
+    @field_validator("content")
+    @classmethod
+    def _strip(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
+class AdminSkillStats(BaseModel):
+    """系统技能统计：基于当前筛选结果；``enabled`` 为全局有效启用数。"""
+
+    total: int
+    enabled: int
+    force_disabled: int
+
+
+class AdminSkillListOut(BaseModel):
+    """管理端系统技能列表；系统技能数量有上界，不分页（R6）。"""
+
+    items: list[SkillOut]
+    stats: AdminSkillStats
+
+
+class AdminSkillForceDisableRequest(BaseModel):
+    """管理员强制停用/恢复系统技能。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    force_disabled: bool
 
 
 class AdminOverviewUsers(BaseModel):

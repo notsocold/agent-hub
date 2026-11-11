@@ -398,6 +398,85 @@ async def set_skill_enabled(
     return _skill_out(skill, effective=effective)
 
 
+# --------------------------------------------------------------------------- 管理端系统技能
+
+
+def _escape_like(value: str) -> str:
+    """转义 LIKE 通配符，避免 ``q`` 里的 %/_/\\ 扩大匹配范围。"""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+async def list_system_skills(
+    db: AsyncSession, *, q: str | None = None
+) -> list[SkillOut]:
+    """管理端系统技能列表：全局有效态，不合并任何用户覆盖（R1 配置面）。
+
+    ``effective_enabled = enabled and not force_disabled`` 是技能对所有人的
+    全局口径；用户级覆盖只影响运行态 ``/skills`` 与 catalog，这里不读取。
+    """
+    stmt = select(Skill).where(Skill.scope == "system")
+    keyword = q.strip() if q else ""
+    if keyword:
+        pattern = f"%{_escape_like(keyword)}%"
+        stmt = stmt.where(
+            Skill.name.ilike(pattern, escape="\\")
+            | Skill.description.ilike(pattern, escape="\\")
+        )
+    rows = list((await db.execute(stmt.order_by(Skill.name.asc()))).scalars())
+    return [
+        _skill_out(row, effective=row.enabled and not row.force_disabled)
+        for row in rows
+    ]
+
+
+async def _load_system_skill(db: AsyncSession, skill_id: uuid.UUID) -> Skill:
+    """只允许操作系统技能；不存在或属于用户私有技能统一 404。"""
+    skill = await db.get(Skill, skill_id)
+    if skill is None or skill.scope != "system":
+        raise NotFoundError("系统技能不存在")
+    return skill
+
+
+async def set_system_skill_enabled(
+    db: AsyncSession, admin: User, skill_id: uuid.UUID, enabled: bool
+) -> SkillOut:
+    """管理员全局启停系统技能；不调用 ``_require_enabled``（R1）。"""
+    skill = await _load_system_skill(db, skill_id)
+    skill.enabled = enabled
+    await write_audit(
+        db,
+        actor_type="user",
+        actor_id=str(admin.id),
+        action="skill.enable",
+        resource_type="skill",
+        resource_id=str(skill.id),
+        detail={"enabled": enabled, "scope": "system"},
+    )
+    await db.commit()
+    await db.refresh(skill)
+    return _skill_out(skill, effective=skill.enabled and not skill.force_disabled)
+
+
+async def set_system_skill_force_disabled(
+    db: AsyncSession, admin: User, skill_id: uuid.UUID, force_disabled: bool
+) -> SkillOut:
+    """管理员强制停用/恢复系统技能；``force_disabled`` 覆盖任何用户级覆盖。"""
+    skill = await _load_system_skill(db, skill_id)
+    skill.force_disabled = force_disabled
+    await write_audit(
+        db,
+        actor_type="user",
+        actor_id=str(admin.id),
+        action="skill.force_disable",
+        resource_type="skill",
+        resource_id=str(skill.id),
+        detail={"force_disabled": force_disabled},
+    )
+    await db.commit()
+    await db.refresh(skill)
+    return _skill_out(skill, effective=skill.enabled and not skill.force_disabled)
+
+
 async def list_files(
     db: AsyncSession, user: User, skill_id: uuid.UUID
 ) -> list[SkillFileOut]:
