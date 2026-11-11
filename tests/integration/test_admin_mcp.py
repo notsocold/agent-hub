@@ -178,6 +178,16 @@ async def test_ssrf_duplicate_and_validation(
     assert ssrf.status_code == 422, ssrf.text
     assert ssrf.json()["error"]["code"] == "mcp_ssrf_blocked"
 
+    # 纯空白 name 不能通过 min_length 后落成空串。
+    blank_name = await client.post(
+        ADMIN_URL,
+        json=_payload("blank-name-mcp", name="   "),
+        headers=admin_auth,
+    )
+    assert blank_name.status_code == 422, blank_name.text
+    assert blank_name.json()["error"]["code"] == "validation_error"
+    assert (await client.get(ADMIN_URL, headers=admin_auth)).json()["items"] == []
+
     await _create_system(client, admin_auth, slug="dup-mcp")
     duplicate = await client.post(ADMIN_URL, json=_payload("dup-mcp"), headers=admin_auth)
     assert duplicate.status_code == 409, duplicate.text
@@ -499,3 +509,69 @@ async def test_capability_disabled_does_not_block_admin(
     runtime = await client.get(USER_URL, headers=admin_auth)
     assert runtime.status_code == 403, runtime.text
     assert runtime.json()["error"]["code"] == "capability_disabled"
+
+
+async def test_patch_same_values_is_noop(
+    client: httpx.AsyncClient,
+    admin_auth: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同值 PATCH 不写审计、不触发工具发现；真实变更才落库并 sync 一次。"""
+    _register_mock(MCP_URL, [MOCK_TOOL_READ])
+    server = await _create_system(client, admin_auth, slug="noop-mcp")
+    sync_calls: list[str] = []
+
+    async def _spy(db, target, *, force: bool = False) -> None:
+        sync_calls.append("sync")
+
+    monkeypatch.setattr("app.modules.mcp.service._check_and_sync", _spy)
+    assert await _audit_rows("mcp.server.update") == []
+
+    same = await client.patch(
+        f"{ADMIN_URL}/{server['id']}",
+        json={
+            "name": server["name"],
+            "description": server["description"],
+            "url": server["url"],
+            "headers": {},
+            "auto_inject": server["auto_inject"],
+            "enabled": server["enabled"],
+            "force_disabled": server["force_disabled"],
+        },
+        headers=admin_auth,
+    )
+    assert same.status_code == 200, same.text
+    assert same.json()["name"] == server["name"]
+    assert same.json()["tool_count"] == 1
+    assert await _audit_rows("mcp.server.update") == []
+    assert sync_calls == []
+
+    changed = await client.patch(
+        f"{ADMIN_URL}/{server['id']}", json={"name": "真实改名"}, headers=admin_auth
+    )
+    assert changed.status_code == 200, changed.text
+    updated = await _audit_rows("mcp.server.update")
+    assert len(updated) == 1
+    assert updated[0].detail == {"fields": ["name"], "scope": "system"}
+    assert sync_calls == ["sync"]
+
+
+async def test_patch_url_ssrf_blocked(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """PATCH 修改 url 同样走 SSRF 校验；被拦截时不落库、不写审计。"""
+    _register_mock(MCP_URL, [MOCK_TOOL_READ])
+    server = await _create_system(client, admin_auth, slug="patch-ssrf-mcp")
+
+    blocked = await client.patch(
+        f"{ADMIN_URL}/{server['id']}",
+        json={"url": "http://169.254.169.254/mcp"},
+        headers=admin_auth,
+    )
+    assert blocked.status_code == 422, blocked.text
+    assert blocked.json()["error"]["code"] == "mcp_ssrf_blocked"
+    assert await _audit_rows("mcp.server.update") == []
+
+    listing = await client.get(ADMIN_URL, headers=admin_auth)
+    assert listing.status_code == 200, listing.text
+    assert [item["url"] for item in listing.json()["items"]] == [MCP_URL]

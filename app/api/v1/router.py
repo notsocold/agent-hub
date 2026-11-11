@@ -28,7 +28,11 @@ COMMON_ERROR_RESPONSES: dict[int | str, dict] = {
     401: {"model": ErrorEnvelopeOut, "description": "未认证、access token 过期或刷新令牌失效"},
     403: {
         "model": ErrorEnvelopeOut,
-        "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+        "description": (
+            "无权限、账号停用，或能力未启用（capability_disabled / "
+            "auth_flow_unavailable）；管理端需要管理员权限"
+            '（forbidden，details.required_role="admin"）'
+        ),
     },
     404: {"model": ErrorEnvelopeOut, "description": "资源不存在（也用于隐藏他人资源）"},
     409: {
@@ -36,13 +40,18 @@ COMMON_ERROR_RESPONSES: dict[int | str, dict] = {
         "description": (
             "状态冲突：run_in_progress（details.run_id）、run_not_cancelable"
             "（details.status）、run_not_resumable、workflow_disabled、"
-            "approval_already_decided、approval_expired"
+            "approval_already_decided、approval_expired；管理台另有"
+            "last_admin_protected（details.active_admins=1）"
         ),
     },
     413: {"model": ErrorEnvelopeOut, "description": "请求体过大（payload_too_large）"},
     422: {
         "model": ErrorEnvelopeOut,
-        "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+        "description": (
+            "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），"
+            "或管理台业务校验码（cannot_change_own_role / cannot_disable_self / "
+            "instruction_too_long / mcp_ssrf_blocked 等）"
+        ),
     },
     429: {
         "model": ErrorEnvelopeOut,
@@ -51,7 +60,10 @@ COMMON_ERROR_RESPONSES: dict[int | str, dict] = {
     500: {"model": ErrorEnvelopeOut, "description": "服务器内部错误（internal_error）"},
     503: {
         "model": ErrorEnvelopeOut,
-        "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+        "description": (
+            "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），"
+            "或平台密钥存储不可用（secret_store_unavailable）"
+        ),
     },
 }
 

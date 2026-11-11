@@ -183,14 +183,32 @@ async def update_user(
     if target is None:
         raise NotFoundError("用户不存在")
 
-    # 只统计实际变化的字段：同值 PATCH 是 no-op，不写审计。
+    # 所有管理端用户 PATCH 都先串行化：按 id ASC 锁全部活跃管理员行（固定加锁顺序
+    # 防死锁），再锁目标行并 refresh。这样「是否移除最后一个活跃管理员」永远基于
+    # 已提交的最新状态判断，堵住「并发把普通用户提升为 admin + 停用」的竞态缺口。
+    locked_ids = list(
+        (
+            await db.execute(
+                select(User.id)
+                .where(User.role == "admin", User.status == "active")
+                .order_by(User.id)
+                .with_for_update()
+            )
+        ).scalars()
+    )
+    await db.refresh(target, with_for_update=True)
+
+    # 锁后重算实际变化：并发事务可能已把目标改成同值或提升为活跃管理员。
     changed: set[str] = set()
     if payload.role is not None and payload.role != target.role:
         changed.add("role")
     if payload.status is not None and payload.status != target.status:
         changed.add("status")
     if not changed:
-        return _to_out(target)
+        # 无实际变化：不写审计、不提交；先取快照再 rollback 释放行锁。
+        result = _to_out(target)
+        await db.rollback()
+        return result
 
     # 自操作规则优先于最后管理员保护，返回 422 而不是静默成功。
     if target.id == admin.id and "role" in changed:
@@ -200,32 +218,18 @@ async def update_user(
     if target.id == admin.id and payload.status == "disabled":
         raise ValidationFailedError("不能停用自己的账号", code="cannot_disable_self")
 
-    # 把活跃管理员降级或停用前，先按 id ASC 锁住全部活跃管理员行：固定加锁顺序
-    # 防死锁，锁后 refresh 目标再计算剩余数量，防两个管理员并发互相降级。
-    demote_or_disable_active_admin = (
-        target.role == "admin"
-        and target.status == "active"
-        and (payload.role == "user" or payload.status == "disabled")
+    # 用锁后的最新状态判定：本次是否移除一个活跃管理员、移除后还剩几个。
+    target_active = target.role == "admin" and target.status == "active"
+    removes_active_admin = target_active and (
+        payload.role == "user" or payload.status == "disabled"
     )
-    if demote_or_disable_active_admin:
-        locked_ids = list(
-            (
-                await db.execute(
-                    select(User.id)
-                    .where(User.role == "admin", User.status == "active")
-                    .order_by(User.id)
-                    .with_for_update()
-                )
-            ).scalars()
+    remaining = len(locked_ids) - (1 if target.id in locked_ids else 0)
+    if removes_active_admin and remaining == 0:
+        raise ConflictError(
+            "不能移除最后一个活跃管理员",
+            code="last_admin_protected",
+            details={"active_admins": 1},
         )
-        await db.refresh(target)
-        remaining = len(locked_ids) - (1 if target.id in locked_ids else 0)
-        if target.role == "admin" and target.status == "active" and remaining == 0:
-            raise ConflictError(
-                "不能移除最后一个活跃管理员",
-                code="last_admin_protected",
-                details={"active_admins": 1},
-            )
 
     if payload.role is not None:
         target.role = payload.role

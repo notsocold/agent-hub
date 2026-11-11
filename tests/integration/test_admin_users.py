@@ -10,17 +10,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime
 
 import httpx
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cursor import encode_cursor
 from app.core.errors import ConflictError
 from app.core.security import create_access_token, hash_password
 from app.db.models.user import User
+from app.db.session import get_session_factory
 from app.modules.admin import service as admin_service
 from app.modules.admin.schemas import AdminUserPatchRequest
 from tests.conftest import auth_headers
@@ -415,3 +418,147 @@ async def test_invalid_cursor_and_patch_validation(
         )
         assert response.status_code == 422, response.text
         assert response.json()["error"]["code"] == "validation_error"
+
+
+async def test_concurrent_promote_then_disable_keeps_an_active_admin(
+    db: AsyncSession, admin: User, user: User
+) -> None:
+    """并发「提升 T 为 admin」+「停用 T」：锁后 refresh 必须挡住 0 活跃管理员。
+
+    复现旧缺口：停用方会话在提升提交前已把 T 读成普通用户；随后另一个事务把原管理员
+    降级，T 成为唯一活跃管理员。修复前停用方不重新加锁/refresh，会直接写
+    ``status=disabled`` 导致 0 个活跃管理员；修复后应按锁后状态返回 409。
+    """
+    factory = get_session_factory()
+    async with factory() as stale_db:
+        # B 会话先读到 T 是普通用户，identity map 保留该陈旧快照（模拟交错）。
+        stale_target = await stale_db.get(User, user.id)
+        stale_actor = await stale_db.get(User, admin.id)
+        assert stale_target is not None and stale_target.role == "user"
+        assert stale_actor is not None
+
+        # A：把 T 提升为活跃管理员。
+        async with factory() as promote_db:
+            promote_actor = await promote_db.get(User, admin.id)
+            assert promote_actor is not None
+            promoted = await admin_service.update_user(
+                promote_db, promote_actor, user.id, AdminUserPatchRequest(role="admin")
+            )
+            assert promoted.role == "admin"
+
+        # C：把原管理员降级，此时 T 是唯一活跃管理员。
+        async with factory() as demote_db:
+            demote_actor = await demote_db.get(User, user.id)
+            assert demote_actor is not None
+            demoted = await admin_service.update_user(
+                demote_db, demote_actor, admin.id, AdminUserPatchRequest(role="user")
+            )
+            assert demoted.role == "user"
+
+        # B：用陈旧会话停用 T；锁后 refresh 发现 T 已是最后一个活跃管理员。
+        with pytest.raises(ConflictError) as exc_info:
+            await admin_service.update_user(
+                stale_db, stale_actor, user.id, AdminUserPatchRequest(status="disabled")
+            )
+        assert exc_info.value.code == "last_admin_protected"
+        assert exc_info.value.details == {"active_admins": 1}
+        await stale_db.rollback()
+
+    active_admins = int(
+        await db.scalar(
+            select(func.count(User.id)).where(
+                User.role == "admin", User.status == "active"
+            )
+        )
+        or 0
+    )
+    assert active_admins == 1
+    remaining = await db.get(User, user.id)
+    assert remaining is not None
+    assert remaining.role == "admin"
+    assert remaining.status == "active"
+
+
+async def test_concurrent_mutual_demotion_keeps_one_active_admin(
+    db: AsyncSession, admin: User
+) -> None:
+    """两个管理员并发互降：固定加锁顺序串行化，恰好一个成功、一个 409。"""
+    second_admin = await _create_user_row(db, role="admin", display_name="第二管理员")
+    factory = get_session_factory()
+
+    async def _demote(actor_id: uuid.UUID, target_id: uuid.UUID):
+        async with factory() as session:
+            actor = await session.get(User, actor_id)
+            assert actor is not None
+            return await admin_service.update_user(
+                session, actor, target_id, AdminUserPatchRequest(role="user")
+            )
+
+    results = await asyncio.gather(
+        _demote(admin.id, second_admin.id),
+        _demote(second_admin.id, admin.id),
+        return_exceptions=True,
+    )
+
+    successes = [item for item in results if not isinstance(item, BaseException)]
+    conflicts = [
+        item
+        for item in results
+        if isinstance(item, ConflictError) and item.code == "last_admin_protected"
+    ]
+    assert len(successes) == 1, results
+    assert len(conflicts) == 1, results
+
+    active_admins = int(
+        await db.scalar(
+            select(func.count(User.id)).where(
+                User.role == "admin", User.status == "active"
+            )
+        )
+        or 0
+    )
+    assert active_admins == 1
+
+
+async def test_stats_admins_includes_disabled_admins(
+    client: httpx.AsyncClient,
+    admin: User,
+    admin_auth: dict[str, str],
+    db: AsyncSession,
+) -> None:
+    """``stats.admins`` 按 role 计数，包含已停用的管理员。"""
+    disabled_admin = await _create_user_row(
+        db, role="admin", status="disabled", display_name="停用管理员"
+    )
+
+    body = (await client.get("/api/v1/admin/users", headers=admin_auth)).json()
+    assert body["stats"] == {"total": 2, "active": 1, "disabled": 1, "admins": 2}
+
+    filtered = await client.get(
+        "/api/v1/admin/users",
+        params={"role": "admin", "status": "disabled"},
+        headers=admin_auth,
+    )
+    assert filtered.status_code == 200, filtered.text
+    filtered_body = filtered.json()
+    assert [item["id"] for item in filtered_body["items"]] == [str(disabled_admin.id)]
+    assert filtered_body["stats"] == {
+        "total": 1,
+        "active": 0,
+        "disabled": 1,
+        "admins": 1,
+    }
+
+
+async def test_q_escapes_backslash(
+    client: httpx.AsyncClient, admin_auth: dict[str, str], db: AsyncSession
+) -> None:
+    """q 中的反斜杠必须按字面量匹配，不能破坏 ESCAPE 语义或扩大匹配。"""
+    await _create_user_row(db, display_name="普通用户")
+    slash_user = await _create_user_row(db, display_name="反\\斜杠用户")
+
+    response = await client.get(
+        "/api/v1/admin/users", params={"q": "\\"}, headers=admin_auth
+    )
+    assert response.status_code == 200, response.text
+    assert [item["id"] for item in response.json()["items"]] == [str(slash_user.id)]

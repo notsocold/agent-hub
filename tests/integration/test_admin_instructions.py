@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 import httpx
 import pytest
 from sqlalchemy import select
@@ -314,3 +316,33 @@ async def test_capability_disabled_does_not_block_admin(
     runtime = await client.get("/api/v1/instructions", headers=admin_auth)
     assert runtime.status_code == 403, runtime.text
     assert runtime.json()["error"]["code"] == "capability_disabled"
+
+
+async def test_restore_default_without_row_does_not_audit(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """无覆盖行时恢复默认是 no-op：返回内置默认且不写审计。"""
+    response = await client.put(URL, json={"content": None}, headers=admin_auth)
+    assert response.status_code == 200, response.text
+    assert response.json()["is_default"] is True
+    assert response.json()["updated_at"] is None
+    assert await _audit_details("instruction.update") == []
+
+
+async def test_second_put_on_existing_row_bumps_updated_at(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """已有行第二次 PUT 必须严格刷新 updated_at（SystemSetting 无 onupdate）。"""
+    first = await client.put(
+        URL, json={"content": "第一次平台默认"}, headers=admin_auth
+    )
+    second = await client.put(
+        URL, json={"content": "第二次平台默认"}, headers=admin_auth
+    )
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    first_at = datetime.fromisoformat(first.json()["updated_at"])
+    second_at = datetime.fromisoformat(second.json()["updated_at"])
+    assert second_at > first_at
+    assert second.json()["updated_by"] is not None
+

@@ -189,7 +189,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -209,7 +209,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -229,7 +229,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -259,7 +259,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -328,7 +328,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -348,7 +348,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -368,7 +368,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -398,7 +398,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -475,7 +475,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -495,7 +495,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -515,7 +515,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -545,7 +545,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -597,7 +597,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -617,7 +617,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -637,7 +637,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -667,7 +667,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -724,7 +724,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -744,7 +744,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -764,7 +764,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -794,7 +794,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -815,7 +815,7 @@
           "管理台"
         ],
         "summary": "管理员保存或恢复平台默认指令",
-        "description": "`content` 必填但可显式传 null：null 或 strip 后空串会删除 `system_settings['instruction.default']` 覆盖并恢复代码内置默认（无行时 no-op）；非空时写入 `{\"content\": ...}`，长度超过 `instruction_max_chars` 返回 422 `instruction_too_long`。保存与恢复都写 `instruction.update` 审计，`detail` 只含 `scope`/长度/指纹，不含正文。`INSTRUCTIONS_ENABLED=false` 时仍可写（R1）；响应与 GET 同形。",
+        "description": "`content` 必填但可显式传 null：null 或 strip 后空串会删除 `system_settings['instruction.default']` 覆盖并恢复代码内置默认（无行时 no-op，不写审计）；非空时写入 `{\"content\": ...}`，长度超过 `instruction_max_chars` 返回 422 `instruction_too_long`。真实写入/恢复写 `instruction.update` 审计，`detail` 只含 `scope`/长度/指纹，不含正文。`INSTRUCTIONS_ENABLED=false` 时仍可写（R1）；响应与 GET 同形。",
         "operationId": "update_platform_instruction_api_v1_admin_settings_instruction_put",
         "requestBody": {
           "content": {
@@ -859,7 +859,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -879,7 +879,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -899,7 +899,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -929,7 +929,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1012,7 +1012,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1032,7 +1032,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1052,7 +1052,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1082,7 +1082,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1100,7 +1100,7 @@
           "管理台"
         ],
         "summary": "管理员启停系统技能",
-        "description": "只允许操作系统技能；不存在或属于用户私有技能返回 404 `not_found`。写入全局 `skills.enabled` 并写 `skill.enable` 审计（`detail={\"scope\": \"system\", \"enabled\": ...}`），响应里的 `effective_enabled = enabled and not force_disabled`。`SKILLS_ENABLED=false` 时仍可写（R1）。",
+        "description": "只允许操作系统技能；不存在或属于用户私有技能返回 404 `not_found`。真实变更写入全局 `skills.enabled` 并写 `skill.enable` 审计（`detail={\"scope\": \"system\", \"enabled\": ...}`）；同值启停是 no-op，不写审计。响应里的 `effective_enabled = enabled and not force_disabled`。`SKILLS_ENABLED=false` 时仍可写（R1）。",
         "operationId": "set_system_skill_enabled_api_v1_admin_skills__skill_id__enabled_put",
         "security": [
           {
@@ -1161,7 +1161,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1181,7 +1181,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1201,7 +1201,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1231,7 +1231,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1249,7 +1249,7 @@
           "管理台"
         ],
         "summary": "管理员强制停用或恢复系统技能",
-        "description": "只允许操作系统技能；不存在或属于用户私有技能返回 404 `not_found`。`force_disabled=true` 会覆盖任何用户级覆盖，使技能对所有人失效；写 `skill.force_disable` 审计（`detail={\"force_disabled\": ...}`）。`SKILLS_ENABLED=false` 时仍可写（R1）。",
+        "description": "只允许操作系统技能；不存在或属于用户私有技能返回 404 `not_found`。`force_disabled=true` 会覆盖任何用户级覆盖，使技能对所有人失效；真实变更写 `skill.force_disable` 审计（`detail={\"force_disabled\": ...}`），同值启停是 no-op，不写审计。`SKILLS_ENABLED=false` 时仍可写（R1）。",
         "operationId": "set_system_skill_force_disabled_api_v1_admin_skills__skill_id__force_disable_put",
         "security": [
           {
@@ -1310,7 +1310,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1330,7 +1330,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1350,7 +1350,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1380,7 +1380,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1432,7 +1432,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1452,7 +1452,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1472,7 +1472,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1502,7 +1502,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1567,7 +1567,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1587,7 +1587,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1607,7 +1607,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1637,7 +1637,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1660,7 +1660,7 @@
           "管理台"
         ],
         "summary": "管理员更新系统 MCP 服务器",
-        "description": "只允许修改 `name`/`description`/`url`/`headers`/`auto_inject`/`enabled`/`force_disabled`，至少提交一项；`slug`/`transport`/`command`/`args` 为创建时确定的只读字段，提交会显式 422。`url` 走 SSRF 校验，`headers` 支持 `secret:`平台密钥引用。写 `mcp.server.update` 审计（detail 只含字段名与 scope），提交后强制重新发现工具。`MCP_ENABLED=false` 时仍可写（R1）。",
+        "description": "只允许修改 `name`/`description`/`url`/`headers`/`auto_inject`/`enabled`/`force_disabled`，至少提交一项；`slug`/`transport`/`command`/`args` 为创建时确定的只读字段，提交会显式 422。`url` 走 SSRF 校验，`headers` 支持 `secret:`平台密钥引用。真实变更写 `mcp.server.update` 审计（detail 只含字段名与 scope）并强制重新发现工具；同值 PATCH 直接返回当前视图，不写审计、不触发发现。`MCP_ENABLED=false` 时仍可写（R1）。",
         "operationId": "update_system_mcp_server_api_v1_admin_mcp_servers__server_id__patch",
         "security": [
           {
@@ -1721,7 +1721,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1741,7 +1741,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1761,7 +1761,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1791,7 +1791,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1851,7 +1851,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1871,7 +1871,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1891,7 +1891,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1921,7 +1921,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2059,7 +2059,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2079,7 +2079,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2099,7 +2099,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2129,7 +2129,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2208,7 +2208,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2228,7 +2228,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2248,7 +2248,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2278,7 +2278,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2339,7 +2339,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2359,7 +2359,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2379,7 +2379,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2409,7 +2409,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2470,7 +2470,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2490,7 +2490,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2510,7 +2510,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2540,7 +2540,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2601,7 +2601,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2621,7 +2621,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2641,7 +2641,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2671,7 +2671,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2725,7 +2725,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2745,7 +2745,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2765,7 +2765,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2795,7 +2795,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2846,7 +2846,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2866,7 +2866,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2886,7 +2886,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2916,7 +2916,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -2980,7 +2980,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3000,7 +3000,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3020,7 +3020,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3050,7 +3050,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3109,7 +3109,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3129,7 +3129,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3149,7 +3149,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3179,7 +3179,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3303,7 +3303,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3323,7 +3323,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3343,7 +3343,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3373,7 +3373,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3437,7 +3437,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3457,7 +3457,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3477,7 +3477,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3507,7 +3507,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3575,7 +3575,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3595,7 +3595,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3615,7 +3615,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3645,7 +3645,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3721,7 +3721,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3741,7 +3741,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3761,7 +3761,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3791,7 +3791,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3850,7 +3850,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3870,7 +3870,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3890,7 +3890,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -3920,7 +3920,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4033,7 +4033,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4053,7 +4053,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4073,7 +4073,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4103,7 +4103,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4250,7 +4250,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4323,7 +4323,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4343,7 +4343,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4363,7 +4363,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4393,7 +4393,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4540,7 +4540,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4560,7 +4560,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4580,7 +4580,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4610,7 +4610,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4863,7 +4863,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4883,7 +4883,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4903,7 +4903,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -4933,7 +4933,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5011,7 +5011,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5031,7 +5031,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5051,7 +5051,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5081,7 +5081,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5219,7 +5219,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5239,7 +5239,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5259,7 +5259,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5289,7 +5289,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5357,7 +5357,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5377,7 +5377,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5397,7 +5397,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5427,7 +5427,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5505,7 +5505,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5525,7 +5525,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5545,7 +5545,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5575,7 +5575,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5734,7 +5734,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5754,7 +5754,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5774,7 +5774,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -5804,7 +5804,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6014,7 +6014,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6034,7 +6034,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6054,7 +6054,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6084,7 +6084,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6150,7 +6150,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6170,7 +6170,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6190,7 +6190,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6220,7 +6220,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6321,7 +6321,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6341,7 +6341,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6361,7 +6361,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6391,7 +6391,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6459,7 +6459,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6479,7 +6479,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6499,7 +6499,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6529,7 +6529,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6588,7 +6588,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6608,7 +6608,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6628,7 +6628,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6658,7 +6658,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6724,7 +6724,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6744,7 +6744,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6764,7 +6764,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6794,7 +6794,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6845,7 +6845,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6865,7 +6865,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6885,7 +6885,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6915,7 +6915,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6979,7 +6979,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -6999,7 +6999,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7019,7 +7019,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7049,7 +7049,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7121,7 +7121,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7141,7 +7141,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7161,7 +7161,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7191,7 +7191,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7346,7 +7346,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7366,7 +7366,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7386,7 +7386,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7416,7 +7416,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7485,7 +7485,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7505,7 +7505,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7525,7 +7525,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7555,7 +7555,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7615,7 +7615,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7635,7 +7635,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7655,7 +7655,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7685,7 +7685,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7754,7 +7754,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7774,7 +7774,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7794,7 +7794,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7824,7 +7824,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7886,7 +7886,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7906,7 +7906,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7926,7 +7926,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -7956,7 +7956,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8023,7 +8023,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8043,7 +8043,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8063,7 +8063,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8093,7 +8093,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8243,7 +8243,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8263,7 +8263,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8283,7 +8283,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8313,7 +8313,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8377,7 +8377,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8397,7 +8397,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8417,7 +8417,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8447,7 +8447,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8506,7 +8506,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8526,7 +8526,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8546,7 +8546,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8576,7 +8576,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8627,7 +8627,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8647,7 +8647,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8667,7 +8667,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8697,7 +8697,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8770,7 +8770,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8790,7 +8790,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8810,7 +8810,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8840,7 +8840,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8916,7 +8916,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8936,7 +8936,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8956,7 +8956,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -8986,7 +8986,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9045,7 +9045,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9065,7 +9065,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9085,7 +9085,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9115,7 +9115,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9190,7 +9190,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9210,7 +9210,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9230,7 +9230,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9260,7 +9260,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9325,7 +9325,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9345,7 +9345,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9365,7 +9365,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9395,7 +9395,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9473,7 +9473,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9493,7 +9493,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9513,7 +9513,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9543,7 +9543,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9602,7 +9602,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9622,7 +9622,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9642,7 +9642,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9672,7 +9672,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9746,7 +9746,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9766,7 +9766,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9786,7 +9786,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9816,7 +9816,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9880,7 +9880,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9900,7 +9900,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9920,7 +9920,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -9950,7 +9950,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10001,7 +10001,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10021,7 +10021,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10041,7 +10041,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10071,7 +10071,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10137,7 +10137,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10157,7 +10157,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10177,7 +10177,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10207,7 +10207,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10280,7 +10280,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10300,7 +10300,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10320,7 +10320,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10350,7 +10350,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10426,7 +10426,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10446,7 +10446,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10466,7 +10466,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10496,7 +10496,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10555,7 +10555,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10575,7 +10575,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10595,7 +10595,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10625,7 +10625,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10703,7 +10703,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10723,7 +10723,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10743,7 +10743,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10773,7 +10773,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10845,7 +10845,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10865,7 +10865,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10885,7 +10885,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10915,7 +10915,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10992,7 +10992,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11012,7 +11012,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11032,7 +11032,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11062,7 +11062,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11113,7 +11113,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11133,7 +11133,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11153,7 +11153,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11183,7 +11183,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11247,7 +11247,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11267,7 +11267,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11287,7 +11287,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11317,7 +11317,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11373,7 +11373,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11393,7 +11393,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11413,7 +11413,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11443,7 +11443,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11516,7 +11516,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11536,7 +11536,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11556,7 +11556,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11586,7 +11586,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11662,7 +11662,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11682,7 +11682,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11702,7 +11702,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11732,7 +11732,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11791,7 +11791,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11811,7 +11811,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11831,7 +11831,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11861,7 +11861,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11939,7 +11939,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11959,7 +11959,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -11979,7 +11979,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12009,7 +12009,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12077,7 +12077,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12097,7 +12097,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12117,7 +12117,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12147,7 +12147,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12215,7 +12215,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12235,7 +12235,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12255,7 +12255,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12285,7 +12285,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12357,7 +12357,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12377,7 +12377,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12397,7 +12397,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12427,7 +12427,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12505,7 +12505,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12525,7 +12525,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12545,7 +12545,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12575,7 +12575,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12637,7 +12637,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12657,7 +12657,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12677,7 +12677,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12707,7 +12707,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12799,7 +12799,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12819,7 +12819,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12849,7 +12849,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -12984,7 +12984,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13004,7 +13004,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13024,7 +13024,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13054,7 +13054,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13122,7 +13122,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13142,7 +13142,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13162,7 +13162,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13192,7 +13192,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13288,7 +13288,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13308,7 +13308,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13338,7 +13338,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13417,7 +13417,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13437,7 +13437,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13467,7 +13467,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13555,7 +13555,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13575,7 +13575,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13605,7 +13605,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13693,7 +13693,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13713,7 +13713,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13743,7 +13743,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13951,7 +13951,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13971,7 +13971,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -13991,7 +13991,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14021,7 +14021,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14089,7 +14089,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14109,7 +14109,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14129,7 +14129,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14159,7 +14159,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14247,7 +14247,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14267,7 +14267,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14297,7 +14297,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14395,7 +14395,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14415,7 +14415,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14445,7 +14445,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14543,7 +14543,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14563,7 +14563,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14593,7 +14593,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14691,7 +14691,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14711,7 +14711,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14741,7 +14741,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14792,7 +14792,7 @@
             }
           },
           "403": {
-            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）",
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14812,7 +14812,7 @@
             }
           },
           "409": {
-            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired",
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14832,7 +14832,7 @@
             }
           },
           "422": {
-            "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
             "content": {
               "application/json": {
                 "schema": {
@@ -14862,7 +14862,7 @@
             }
           },
           "503": {
-            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
             "content": {
               "application/json": {
                 "schema": {
@@ -17861,7 +17861,7 @@
           "code": {
             "type": "string",
             "title": "Code",
-            "description": "稳定的机器可读错误码。M1 实际会出现的值包括：validation_error、unauthorized、forbidden、not_found、capability_disabled、run_in_progress、run_not_cancelable、run_not_resumable、workflow_disabled、model_not_allowed、approval_already_decided、approval_expired、rate_limited、internal_error。"
+            "description": "稳定的机器可读错误码。M1 实际会出现的值包括：validation_error、unauthorized、forbidden、not_found、capability_disabled、run_in_progress、run_not_cancelable、run_not_resumable、workflow_disabled、model_not_allowed、approval_already_decided、approval_expired、rate_limited、internal_error。管理台另会出现：last_admin_protected（details.active_admins）、cannot_change_own_role、cannot_disable_self、secret_store_unavailable。"
           },
           "message": {
             "type": "string",

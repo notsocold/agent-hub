@@ -72,8 +72,10 @@ async def set_platform_instruction(
 
     row = await db.get(SystemSetting, SYSTEM_KEY_INSTRUCTION)
     if content is None:
-        if row is not None:
-            await db.delete(row)
+        if row is None:
+            # 没有覆盖行时恢复默认是 no-op：不写审计、不改库。
+            return None
+        await db.delete(row)
         await write_audit(
             db,
             actor_type="user",

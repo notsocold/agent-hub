@@ -25,9 +25,18 @@ class McpServerCreateRequest(BaseModel):
     )
     args: list[str] = Field(default_factory=list, max_length=32)
 
-    @field_validator("name", "description")
+    @field_validator("name")
     @classmethod
-    def _strip(cls, value: str) -> str:
+    def _strip_name(cls, value: str) -> str:
+        """先去空白再判空：``"   "`` 能通过 min_length，但落库不能是空串。"""
+        value = value.strip()
+        if not value:
+            raise ValueError("name 不能为空白")
+        return value
+
+    @field_validator("description")
+    @classmethod
+    def _strip_description(cls, value: str) -> str:
         return value.strip()
 
 

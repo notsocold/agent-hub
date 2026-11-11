@@ -413,3 +413,70 @@ async def test_capability_disabled_does_not_block_admin(
     runtime = await client.get(SKILLS_URL, headers=admin_auth)
     assert runtime.status_code == 403, runtime.text
     assert runtime.json()["error"]["code"] == "capability_disabled"
+
+
+async def test_same_value_toggle_is_noop(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """同值启停不写审计；真实变更仍写稳定 action。"""
+    system_skill = await _admin_item(client, admin_auth)
+    skill_id = system_skill["id"]
+    assert system_skill["enabled"] is True
+    assert system_skill["force_disabled"] is False
+
+    same_enabled = await client.put(
+        f"{ADMIN_LIST_URL}/{skill_id}/enabled",
+        json={"enabled": True},
+        headers=admin_auth,
+    )
+    same_force = await client.put(
+        f"{ADMIN_LIST_URL}/{skill_id}/force-disable",
+        json={"force_disabled": False},
+        headers=admin_auth,
+    )
+    assert same_enabled.status_code == 200, same_enabled.text
+    assert same_force.status_code == 200, same_force.text
+    assert same_enabled.json()["enabled"] is True
+    assert same_force.json()["force_disabled"] is False
+    assert await _audit_details("skill.enable") == []
+    assert await _audit_details("skill.force_disable") == []
+
+    changed = await client.put(
+        f"{ADMIN_LIST_URL}/{skill_id}/enabled",
+        json={"enabled": False},
+        headers=admin_auth,
+    )
+    assert changed.status_code == 200, changed.text
+    assert await _audit_details("skill.enable") == [
+        {"enabled": False, "scope": "system"}
+    ]
+
+
+async def test_list_same_name_sorted_by_id(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """同名系统技能按 id 升序 tie-break，排序稳定可复现。"""
+    first = await _seed_system_skill(slug="tie-skill-a", name="同名排序技能")
+    second = await _seed_system_skill(slug="tie-skill-b", name="同名排序技能")
+
+    response = await client.get(
+        ADMIN_LIST_URL, params={"q": "同名排序技能"}, headers=admin_auth
+    )
+    assert response.status_code == 200, response.text
+    ids = [uuid.UUID(item["id"]) for item in response.json()["items"]]
+    assert ids == sorted([first, second])
+
+
+async def test_list_q_escapes_backslash(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """q 中的反斜杠按字面量匹配，不会让 LIKE 逃逸字符失效。"""
+    await _seed_system_skill(slug="backslash-skill", name="反\\斜杠技能")
+
+    response = await client.get(
+        ADMIN_LIST_URL, params={"q": "\\"}, headers=admin_auth
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert [item["slug"] for item in body["items"]] == ["backslash-skill"]
+    assert body["stats"] == {"total": 1, "enabled": 1, "force_disabled": 0}

@@ -13,6 +13,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Query
 
+from app.api.schemas import ErrorEnvelopeOut
 from app.core.deps import AdminUser, DbSession
 from app.modules.admin import service
 from app.modules.admin.schemas import (
@@ -44,6 +45,14 @@ from app.modules.skills.schemas import SkillEnabledRequest, SkillOut
 
 router = APIRouter(prefix="/admin", tags=["管理台"])
 
+# 管理台所有端点统一 403 语义（覆盖 include 级通用 403 描述）。
+_ADMIN_RESPONSES: dict[int | str, dict] = {
+    403: {
+        "model": ErrorEnvelopeOut,
+        "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
+    }
+}
+
 
 @router.get(
     "/users",
@@ -53,6 +62,7 @@ router = APIRouter(prefix="/admin", tags=["管理台"])
         "按创建时间倒序返回用户。`q` 模糊匹配邮箱或展示名（大小写不敏感），"
         "`role`/`status` 为枚举过滤；`stats` 是当前筛选条件下的全量计数。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def list_users(
     admin: AdminUser,
@@ -75,6 +85,7 @@ async def list_users(
     response_model=AdminUserOut,
     summary="管理员查看用户详情",
     description="返回与列表项相同形状的用户字段；响应永不包含密码散列。",
+    responses=_ADMIN_RESPONSES,
 )
 async def get_user(
     user_id: uuid.UUID, admin: AdminUser, db: DbSession
@@ -91,6 +102,7 @@ async def get_user(
         "也不能停用自己；移除最后一个活跃管理员返回 409 `last_admin_protected`。"
         "真实变更写 `admin.user.update` 审计，同值 PATCH 直接返回当前值。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def update_user(
     user_id: uuid.UUID,
@@ -112,6 +124,7 @@ async def update_user(
         "未删除行，``deleted`` 单独计数。所有状态键始终存在，无数据时为 0。"
         "该接口只读、不写审计，每次请求执行 8 条聚合查询。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def get_overview(admin: AdminUser, db: DbSession) -> AdminOverviewOut:
     return await service.build_overview(db)
@@ -129,6 +142,7 @@ async def get_overview(admin: AdminUser, db: DbSession) -> AdminOverviewOut:
         "`effective_preview`。该端点属于管理端配置面，`INSTRUCTIONS_ENABLED=false` "
         "时仍可读（R1）。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def get_platform_instruction(
     admin: AdminUser, db: DbSession
@@ -143,11 +157,13 @@ async def get_platform_instruction(
     description=(
         "`content` 必填但可显式传 null：null 或 strip 后空串会删除 "
         "`system_settings['instruction.default']` 覆盖并恢复代码内置默认（无行时 "
-        "no-op）；非空时写入 `{\"content\": ...}`，长度超过 `instruction_max_chars` "
-        "返回 422 `instruction_too_long`。保存与恢复都写 `instruction.update` 审计，"
-        "`detail` 只含 `scope`/长度/指纹，不含正文。`INSTRUCTIONS_ENABLED=false` 时"
+        "no-op，不写审计）；非空时写入 `{\"content\": ...}`，长度超过 "
+        "`instruction_max_chars` 返回 422 `instruction_too_long`。真实写入/恢复写 "
+        "`instruction.update` 审计，`detail` 只含 `scope`/长度/指纹，不含正文。"
+        "`INSTRUCTIONS_ENABLED=false` 时"
         "仍可写（R1）；响应与 GET 同形。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def update_platform_instruction(
     payload: AdminInstructionUpdateRequest,
@@ -182,6 +198,7 @@ async def _admin_skill_list(db: DbSession, *, q: str | None) -> AdminSkillListOu
         "total/enabled/force_disabled。该端点属于管理端配置面，"
         "`SKILLS_ENABLED=false` 时仍可读（R1）。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def list_system_skills(
     admin: AdminUser,
@@ -197,11 +214,13 @@ async def list_system_skills(
     summary="管理员启停系统技能",
     description=(
         "只允许操作系统技能；不存在或属于用户私有技能返回 404 `not_found`。"
-        "写入全局 `skills.enabled` 并写 `skill.enable` 审计"
-        "（`detail={\"scope\": \"system\", \"enabled\": ...}`），响应里的 "
+        "真实变更写入全局 `skills.enabled` 并写 `skill.enable` 审计"
+        "（`detail={\"scope\": \"system\", \"enabled\": ...}`）；同值启停是 "
+        "no-op，不写审计。响应里的 "
         "`effective_enabled = enabled and not force_disabled`。"
         "`SKILLS_ENABLED=false` 时仍可写（R1）。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def set_system_skill_enabled(
     skill_id: uuid.UUID,
@@ -220,10 +239,12 @@ async def set_system_skill_enabled(
     summary="管理员强制停用或恢复系统技能",
     description=(
         "只允许操作系统技能；不存在或属于用户私有技能返回 404 `not_found`。"
-        "`force_disabled=true` 会覆盖任何用户级覆盖，使技能对所有人失效；写 "
-        "`skill.force_disable` 审计（`detail={\"force_disabled\": ...}`）。"
+        "`force_disabled=true` 会覆盖任何用户级覆盖，使技能对所有人失效；真实变更写 "
+        "`skill.force_disable` 审计（`detail={\"force_disabled\": ...}`），"
+        "同值启停是 no-op，不写审计。"
         "`SKILLS_ENABLED=false` 时仍可写（R1）。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def set_system_skill_force_disabled(
     skill_id: uuid.UUID,
@@ -247,6 +268,7 @@ async def set_system_skill_force_disabled(
         "有上界，因此不分页。该端点属于管理端配置面，`MCP_ENABLED=false` 时仍可读"
         "（R1）。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def list_system_mcp_servers(
     admin: AdminUser, db: DbSession
@@ -268,6 +290,7 @@ async def list_system_mcp_servers(
         "`mcp.server.create` 审计，detail 只含 slug/transport/url/scope。"
         "`MCP_ENABLED=false` 时仍可写（R1）。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def create_system_mcp_server(
     payload: McpServerCreateRequest, admin: AdminUser, db: DbSession
@@ -283,9 +306,11 @@ async def create_system_mcp_server(
         "只允许修改 `name`/`description`/`url`/`headers`/`auto_inject`/`enabled`/"
         "`force_disabled`，至少提交一项；`slug`/`transport`/`command`/`args` 为创建时"
         "确定的只读字段，提交会显式 422。`url` 走 SSRF 校验，`headers` 支持 `secret:`"
-        "平台密钥引用。写 `mcp.server.update` 审计（detail 只含字段名与 scope），提交"
-        "后强制重新发现工具。`MCP_ENABLED=false` 时仍可写（R1）。"
+        "平台密钥引用。真实变更写 `mcp.server.update` 审计（detail 只含字段名与 scope）"
+        "并强制重新发现工具；同值 PATCH 直接返回当前视图，不写审计、不触发发现。"
+        "`MCP_ENABLED=false` 时仍可写（R1）。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def update_system_mcp_server(
     server_id: uuid.UUID,
@@ -305,6 +330,7 @@ async def update_system_mcp_server(
         "启停覆盖，工具行随外键级联删除，并写 `mcp.server.delete` 审计"
         "（detail 只含 slug/scope）。`MCP_ENABLED=false` 时仍可写（R1）。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def delete_system_mcp_server(
     server_id: uuid.UUID, admin: AdminUser, db: DbSession
@@ -321,6 +347,7 @@ async def delete_system_mcp_server(
         "`cursor`。按 v1 全局注册表口径返回所有未软删 Agent，不按 `owner_user_id` "
         "过滤（R8：`owner_user_id` 仅为保留字段，不参与可见性）。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def list_admin_agents(
     admin: AdminUser,
@@ -332,7 +359,13 @@ async def list_admin_agents(
     cursor: str | None = Query(default=None, max_length=500),
 ) -> AgentPage:
     return await agents_service.list_agents(
-        db, health_status=health_status, enabled=enabled, q=q, limit=limit, cursor=cursor
+        db,
+        health_status=health_status,
+        enabled=enabled,
+        q=q,
+        limit=limit,
+        cursor=cursor,
+        stats_ignore_cursor=True,
     )
 
 
@@ -349,6 +382,7 @@ async def list_admin_agents(
         "（detail={\"fields\": [...], \"source\": \"admin\"}）；同值 PATCH 不写审计。"
         "不存在或已软删返回 404 `not_found`。"
     ),
+    responses=_ADMIN_RESPONSES,
 )
 async def update_admin_agent(
     agent_id: uuid.UUID,

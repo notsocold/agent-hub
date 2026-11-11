@@ -487,7 +487,11 @@ async def update_system_server(
     server_id: uuid.UUID,
     payload: AdminMcpServerUpdateRequest,
 ) -> McpServerOut:
-    """管理台 PATCH 系统 MCP；只改白名单字段，提交后强制重新发现工具。"""
+    """管理台 PATCH 系统 MCP；只改白名单字段，真实变更才写审计并重新发现工具。
+
+    同值 PATCH 是 no-op：不写 ``mcp.server.update`` 审计、不触发 ``_check_and_sync``
+    （比较全部可编辑字段后判定），避免管理台重复保存放大审计与网络调用。
+    """
     server = await _load_system_server(db, server_id)
     stored_headers: dict[str, object] | None = None
     hint = ""
@@ -500,28 +504,36 @@ async def update_system_server(
             payload.headers, allow_platform_secret=True
         )
     fields: list[str] = []
-    if payload.url is not None:
+    if payload.url is not None and payload.url != server.url:
         server.url = payload.url
         fields.append("url")
-    if payload.name is not None:
+    if payload.name is not None and payload.name.strip() != server.name:
         server.name = payload.name.strip()
         fields.append("name")
-    if payload.description is not None:
+    if (
+        payload.description is not None
+        and payload.description.strip() != server.description
+    ):
         server.description = payload.description.strip()
         fields.append("description")
-    if stored_headers is not None:
+    if stored_headers is not None and stored_headers != (server.headers or {}):
         server.headers = stored_headers
         server.credentials_hint = hint
         fields.append("headers")
-    if payload.auto_inject is not None:
+    if payload.auto_inject is not None and payload.auto_inject != server.auto_inject:
         server.auto_inject = payload.auto_inject
         fields.append("auto_inject")
-    if payload.enabled is not None:
+    if payload.enabled is not None and payload.enabled != server.enabled:
         server.enabled = payload.enabled
         fields.append("enabled")
-    if payload.force_disabled is not None:
+    if (
+        payload.force_disabled is not None
+        and payload.force_disabled != server.force_disabled
+    ):
         server.force_disabled = payload.force_disabled
         fields.append("force_disabled")
+    if not fields:
+        return await _system_server_out(db, server)
     await write_audit(
         db,
         actor_type="user",

@@ -322,3 +322,24 @@ async def test_overview_requires_admin(
     unauthorized = await client.get("/api/v1/admin/overview")
     assert unauthorized.status_code == 401, unauthorized.text
     assert unauthorized.json()["error"]["code"] == "unauthorized"
+
+
+async def test_overview_does_not_write_audit(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """只读概览成功请求不写审计（连续两次也不产生记录）。"""
+    before = await client.get(
+        "/api/v1/admin/audit-logs", params={"limit": 100}, headers=admin_auth
+    )
+    assert before.status_code == 200, before.text
+    assert before.json()["items"] == []
+
+    for _ in range(2):
+        response = await client.get("/api/v1/admin/overview", headers=admin_auth)
+        assert response.status_code == 200, response.text
+
+    after = await client.get(
+        "/api/v1/admin/audit-logs", params={"limit": 100}, headers=admin_auth
+    )
+    assert after.status_code == 200, after.text
+    assert after.json()["items"] == []

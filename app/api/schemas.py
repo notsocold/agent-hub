@@ -19,7 +19,9 @@ class ErrorBodyOut(BaseModel):
             "unauthorized、forbidden、not_found、capability_disabled、"
             "run_in_progress、run_not_cancelable、run_not_resumable、"
             "workflow_disabled、model_not_allowed、approval_already_decided、"
-            "approval_expired、rate_limited、internal_error。"
+            "approval_expired、rate_limited、internal_error。管理台另会出现："
+            "last_admin_protected（details.active_admins）、cannot_change_own_role、"
+            "cannot_disable_self、secret_store_unavailable。"
         )
     )
     message: str = Field(description="面向用户的中文提示，前端可直接展示")

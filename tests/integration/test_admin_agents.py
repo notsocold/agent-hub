@@ -17,8 +17,10 @@ import json
 import uuid
 
 import httpx
+import pytest
 from sqlalchemy import select
 
+from app.core.config import Settings, reset_settings_cache
 from app.core.security import create_access_token
 from app.db.models.audit import AuditLog
 from app.db.models.remote import RemoteAgent
@@ -91,6 +93,48 @@ async def test_admin_agents_covers_global_registry(
     forbidden = await client.get(ADMIN_URL, headers=user_headers)
     assert forbidden.status_code == 403, forbidden.text
     assert forbidden.json()["error"]["details"] == {"required_role": "admin"}
+
+
+async def test_admin_agents_stats_ignore_cursor(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """管理端翻页时 stats 仍是筛选条件下的全量计数；用户侧既有口径不变。"""
+    _register_fake()
+    for index in range(3):
+        await _create_agent(
+            client, admin_auth, slug=f"cursor-agent-{index}", name=f"翻页 Agent {index}"
+        )
+
+    first = await client.get(ADMIN_URL, params={"limit": 1}, headers=admin_auth)
+    assert first.status_code == 200, first.text
+    first_body = first.json()
+    assert len(first_body["items"]) == 1
+    assert first_body["has_more"] is True
+    assert first_body["next_cursor"]
+    assert first_body["stats"]["total"] == 3
+
+    second = await client.get(
+        ADMIN_URL,
+        params={"limit": 1, "cursor": first_body["next_cursor"]},
+        headers=admin_auth,
+    )
+    assert second.status_code == 200, second.text
+    second_body = second.json()
+    assert second_body["stats"]["total"] == 3
+    assert second_body["items"][0]["id"] != first_body["items"][0]["id"]
+
+    # GET /agents 保持原有口径（stats 随游标过滤），本修复不能改变用户侧行为。
+    user_first = await client.get(AGENTS_URL, params={"limit": 1}, headers=admin_auth)
+    assert user_first.status_code == 200, user_first.text
+    user_first_body = user_first.json()
+    assert user_first_body["stats"]["total"] == 3
+    user_second = await client.get(
+        AGENTS_URL,
+        params={"limit": 1, "cursor": user_first_body["next_cursor"]},
+        headers=admin_auth,
+    )
+    assert user_second.status_code == 200, user_second.text
+    assert user_second.json()["stats"]["total"] == 2
 
 
 async def test_patch_editable_fields_and_audit(
@@ -271,3 +315,82 @@ async def test_non_admin_forbidden_and_unauthorized(
         response = await client.request(method, path, json=payload)
         assert response.status_code == 401, (method, response.text)
         assert response.json()["error"]["code"] == "unauthorized"
+
+
+async def test_auth_hint_cleared_when_auth_or_headers_removed(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """清空 auth（none/oauth2）或 headers 时 auth_hint 必须同步清空，不能残留旧凭据提示。"""
+    _register_fake()
+    agent = await _create_agent(client, admin_auth, slug="hint-agent")
+    url = f"{ADMIN_URL}/{agent['id']}"
+
+    with_auth = await client.patch(
+        url,
+        json={"auth": {"type": "api_key", "secret_ref": "secret:HINT_KEY"}},
+        headers=admin_auth,
+    )
+    assert with_auth.status_code == 200, with_auth.text
+    assert with_auth.json()["auth_type"] == "api_key"
+    assert with_auth.json()["auth_hint"] == "secret:HINT_KEY"
+
+    cleared_auth = await client.patch(
+        url, json={"auth": {"type": "none"}}, headers=admin_auth
+    )
+    assert cleared_auth.status_code == 200, cleared_auth.text
+    assert cleared_auth.json()["auth_type"] == "none"
+    assert cleared_auth.json()["auth_hint"] == ""
+
+    with_headers = await client.patch(
+        url,
+        json={"headers": {"Authorization": "env:HINT_TOKEN"}},
+        headers=admin_auth,
+    )
+    assert with_headers.status_code == 200, with_headers.text
+    assert "env:HINT_TOKEN" in with_headers.json()["auth_hint"]
+
+    cleared_headers = await client.patch(url, json={"headers": {}}, headers=admin_auth)
+    assert cleared_headers.status_code == 200, cleared_headers.text
+    assert cleared_headers.json()["auth_hint"] == ""
+
+    oauth = await client.patch(
+        url,
+        json={"auth": {"type": "api_key", "secret_ref": "secret:HINT_KEY"}},
+        headers=admin_auth,
+    )
+    assert oauth.json()["auth_hint"] == "secret:HINT_KEY"
+    cleared_oauth = await client.patch(
+        url, json={"auth": {"type": "oauth2"}}, headers=admin_auth
+    )
+    assert cleared_oauth.status_code == 200, cleared_oauth.text
+    assert cleared_oauth.json()["auth_type"] == "oauth2"
+    assert cleared_oauth.json()["auth_hint"] == ""
+
+
+async def test_plaintext_sensitive_header_requires_secret_store(
+    client: httpx.AsyncClient,
+    admin_auth: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """无 CAPABILITY_SECRET_KEY 时敏感头明文 PATCH 返回 503 专用码，且不回显明文。"""
+    _register_fake()
+    agent = await _create_agent(client, admin_auth, slug="plain-header-agent")
+
+    monkeypatch.delenv("CAPABILITY_SECRET_KEY", raising=False)
+    monkeypatch.setattr(
+        "app.core.ssrf.get_settings",
+        lambda: Settings(capability_secret_key="", _env_file=None),
+    )
+    reset_settings_cache()
+    try:
+        response = await client.patch(
+            f"{ADMIN_URL}/{agent['id']}",
+            json={"headers": {"Authorization": "Bearer plain-agent-secret"}},
+            headers=admin_auth,
+        )
+        assert response.status_code == 503, response.text
+        assert response.json()["error"]["code"] == "secret_store_unavailable"
+        assert "plain-agent-secret" not in response.text
+    finally:
+        reset_settings_cache()
+

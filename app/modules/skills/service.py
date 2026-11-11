@@ -422,7 +422,11 @@ async def list_system_skills(
             Skill.name.ilike(pattern, escape="\\")
             | Skill.description.ilike(pattern, escape="\\")
         )
-    rows = list((await db.execute(stmt.order_by(Skill.name.asc()))).scalars())
+    rows = list(
+        (
+            await db.execute(stmt.order_by(Skill.name.asc(), Skill.id.asc()))
+        ).scalars()
+    )
     return [
         _skill_out(row, effective=row.enabled and not row.force_disabled)
         for row in rows
@@ -440,8 +444,13 @@ async def _load_system_skill(db: AsyncSession, skill_id: uuid.UUID) -> Skill:
 async def set_system_skill_enabled(
     db: AsyncSession, admin: User, skill_id: uuid.UUID, enabled: bool
 ) -> SkillOut:
-    """管理员全局启停系统技能；不调用 ``_require_enabled``（R1）。"""
+    """管理员全局启停系统技能；不调用 ``_require_enabled``（R1）。
+
+    同值启停是 no-op：不写审计、不提交，直接返回当前全局视图。
+    """
     skill = await _load_system_skill(db, skill_id)
+    if skill.enabled == enabled:
+        return _skill_out(skill, effective=skill.enabled and not skill.force_disabled)
     skill.enabled = enabled
     await write_audit(
         db,
@@ -460,8 +469,13 @@ async def set_system_skill_enabled(
 async def set_system_skill_force_disabled(
     db: AsyncSession, admin: User, skill_id: uuid.UUID, force_disabled: bool
 ) -> SkillOut:
-    """管理员强制停用/恢复系统技能；``force_disabled`` 覆盖任何用户级覆盖。"""
+    """管理员强制停用/恢复系统技能；``force_disabled`` 覆盖任何用户级覆盖。
+
+    同值启停是 no-op：不写审计、不提交，直接返回当前全局视图。
+    """
     skill = await _load_system_skill(db, skill_id)
+    if skill.force_disabled == force_disabled:
+        return _skill_out(skill, effective=skill.enabled and not skill.force_disabled)
     skill.force_disabled = force_disabled
     await write_audit(
         db,

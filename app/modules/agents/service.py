@@ -209,11 +209,13 @@ def _apply_auth(
         agent.auth_type = "none"
         agent.auth_scheme = "none"
         agent.secret_ref = None
+        agent.auth_hint = ""
         return
     if auth_type == "oauth2":
         agent.auth_type = "oauth2"
         agent.auth_scheme = "oauth2"
         agent.secret_ref = None
+        agent.auth_hint = ""
         return
     # api_key：scheme 优先从 Card 推断，其次默认 bearer。
     agent.auth_type = "api_key"
@@ -344,21 +346,29 @@ async def list_agents(
     q: str | None,
     limit: int,
     cursor: str | None,
+    stats_ignore_cursor: bool = False,
 ) -> AgentPage:
-    filters = [RemoteAgent.deleted_at.is_(None)]
+    """分页查询远程 Agent。
+
+    ``stats_ignore_cursor=True`` 供管理台使用：stats 是「当前筛选条件下」的全量
+    计数，不能因为带游标翻页而变小；用户侧 ``GET /agents`` 保持既有口径（默认
+    ``False``，stats 与页内 filters 一致）。
+    """
+    base_filters = [RemoteAgent.deleted_at.is_(None)]
     if health_status:
-        filters.append(RemoteAgent.health_status == health_status)
+        base_filters.append(RemoteAgent.health_status == health_status)
     if enabled is not None:
-        filters.append(RemoteAgent.enabled == enabled)
+        base_filters.append(RemoteAgent.enabled == enabled)
     if q:
         pattern = f"%{q}%"
-        filters.append(
+        base_filters.append(
             or_(
                 RemoteAgent.name.ilike(pattern),
                 RemoteAgent.slug.ilike(pattern),
                 RemoteAgent.description.ilike(pattern),
             )
         )
+    page_filters = [*base_filters]
 
     decoded = decode_cursor(cursor)
     if decoded.get("created_at") and decoded.get("id"):
@@ -366,7 +376,7 @@ async def list_agents(
 
         try:
             since = dt.fromisoformat(str(decoded["created_at"]))
-            filters.append(
+            page_filters.append(
                 or_(
                     RemoteAgent.created_at < since,
                     and_(RemoteAgent.created_at == since, RemoteAgent.id < uuid.UUID(str(decoded["id"]))),
@@ -377,7 +387,7 @@ async def list_agents(
 
     stmt = (
         select(RemoteAgent)
-        .where(*filters)
+        .where(*page_filters)
         .order_by(RemoteAgent.created_at.desc(), RemoteAgent.id.desc())
         .limit(limit + 1)
     )
@@ -387,7 +397,9 @@ async def list_agents(
 
     recent = await _latest_tasks_map(db, [item.id for item in rows])
     items = [_agent_out(item, recent_task=recent.get(item.id)) for item in rows]
-    stats = await _agent_stats(db, filters)
+    stats = await _agent_stats(
+        db, base_filters if stats_ignore_cursor else page_filters
+    )
     next_cursor = None
     if has_more and rows:
         last = rows[-1]
@@ -479,6 +491,9 @@ async def update_agent(
         agent.headers = stored
         if hint:
             agent.auth_hint = hint
+        elif not stored:
+            # 清空 headers 时同步清掉残留的凭据提示。
+            agent.auth_hint = ""
         changed.append("headers")
     if changed:
         await write_audit(
@@ -546,6 +561,9 @@ async def admin_update_agent(
             agent.headers = stored
             if hint:
                 agent.auth_hint = hint
+            elif not stored:
+                # 清空 headers 时同步清掉残留的凭据提示，避免响应显示已删除的凭据。
+                agent.auth_hint = ""
             changed.append("headers")
     if changed:
         await write_audit(
