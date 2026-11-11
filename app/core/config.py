@@ -203,9 +203,79 @@ class Settings(BaseSettings):
     prompt_guard_enabled: bool = True
     prompt_guard_redact_output: bool = True
 
+    # ------------------------------------------------------------------ 可观测（M6）
+    log_format: Literal["text", "json"] = "text"
+    log_level: str = "INFO"
+    otel_enabled: bool = False
+    otel_exporter: Literal["otlp", "console", "none"] = "otlp"
+    otel_exporter_otlp_traces_endpoint: str = "http://localhost:4318/v1/traces"
+    otel_service_name: str = "agent-hub"
+    otel_sample_ratio: float = 0.1
+    otel_export_timeout_seconds: float = 5.0
+    metrics_enabled: bool = True
+    metrics_path: str = "/metrics"
+    metrics_token: str = ""
+    readiness_check_migrations: bool = False
+    readiness_timeout_seconds: float = 2.0
+
+    # ------------------------------------------------------------------ 运行期（M6）
+    shutdown_grace_seconds: int = 30
+    startup_recovery_enabled: bool = True
+    startup_recovery_max_runs: int = 100
+    recovery_interval_seconds: int = 300
+    recovery_grace_seconds: int = 60
+    recovery_batch_size: int = 100
+
+    # ------------------------------------------------------------------ 数据生命周期（M6）
+    cleanup_enabled: bool = True
+    cleanup_interval_seconds: int = 3600
+    cleanup_batch_size: int = 500
+    checkpoint_retention_days: int = 30
+    run_events_retention_days: int = 90
+    audit_retention_days: int = 180
+    refresh_token_retention_days: int = 30
+
     # ------------------------------------------------------------------ 路径
     data_dir: Path = Path("data")
     attachment_dir: Path = Path("data/attachments")
+
+    @field_validator("log_level")
+    @classmethod
+    def _normalize_log_level(cls, value: str) -> str:
+        level = value.strip().upper()
+        if level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
+            raise ValueError("LOG_LEVEL 必须是 DEBUG/INFO/WARNING/ERROR/CRITICAL")
+        return level
+
+    @field_validator("metrics_path")
+    @classmethod
+    def _validate_metrics_path(cls, value: str) -> str:
+        path = value.strip()
+        if not path.startswith("/") or path in {"/", "/healthz", "/readyz"}:
+            raise ValueError("METRICS_PATH 必须是 / 开头的非保留路径")
+        return path
+
+    @field_validator("otel_sample_ratio")
+    @classmethod
+    def _validate_otel_sample_ratio(cls, value: float) -> float:
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("OTEL_SAMPLE_RATIO 必须在 0 到 1 之间")
+        return value
+
+    @field_validator("cleanup_interval_seconds")
+    @classmethod
+    def _validate_cleanup_interval(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("CLEANUP_INTERVAL_SECONDS 必须大于 0")
+        return value
+
+    @field_validator("readiness_timeout_seconds", "otel_export_timeout_seconds")
+    @classmethod
+    def _validate_positive_seconds(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("超时时间必须大于 0")
+        return value
+
 
     @field_validator("cors_origins")
     @classmethod

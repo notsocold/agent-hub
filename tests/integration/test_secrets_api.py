@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from app.core.config import reset_settings_cache
+from app.core.config import Settings, reset_settings_cache
 from app.core.security import create_access_token
 from app.db.models.user import User
 from app.db.session import get_session_factory
@@ -82,6 +82,12 @@ async def test_missing_capability_key_503(
     client: httpx.AsyncClient, admin_auth: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delenv("CAPABILITY_SECRET_KEY", raising=False)
+    # 本地 .env 可能配置了 CAPABILITY_SECRET_KEY；显式构造空密钥配置，
+    # 保证该用例在本地与 CI 语义一致。
+    monkeypatch.setattr(
+        "app.core.ssrf.get_settings",
+        lambda: Settings(capability_secret_key="", _env_file=None),
+    )
     reset_settings_cache()
     try:
         response = await client.post(

@@ -32,6 +32,10 @@ dependencies = [
     # 知识库（M4）：PDF 解析与 S3 兼容对象存储
     "pypdf>=7.0.0",
     "boto3>=1.43.127",
+    # 可观测（M6）：Prometheus 指标 + OpenTelemetry 追踪
+    "prometheus-client>=0.26.0,<1.0",
+    "opentelemetry-sdk>=1.45.2,<2.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.45.2,<2.0",
 ]
 
 [[tool.uv.index]]
