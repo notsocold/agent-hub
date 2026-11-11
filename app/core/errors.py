@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import InterfaceError, OperationalError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 logger = logging.getLogger(__name__)
@@ -218,6 +219,20 @@ def register_exception_handlers(app: FastAPI) -> None:
         code = code_map.get(exc.status_code, "http_error")
         message = str(exc.detail) if exc.detail else "请求失败"
         return _envelope(exc.status_code, code, message, request_id=request_id_from(request))
+
+    @app.exception_handler(OperationalError)
+    @app.exception_handler(InterfaceError)
+    async def _database_unavailable(request: Request, exc: Exception) -> JSONResponse:
+        request_id = request_id_from(request)
+        logger.error(
+            "数据库不可用：%s", exc, extra={"request_id": request_id}, exc_info=True
+        )
+        return _envelope(
+            503,
+            "database_unavailable",
+            "数据库暂时不可用，请稍后重试",
+            request_id=request_id,
+        )
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:

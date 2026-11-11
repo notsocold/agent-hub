@@ -46,12 +46,15 @@ async def _approval_sweeper() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    app.state.draining = False
     configure_logging(settings)
     configure_tracing(settings)
     setup_metrics(settings)
     settings.validate_runtime()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.attachment_dir.mkdir(parents=True, exist_ok=True)
+    if settings.knowledge_enabled:
+        settings.knowledge_dir.mkdir(parents=True, exist_ok=True)
     await ensure_checkpoint_ready(settings)
     try:
         async with get_session_factory()() as db:
@@ -65,6 +68,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
+        app.state.draining = True
         sweeper.cancel()
         await asyncio.gather(sweeper, return_exceptions=True)
         await registry.shutdown()
