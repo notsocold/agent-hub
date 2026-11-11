@@ -7,6 +7,7 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 
+from app.core.metrics import record_active_run
 from app.modules.chat.events import RunEventPublisher
 
 logger = logging.getLogger(__name__)
@@ -56,8 +57,10 @@ class RunRegistry:
     def start(self, context: RunContext, coroutine) -> None:
         context.task = asyncio.create_task(coroutine, name=f"run-{context.run_id}")
         self._contexts[context.run_id] = context
+        record_active_run(1)
 
         def _cleanup(_: asyncio.Task) -> None:
+            record_active_run(-1)
             # 同一 run 可能先有首轮任务、后有恢复任务：只清理自己，避免误删新 context。
             if self._contexts.get(context.run_id) is context:
                 self._contexts.pop(context.run_id, None)

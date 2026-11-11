@@ -23,7 +23,9 @@ from pydantic import BaseModel, Field, create_model
 from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.metrics import record_tool_call
 from app.core.prompt_guard import wrap_untrusted
+from app.core.telemetry import get_tracer
 from app.core.timeutil import elapsed_ms
 from app.db.models.approval import Approval
 from app.db.models.mcp import McpServer
@@ -160,6 +162,14 @@ class ToolRunner:
         invocation = await self._create_invocation(
             tool_call_id, name, source, ref_slug, args
         )
+        span = get_tracer().start_span(
+            "tool.execute",
+            attributes={
+                "app.tool.name": name,
+                "app.tool.source": source,
+                "app.tool_call_id": tool_call_id,
+            },
+        )
         status = "ok"
         summary = ""
         error: str | None = None
@@ -184,6 +194,9 @@ class ToolRunner:
             else:
                 content = self._wrap_external(name, source, content)
         except asyncio.CancelledError:
+            span.set_attribute("app.tool.status", "canceled")
+            span.end()
+            record_tool_call(name, source, "canceled", elapsed_ms(started) / 1000)
             await self._finish_invocation(invocation, "canceled", None, started)
             raise
         except Exception as exc:
@@ -194,6 +207,9 @@ class ToolRunner:
             # 远程错误文本同样是外部数据，必须与成功结果一样包裹。
             content = self._wrap_external(name, source, f"工具 {name} 执行失败：{error}")
         await self._finish_invocation(invocation, status, error, started)
+        span.set_attribute("app.tool.status", status)
+        span.end()
+        record_tool_call(name, source, status, elapsed_ms(started) / 1000)
         result_payload: dict[str, Any] = {
             "tool_call_id": tool_call_id,
             "tool": name,

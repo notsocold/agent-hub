@@ -20,6 +20,7 @@ from app.core.errors import (
     NotFoundError,
     ValidationFailedError,
 )
+from app.core.metrics import record_approval
 from app.db.models.approval import Approval
 from app.db.models.chat import Run
 from app.db.models.conversation import Conversation
@@ -177,6 +178,7 @@ async def decide(
     if approval.status == "pending" and approval.expires_at and approval.expires_at <= now:
         approval.status = "expired"
         await db.commit()
+        record_approval("expired")
         raise ApprovalExpiredError("审批已过期")
     if approval.status != "pending":
         if approval.status == "expired":
@@ -197,6 +199,7 @@ async def decide(
         detail={"decision": payload.decision, "tool": approval.tool_name},
     )
     await db.commit()
+    record_approval(approval.status)
     resumed = False
     resume_error: str | None = None
     run = await db.get(Run, approval.run_id)
@@ -265,6 +268,8 @@ async def expire_pending(limit: int = 200) -> list[uuid.UUID]:
         )
         expired_pairs = [(row[0], row[1]) for row in result.all()]
         await db.commit()
+        for _ in expired_pairs:
+            record_approval("expired")
     canceled: list[uuid.UUID] = []
     from app.modules.chat import service as chat_service
 

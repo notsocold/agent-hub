@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import time
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
@@ -35,7 +36,9 @@ from app.core.errors import (
     ServiceUnavailableError,
     ValidationFailedError,
 )
+from app.core.metrics import record_knowledge_search
 from app.core.storage import ObjectNotFoundError, get_storage
+from app.core.telemetry import get_tracer
 from app.db.models.knowledge import KnowledgeDocument
 from app.db.models.user import User
 from app.db.vector import SearchHit, search_chunks
@@ -489,14 +492,34 @@ async def search(
     threshold = (
         0.0 if isinstance(provider, FakeEmbeddingProvider) else settings.vector_score_threshold
     )
-    return await search_chunks(
-        db,
-        embedding=vectors[0],
-        user_id=user.id,
-        top_k=effective_top_k,
-        threshold=threshold,
-        categories=categories,
+    span = get_tracer().start_span(
+        "knowledge.search",
+        attributes={
+            "app.knowledge.top_k": effective_top_k,
+            "app.knowledge.categories_count": len(categories or []),
+        },
     )
+    started = time.monotonic()
+    try:
+        results = await search_chunks(
+            db,
+            embedding=vectors[0],
+            user_id=user.id,
+            top_k=effective_top_k,
+            threshold=threshold,
+            categories=categories,
+        )
+    except Exception as exc:
+        span.record_exception(exc)
+        span.end()
+        record_knowledge_search("error", max(0.0, time.monotonic() - started), 0)
+        raise
+    status = "ok" if results else "empty"
+    span.set_attribute("app.knowledge.hits", len(results))
+    span.set_attribute("app.knowledge.status", status)
+    span.end()
+    record_knowledge_search(status, max(0.0, time.monotonic() - started), len(results))
+    return results
 
 
 # --------------------------------------------------------------------- 重建

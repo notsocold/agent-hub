@@ -10,6 +10,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.metrics import record_sse_event
 from app.db.models.chat import RunEvent
 from app.modules.chat.bus import RunEventBus
 
@@ -91,4 +92,5 @@ class RunEventPublisher:
                 )
                 await session.commit()
         await self._bus.publish(self.run_id, {"event": event, "data": body})
+        record_sse_event(event)
         return body

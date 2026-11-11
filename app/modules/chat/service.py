@@ -33,8 +33,10 @@ from app.core.errors import (
     current_request_id,
 )
 from app.core.log_context import bind_run_context, run_id_ctx
+from app.core.metrics import record_approval, record_chat_run
 from app.core.prompt_guard import SUSPICIOUS_INPUT_NOTE, sanitize_output, scan_injection
 from app.core.rate_limit import limiter
+from app.core.telemetry import start_span
 from app.core.timeutil import elapsed_ms
 from app.db.models.approval import Approval
 from app.db.models.chat import Run, RunEvent
@@ -195,6 +197,7 @@ async def start_chat(db: AsyncSession, user: User, payload: ChatStreamRequest) -
         f"chat:{user.id}",
         settings.rate_limit_chat_max,
         settings.rate_limit_chat_window_seconds,
+        scope="chat",
     )
     model = payload.model or settings.llm_model
     if model not in settings.allowed_models:
@@ -569,6 +572,37 @@ async def _clear_stale_interrupt(saver, runtime: RunRuntime, config: dict[str, A
 
 
 async def _stream_graph(
+    context: RunContext,
+    runtime: RunRuntime,
+    graph,
+    config: dict[str, Any],
+    graph_input: Any,
+    *,
+    is_new_conversation: bool = False,
+    resumed: bool = False,
+) -> None:
+    """chat.run span 包装；子 span（LLM/工具）通过当前上下文自动挂到它下面。"""
+    with start_span(
+        "chat.run",
+        attributes={
+            "app.run_id": str(runtime.run_id),
+            "app.conversation_id": str(runtime.conversation_id),
+            "gen_ai.request.model": runtime.model_name,
+            "app.resumed": resumed,
+        },
+    ):
+        await _stream_graph_inner(
+            context,
+            runtime,
+            graph,
+            config,
+            graph_input,
+            is_new_conversation=is_new_conversation,
+            resumed=resumed,
+        )
+
+
+async def _stream_graph_inner(
     context: RunContext,
     runtime: RunRuntime,
     graph,
@@ -1144,7 +1178,14 @@ async def _finalize_success(
                 conversation.last_message_at = finished_at
                 conversation.last_message_preview = content[:80]
                 conversation.message_count += 1
+        model_name = run.model if run is not None else ""
         await db.commit()
+    record_chat_run(
+        "succeeded",
+        duration_ms / 1000,
+        first_token_ms / 1000 if first_token_ms is not None else None,
+        model_name,
+    )
     return True
 
 
@@ -1218,6 +1259,12 @@ async def _finalize_canceled(
         duration_ms=duration_ms,
         tokens=usage,
     )
+    record_chat_run(
+        "canceled",
+        duration_ms / 1000,
+        first_token_ms / 1000 if first_token_ms is not None else None,
+        model_name,
+    )
 
 
 async def _finalize_failed(
@@ -1265,6 +1312,7 @@ async def _finalize_failed(
             conversation.last_message_at = now
             conversation.last_message_preview = content[:80] or "（失败）"
             conversation.message_count += 1
+        model_name = run.model
         await db.commit()
 
     await publisher.emit(
@@ -1280,6 +1328,12 @@ async def _finalize_failed(
         status="error",
         title="运行失败",
         error={"code": "llm_error", "message": message},
+    )
+    record_chat_run(
+        "failed",
+        duration_ms / 1000,
+        first_token_ms / 1000 if first_token_ms is not None else None,
+        model_name,
     )
 
 
@@ -1485,7 +1539,7 @@ async def cancel_interrupted_run(
             conversation.last_message_preview = content[:80] or (
                 "（审批超时已取消）" if reason == "approval_timeout" else "（已取消）"
             )
-        await db.execute(
+        canceled_approvals = await db.execute(
             update(Approval)
             .where(
                 Approval.run_id == run_id,
@@ -1493,6 +1547,8 @@ async def cancel_interrupted_run(
             )
             .values(status="canceled")
         )
+        for _ in range(max(0, canceled_approvals.rowcount or 0)):
+            record_approval("canceled")
         duration_ms = elapsed_ms(run.started_at or run.created_at, now)
         run.duration_ms = duration_ms
         run.active_duration_ms = duration_ms
@@ -1509,7 +1565,9 @@ async def cancel_interrupted_run(
         )
 
     await _wait_run_task(run_id)
+    terminal_emitted = False
     if not await _has_terminal_event(run_id):
+        terminal_emitted = True
         publisher = RunEventPublisher(
             run_id, get_session_factory(), bus, start_seq=await _event_start_seq(run_id)
         )
@@ -1533,6 +1591,8 @@ async def cancel_interrupted_run(
             duration_ms=duration_ms,
             tokens=usage,
         )
+    if terminal_emitted:
+        record_chat_run("canceled", duration_ms / 1000, None, model_name)
     try:
         await halt_run(run_id)
     except Exception:

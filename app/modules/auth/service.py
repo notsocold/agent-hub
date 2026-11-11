@@ -85,6 +85,7 @@ async def register(
         f"register:{ip}",
         limit=settings.rate_limit_register_max,
         window_seconds=settings.rate_limit_register_window_seconds,
+        scope="register",
     )
     if await _find_user_by_email(db, payload.email):
         raise ConflictError("该邮箱已注册")
@@ -113,6 +114,7 @@ async def login(
         f"login:{ip}",
         limit=settings.rate_limit_login_max,
         window_seconds=settings.rate_limit_login_window_seconds,
+        scope="login",
     )
     user = await _find_user_by_email(db, payload.email)
     if user is None or not verify_password(payload.password, user.password_hash):

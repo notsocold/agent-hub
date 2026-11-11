@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.core.config import get_settings
+from app.core.metrics import record_a2a_task
+from app.core.telemetry import get_tracer
 from app.db.models.remote import A2aTask, RemoteAgent
 from app.db.session import get_session_factory
 from app.modules.a2a import A2aClient, A2aError
@@ -618,4 +621,29 @@ async def execute_send_message(
         conversation_id=conversation_id,
         tool_call_id=tool_call_id,
     )
-    return await runner.run()
+    span = get_tracer().start_span(
+        "a2a.send_message",
+        attributes={
+            "app.a2a.agent_id": str(agent.id),
+            "app.a2a.agent_slug": agent.slug,
+            "app.a2a.tool_call_id": tool_call_id,
+        },
+    )
+    started = time.monotonic()
+    state = "unknown"
+    try:
+        outcome = await runner.run()
+    except Exception as exc:
+        state = "error"
+        span.record_exception(exc)
+        span.set_attribute("app.a2a.status", state)
+        raise
+    else:
+        state = str(runner.task.state) if runner.task is not None else "unknown"
+        span.set_attribute("app.a2a.status", state)
+        if runner.task is not None and runner.task.a2a_task_id:
+            span.set_attribute("app.a2a.task_id", str(runner.task.a2a_task_id))
+        return outcome
+    finally:
+        span.end()
+        record_a2a_task(state, max(0.0, time.monotonic() - started))

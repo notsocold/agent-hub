@@ -11,6 +11,7 @@ from collections import deque
 
 from app.core.config import get_settings
 from app.core.errors import RateLimitedError
+from app.core.metrics import record_rate_limited
 
 
 class SlidingWindowLimiter:
@@ -22,7 +23,7 @@ class SlidingWindowLimiter:
         with self._lock:
             self._hits.clear()
 
-    def check(self, key: str, limit: int, window_seconds: int) -> None:
+    def check(self, key: str, limit: int, window_seconds: int, *, scope: str = "general") -> None:
         if not get_settings().rate_limit_enabled:
             return
         now = time.monotonic()
@@ -33,6 +34,7 @@ class SlidingWindowLimiter:
                 bucket.popleft()
             if len(bucket) >= limit:
                 retry_after = max(1, int(bucket[0] + window_seconds - now))
+                record_rate_limited(scope)
                 raise RateLimitedError(
                     f"操作过于频繁，请在 {retry_after} 秒后重试",
                     details={"retry_after_seconds": retry_after},
