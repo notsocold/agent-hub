@@ -20,12 +20,13 @@ from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.core.cursor import decode_cursor, encode_cursor
 from app.core.errors import ConflictError, NotFoundError, ValidationFailedError
-from app.core.ssrf import resolve_headers_async
+from app.core.ssrf import normalize_headers, resolve_headers_async
 from app.core.timeutil import elapsed_ms
 from app.db.models.remote import A2A_ACTIVE_STATES, A2aTask, RemoteAgent
 from app.db.models.user import User
 from app.modules.a2a import A2aClient, A2aError, fetch_agent_card
 from app.modules.agents.schemas import (
+    AdminAgentUpdateRequest,
     AgentCreateRequest,
     AgentDetailOut,
     AgentHealthResult,
@@ -472,8 +473,6 @@ async def update_agent(
         _apply_auth(agent, agent.card or {}, payload.auth, role=user.role)
         changed.append("auth")
     if payload.headers is not None:
-        from app.core.ssrf import normalize_headers
-
         stored, hint = normalize_headers(
             payload.headers, allow_platform_secret=user.role == "admin"
         )
@@ -490,6 +489,73 @@ async def update_agent(
             resource_type="agent",
             resource_id=str(agent.id),
             detail={"fields": changed},
+        )
+        await db.commit()
+        await db.refresh(agent)
+    return await _detail_with_recent(db, agent)
+
+
+async def admin_update_agent(
+    db: AsyncSession,
+    admin: User,
+    agent_id: uuid.UUID,
+    payload: AdminAgentUpdateRequest,
+) -> AgentDetailOut:
+    """管理台 PATCH 全局 Agent：只改白名单字段，真实变更才写审计。
+
+    ``name`` 变化会置 ``name_edited=True``，后续 refresh 不再用 Card 名称覆盖；
+    ``auth`` 与 ``headers`` 复用注册路径的 ``_apply_auth``/``normalize_headers``，
+    允许 ``secret:`` 平台密钥引用。只读字段由 ``extra="forbid"`` 在 422 阶段拦截。
+    """
+    agent = await _get_agent(db, agent_id)
+    changed: list[str] = []
+    if payload.name is not None and payload.name != agent.name:
+        agent.name = payload.name[:128]
+        agent.name_edited = True
+        changed.append("name")
+    if payload.enabled is not None and payload.enabled != agent.enabled:
+        agent.enabled = payload.enabled
+        changed.append("enabled")
+    if (
+        payload.requires_approval is not None
+        and payload.requires_approval != agent.requires_approval
+    ):
+        agent.requires_approval = payload.requires_approval
+        changed.append("requires_approval")
+    if payload.auth is not None:
+        before_auth = (
+            agent.auth_type,
+            agent.auth_scheme,
+            agent.secret_ref,
+            agent.auth_hint,
+        )
+        _apply_auth(agent, agent.card or {}, payload.auth, role="admin")
+        after_auth = (
+            agent.auth_type,
+            agent.auth_scheme,
+            agent.secret_ref,
+            agent.auth_hint,
+        )
+        if after_auth != before_auth:
+            changed.append("auth")
+    if payload.headers is not None:
+        stored, hint = normalize_headers(
+            payload.headers, allow_platform_secret=True
+        )
+        if stored != (agent.headers or {}):
+            agent.headers = stored
+            if hint:
+                agent.auth_hint = hint
+            changed.append("headers")
+    if changed:
+        await write_audit(
+            db,
+            actor_type="user",
+            actor_id=str(admin.id),
+            action="agent.updated",
+            resource_type="agent",
+            resource_id=str(agent.id),
+            detail={"fields": changed, "source": "admin"},
         )
         await db.commit()
         await db.refresh(agent)

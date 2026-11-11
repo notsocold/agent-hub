@@ -1,9 +1,9 @@
-"""管理台路由：用户管理、只读概览、平台默认指令与系统技能管理。
+"""管理台路由：用户管理、只读概览、平台默认指令、系统技能、系统 MCP 与全局 Agent。
 
-本文件是 M8 管理台路由骨架（``prefix="/admin"``）；后续任务在同一文件追加
-系统 MCP、全局 Agent 端点。鉴权统一走 M7 的 ``AdminUser``，403 信封由
-``require_admin`` 产生，不在这里重复判断角色。管理端是配置面：能力总开关
-（``INSTRUCTIONS_ENABLED``/``SKILLS_ENABLED``）关闭时这些端点仍可读写（R1）。
+本文件是 M8 管理台路由骨架（``prefix="/admin"``）。鉴权统一走 M7 的
+``AdminUser``，403 信封由 ``require_admin`` 产生，不在这里重复判断角色。管理端是
+配置面：能力总开关（``INSTRUCTIONS_ENABLED``/``SKILLS_ENABLED``/``MCP_ENABLED``）
+关闭时这些端点仍可读写（R1）。
 """
 
 from __future__ import annotations
@@ -25,6 +25,19 @@ from app.modules.admin.schemas import (
     AdminUserOut,
     AdminUserPage,
     AdminUserPatchRequest,
+)
+from app.modules.agents import service as agents_service
+from app.modules.agents.schemas import (
+    AdminAgentUpdateRequest,
+    AgentDetailOut,
+    AgentPage,
+)
+from app.modules.mcp import service as mcp_service
+from app.modules.mcp.schemas import (
+    AdminMcpServerUpdateRequest,
+    McpServerCreateRequest,
+    McpServerListOut,
+    McpServerOut,
 )
 from app.modules.skills import service as skills_service
 from app.modules.skills.schemas import SkillEnabledRequest, SkillOut
@@ -221,3 +234,126 @@ async def set_system_skill_force_disabled(
     return await skills_service.set_system_skill_force_disabled(
         db, admin, skill_id, payload.force_disabled
     )
+
+
+@router.get(
+    "/mcp/servers",
+    response_model=McpServerListOut,
+    summary="管理员查询系统 MCP 服务器",
+    description=(
+        "只返回 `scope='system'` 的 MCP 服务器，按创建时间倒序；`stats` 与用户侧"
+        "同形（`user=0`、`total==system==len(items)`），`enabled` 按全局口径 "
+        "`enabled and not force_disabled` 计数，不合并任何用户覆盖。系统 MCP 数量"
+        "有上界，因此不分页。该端点属于管理端配置面，`MCP_ENABLED=false` 时仍可读"
+        "（R1）。"
+    ),
+)
+async def list_system_mcp_servers(
+    admin: AdminUser, db: DbSession
+) -> McpServerListOut:
+    return await mcp_service.list_system_servers(db)
+
+
+@router.post(
+    "/mcp/servers",
+    response_model=McpServerOut,
+    status_code=201,
+    summary="管理员创建系统 MCP 服务器",
+    description=(
+        "复用用户侧校验：stdio 仅管理员、URL 做 SSRF 校验、command 必填；请求头里的"
+        "`secret:` 平台密钥引用可用，敏感头只落引用/密文。slug 在任意 scope 已存在时"
+        "返回 409 `conflict`（系统 MCP 工具名 `mcp__<slug>__*` 必须全局唯一）。创建后"
+        "立即做一次工具发现：可达则同步工具并标 healthy，不可达仍返回 201、"
+        "`health_status='unhealthy'` 且保留截断后的 `last_error`。写"
+        "`mcp.server.create` 审计，detail 只含 slug/transport/url/scope。"
+        "`MCP_ENABLED=false` 时仍可写（R1）。"
+    ),
+)
+async def create_system_mcp_server(
+    payload: McpServerCreateRequest, admin: AdminUser, db: DbSession
+) -> McpServerOut:
+    return await mcp_service.create_system_server(db, admin, payload)
+
+
+@router.patch(
+    "/mcp/servers/{server_id}",
+    response_model=McpServerOut,
+    summary="管理员更新系统 MCP 服务器",
+    description=(
+        "只允许修改 `name`/`description`/`url`/`headers`/`auto_inject`/`enabled`/"
+        "`force_disabled`，至少提交一项；`slug`/`transport`/`command`/`args` 为创建时"
+        "确定的只读字段，提交会显式 422。`url` 走 SSRF 校验，`headers` 支持 `secret:`"
+        "平台密钥引用。写 `mcp.server.update` 审计（detail 只含字段名与 scope），提交"
+        "后强制重新发现工具。`MCP_ENABLED=false` 时仍可写（R1）。"
+    ),
+)
+async def update_system_mcp_server(
+    server_id: uuid.UUID,
+    payload: AdminMcpServerUpdateRequest,
+    admin: AdminUser,
+    db: DbSession,
+) -> McpServerOut:
+    return await mcp_service.update_system_server(db, admin, server_id, payload)
+
+
+@router.delete(
+    "/mcp/servers/{server_id}",
+    status_code=204,
+    summary="管理员删除系统 MCP 服务器",
+    description=(
+        "只允许删除系统 MCP；不存在返回 404 `not_found`。先清理该服务器的用户级"
+        "启停覆盖，工具行随外键级联删除，并写 `mcp.server.delete` 审计"
+        "（detail 只含 slug/scope）。`MCP_ENABLED=false` 时仍可写（R1）。"
+    ),
+)
+async def delete_system_mcp_server(
+    server_id: uuid.UUID, admin: AdminUser, db: DbSession
+) -> None:
+    await mcp_service.delete_system_server(db, admin, server_id)
+
+
+@router.get(
+    "/agents",
+    response_model=AgentPage,
+    summary="管理员查询全局 Agent 注册表",
+    description=(
+        "查询参数与 `GET /agents` 完全一致：`health_status`、`enabled`、`q`、`limit`、"
+        "`cursor`。按 v1 全局注册表口径返回所有未软删 Agent，不按 `owner_user_id` "
+        "过滤（R8：`owner_user_id` 仅为保留字段，不参与可见性）。"
+    ),
+)
+async def list_admin_agents(
+    admin: AdminUser,
+    db: DbSession,
+    health_status: str | None = Query(default=None, max_length=16),
+    enabled: bool | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=500),
+) -> AgentPage:
+    return await agents_service.list_agents(
+        db, health_status=health_status, enabled=enabled, q=q, limit=limit, cursor=cursor
+    )
+
+
+@router.patch(
+    "/agents/{agent_id}",
+    response_model=AgentDetailOut,
+    summary="管理员更新全局 Agent",
+    description=(
+        "只允许修改 `name`/`enabled`/`requires_approval`/`auth`/`headers`，至少提交"
+        "一项；`slug`/`url`/`description`/`protocol_version`/`card`/`skills`/"
+        "`capabilities`/`health_status`/`owner_user_id` 为只读字段，提交会显式 422。"
+        "改名会置 `name_edited=true`，后续 refresh 不再用 Card 覆盖；`auth` 支持 "
+        "`secret:` 平台密钥引用。真实变更写 `agent.updated` 审计"
+        "（detail={\"fields\": [...], \"source\": \"admin\"}）；同值 PATCH 不写审计。"
+        "不存在或已软删返回 404 `not_found`。"
+    ),
+)
+async def update_admin_agent(
+    agent_id: uuid.UUID,
+    payload: AdminAgentUpdateRequest,
+    admin: AdminUser,
+    db: DbSession,
+) -> AgentDetailOut:
+    return await agents_service.admin_update_agent(db, admin, agent_id, payload)

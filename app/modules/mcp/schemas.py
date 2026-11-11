@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 McpTransport = Literal["streamable_http", "sse", "stdio"]
 McpHealth = Literal["unknown", "healthy", "unhealthy", "disabled"]
@@ -37,6 +37,36 @@ class McpServerUpdateRequest(BaseModel):
     url: str | None = Field(default=None, max_length=2048)
     headers: dict[str, str] | None = None
     auto_inject: bool | None = None
+
+
+class AdminMcpServerUpdateRequest(McpServerUpdateRequest):
+    """管理台更新系统 MCP：在白名单字段上扩展全局启停与强制停用。
+
+    ``slug``/``transport``/``command``/``args`` 在创建时确定，不可改；未知字段
+    （包括这些只读字段）显式 422。至少提交一项非空值。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool | None = None
+    force_disabled: bool | None = None
+
+    @model_validator(mode="after")
+    def _require_at_least_one_field(self) -> AdminMcpServerUpdateRequest:
+        if all(
+            value is None
+            for value in (
+                self.name,
+                self.description,
+                self.url,
+                self.headers,
+                self.auto_inject,
+                self.enabled,
+                self.force_disabled,
+            )
+        ):
+            raise ValueError("至少需要修改一个字段")
+        return self
 
 
 class McpServerEnabledRequest(BaseModel):

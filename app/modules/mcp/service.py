@@ -30,6 +30,7 @@ from app.db.models.mcp import McpServer, McpTool, UserCapabilityOverride
 from app.db.models.user import User
 from app.modules.mcp.client import StdioMcpClient, ToolInfo, build_client
 from app.modules.mcp.schemas import (
+    AdminMcpServerUpdateRequest,
     McpAvailableListOut,
     McpAvailableServerOut,
     McpCheckResult,
@@ -162,6 +163,43 @@ async def list_servers(db: AsyncSession, user: User) -> McpServerListOut:
     return McpServerListOut(items=items, stats=stats)
 
 
+async def list_system_servers(db: AsyncSession) -> McpServerListOut:
+    """管理台系统 MCP 列表；全局有效态，不合并任何用户覆盖（R1）。
+
+    只查 ``scope='system'``，按创建时间倒序；工具数用一次 ``GROUP BY server_id``
+    统计。``stats`` 与用户侧同形：``total``/``system`` 等于系统项数量、``user=0``，
+    ``enabled`` 按 ``enabled and not force_disabled`` 计。
+    """
+    rows = list(
+        (
+            await db.execute(
+                select(McpServer)
+                .where(McpServer.scope == "system")
+                .order_by(McpServer.created_at.desc(), McpServer.id.desc())
+            )
+        ).scalars()
+    )
+    counts = dict(
+        (
+            await db.execute(
+                select(McpTool.server_id, func.count(McpTool.id)).group_by(McpTool.server_id)
+            )
+        ).all()
+    )
+    stats = {"total": len(rows), "system": len(rows), "user": 0, "enabled": 0, "healthy": 0}
+    items: list[McpServerOut] = []
+    for row in rows:
+        effective = row.enabled and not row.force_disabled
+        if effective:
+            stats["enabled"] += 1
+        if row.health_status == "healthy":
+            stats["healthy"] += 1
+        items.append(
+            _server_out(row, effective=effective, tool_count=int(counts.get(row.id, 0)))
+        )
+    return McpServerListOut(items=items, stats=stats)
+
+
 async def available(db: AsyncSession, user: User) -> McpAvailableListOut:
     """输入框选择器用的精简目录。"""
     _require_enabled()
@@ -205,6 +243,30 @@ async def _load_visible(db: AsyncSession, user: User, server_id: uuid.UUID) -> M
     if server is None or (server.scope == "user" and server.owner_user_id != user.id):
         raise NotFoundError("MCP 服务器不存在")
     return server
+
+
+async def _load_system_server(db: AsyncSession, server_id: uuid.UUID) -> McpServer:
+    """按 id 加载系统 MCP；用户自建或不存在统一 404（不经过 ``_load_visible``）。"""
+    server = await db.scalar(
+        select(McpServer).where(
+            McpServer.id == server_id, McpServer.scope == "system"
+        )
+    )
+    if server is None:
+        raise NotFoundError("系统 MCP 服务器不存在")
+    return server
+
+
+async def _system_server_out(db: AsyncSession, server: McpServer) -> McpServerOut:
+    """系统 MCP 输出：``effective_enabled`` 取全局口径，不走用户覆盖。"""
+    count = await db.scalar(
+        select(func.count(McpTool.id)).where(McpTool.server_id == server.id)
+    )
+    return _server_out(
+        server,
+        effective=server.enabled and not server.force_disabled,
+        tool_count=int(count or 0),
+    )
 
 
 async def get_server(db: AsyncSession, user: User, server_id: uuid.UUID) -> McpServerOut:
@@ -349,6 +411,154 @@ async def delete_server(db: AsyncSession, user: User, server_id: uuid.UUID) -> N
         resource_type="mcp_server",
         resource_id=str(server_id),
         detail={"slug": server.slug},
+    )
+    await db.commit()
+
+
+async def create_system_server(
+    db: AsyncSession, admin: User, payload: McpServerCreateRequest
+) -> McpServerOut:
+    """创建系统 MCP：进入所有用户工具目录，slug 必须全局唯一。
+
+    复用用户侧 ``_validate_create``（stdio 仅管理员、URL SSRF、command 必填）与
+    ``normalize_headers(allow_platform_secret=True)``；不检查每人配额。提交后立即
+    做一次工具发现（不可达仍 201，状态写 unhealthy）。
+    """
+    _validate_create(payload, admin)
+    existing = await db.scalar(
+        select(McpServer.id).where(McpServer.slug == payload.slug)
+    )
+    if existing is not None:
+        raise ConflictError("slug 已被其他 MCP 服务器占用")
+    stored_headers, hint = normalize_headers(
+        payload.headers, allow_platform_secret=True
+    )
+    server = McpServer(
+        scope="system",
+        owner_user_id=None,
+        slug=payload.slug,
+        name=payload.name,
+        description=payload.description,
+        transport=payload.transport,
+        url=payload.url,
+        command=payload.command,
+        args=list(payload.args),
+        headers=stored_headers,
+        credentials_hint=hint,
+        enabled=True,
+        auto_inject=True,
+        force_disabled=False,
+        health_status="unknown",
+    )
+    db.add(server)
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ConflictError("slug 已存在") from exc
+    await write_audit(
+        db,
+        actor_type="user",
+        actor_id=str(admin.id),
+        action="mcp.server.create",
+        resource_type="mcp_server",
+        resource_id=str(server.id),
+        detail={
+            "slug": payload.slug,
+            "transport": payload.transport,
+            "url": payload.url,
+            "scope": "system",
+        },
+    )
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise ConflictError("slug 已存在") from exc
+    await db.refresh(server)
+    await _check_and_sync(db, server, force=True)
+    await db.refresh(server)
+    return await _system_server_out(db, server)
+
+
+async def update_system_server(
+    db: AsyncSession,
+    admin: User,
+    server_id: uuid.UUID,
+    payload: AdminMcpServerUpdateRequest,
+) -> McpServerOut:
+    """管理台 PATCH 系统 MCP；只改白名单字段，提交后强制重新发现工具。"""
+    server = await _load_system_server(db, server_id)
+    stored_headers: dict[str, object] | None = None
+    hint = ""
+    if payload.url is not None:
+        if not payload.url:
+            raise ValidationFailedError("远程传输必须提供 url")
+        validate_mcp_url(payload.url)
+    if payload.headers is not None:
+        stored_headers, hint = normalize_headers(
+            payload.headers, allow_platform_secret=True
+        )
+    fields: list[str] = []
+    if payload.url is not None:
+        server.url = payload.url
+        fields.append("url")
+    if payload.name is not None:
+        server.name = payload.name.strip()
+        fields.append("name")
+    if payload.description is not None:
+        server.description = payload.description.strip()
+        fields.append("description")
+    if stored_headers is not None:
+        server.headers = stored_headers
+        server.credentials_hint = hint
+        fields.append("headers")
+    if payload.auto_inject is not None:
+        server.auto_inject = payload.auto_inject
+        fields.append("auto_inject")
+    if payload.enabled is not None:
+        server.enabled = payload.enabled
+        fields.append("enabled")
+    if payload.force_disabled is not None:
+        server.force_disabled = payload.force_disabled
+        fields.append("force_disabled")
+    await write_audit(
+        db,
+        actor_type="user",
+        actor_id=str(admin.id),
+        action="mcp.server.update",
+        resource_type="mcp_server",
+        resource_id=str(server.id),
+        detail={"fields": fields, "scope": "system"},
+    )
+    await db.commit()
+    await db.refresh(server)
+    await _check_and_sync(db, server, force=True)
+    await db.refresh(server)
+    return await _system_server_out(db, server)
+
+
+async def delete_system_server(
+    db: AsyncSession, admin: User, server_id: uuid.UUID
+) -> None:
+    """删除系统 MCP：先清理孤儿用户覆盖，工具行由外键 CASCADE 删除。"""
+    server = await _load_system_server(db, server_id)
+    slug = server.slug
+    await db.execute(
+        delete(UserCapabilityOverride).where(
+            UserCapabilityOverride.capability == "mcp_server",
+            UserCapabilityOverride.target_id == server.id,
+        )
+    )
+    await db.delete(server)
+    await write_audit(
+        db,
+        actor_type="user",
+        actor_id=str(admin.id),
+        action="mcp.server.delete",
+        resource_type="mcp_server",
+        resource_id=str(server_id),
+        detail={"slug": slug, "scope": "system"},
     )
     await db.commit()
 

@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AgentHealthStatus = Literal["unknown", "healthy", "degraded", "unhealthy"]
 AgentAuthType = Literal["none", "api_key", "oauth2"]
@@ -76,6 +76,39 @@ class AgentUpdateRequest(BaseModel):
     enabled: bool | None = None
     auth: AgentAuthInput | None = None
     headers: dict[str, str] | None = None
+
+
+class AdminAgentUpdateRequest(BaseModel):
+    """管理台更新全局 Agent：白名单字段，未知/只读字段显式 422。
+
+    可编辑：``name``（改后置 ``name_edited=True``，refresh 不再覆盖）、``enabled``、
+    ``requires_approval``、``auth``、``headers``。``slug``/``url``/``description``/
+    ``protocol_version``/``card``/``skills``/``capabilities``/``health_status``/
+    ``owner_user_id`` 只读（``description`` 由 Card 派生且 refresh 会覆盖，R7）。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    enabled: bool | None = None
+    requires_approval: bool | None = None
+    auth: AgentAuthInput | None = None
+    headers: dict[str, str] | None = None
+
+    @model_validator(mode="after")
+    def _require_at_least_one_field(self) -> AdminAgentUpdateRequest:
+        if all(
+            value is None
+            for value in (
+                self.name,
+                self.enabled,
+                self.requires_approval,
+                self.auth,
+                self.headers,
+            )
+        ):
+            raise ValueError("至少需要修改一个字段")
+        return self
 
 
 class AgentRecentTask(BaseModel):
