@@ -301,7 +301,11 @@ async def test_overview_uses_bounded_queries(
         event.remove(sync_engine, "before_cursor_execute", _capture)
 
     assert response.status_code == 200, response.text
-    selects = [statement for statement in statements if statement.lstrip().upper().startswith("SELECT")]
+    selects = [
+        statement
+        for statement in statements
+        if statement.lstrip().upper().startswith("SELECT")
+    ]
     assert len(selects) <= 10, selects
 
 

@@ -1,11 +1,11 @@
 # M8 前端交接：管理台（用户 / 概览 / 系统项）接入（2026-11-11）
 
-> 后端范围：M8「管理台后端」（Task 1–6 已交付，Task 7 契约文档）。契约真相以
+> 后端范围：M8「管理台后端」（Task 1–8 已完成）。契约真相以
 > [`docs/api.md`](../api.md) §1 / §2.12 / §7.6 / §12 与 [`docs/openapi.json`](../openapi.json) 为准；
 > 本文件是前端接入清单，不替代 OpenAPI。
 >
 > M8 **无数据库迁移、无新增配置项/环境变量**；登录、令牌刷新与错误信封结构不变。
-> 后端状态：**实施完成，待独立审查；前端尚未接入**。后端不交付任何前端页面。
+> 后端状态：**已完成（2026-11-11，独立审查通过）；前端尚未接入**。后端不交付任何前端页面。
 >
 > 新增 15 个 `/admin/*` 端点：全部要求 `users.role='admin'`，普通用户 403
 > `forbidden` + `details.required_role="admin"`（未登录 401 `unauthorized`）。
@@ -236,6 +236,7 @@ PUT /api/v1/admin/settings/instruction
 ```
 
 - `content` 是**必填字段**，但值可为 `null`；`null` 或纯空白字符串等价于「恢复内置默认」。
+- 无覆盖行时恢复默认是 **no-op**：返回内置默认，不写审计、不改库。
 - 响应与 GET 同形：保存后 `is_default=false`、`updated_by(_email)`/`updated_at` 非空；
   恢复后 `is_default=true`、元信息回到 `null`。
 - 超过 `max_chars` → 422 `instruction_too_long`，文案「指令超过 N 字符上限」。
@@ -252,8 +253,8 @@ PUT /api/v1/admin/settings/instruction
 GET /api/v1/admin/skills?q=周报
 ```
 
-- 只返回 `scope='system'` 的技能，按 `name ASC`；`q`（≤100）大小写不敏感匹配名称/描述；
-  系统技能数量有上界，**不分页**。
+- 只返回 `scope='system'` 的技能，按 `name ASC, id ASC`（同名稳定排序）；`q`（≤100）
+  大小写不敏感匹配名称/描述；系统技能数量有上界，**不分页**。
 - 响应：`{"items": [SkillOut...], "stats": {"total": 2, "enabled": 1, "force_disabled": 0}}`。
   `stats` 基于当前筛选结果（`total == len(items)`）。
 - 列表项关键字段：`id/slug/name/description/version/source/enabled/force_disabled/
@@ -269,6 +270,7 @@ GET /api/v1/admin/skills?q=周报
   **不合并用户个人覆盖**；用户端 `/skills` 的 `effective_enabled` 可能因个人覆盖而不同，
   不要用管理端值推断某个用户的实际生效状态。
 - 恢复 `force_disabled=false` 后，用户个人覆盖仍按原值生效（后端测试已固定该行为）。
+- **同值启停是 no-op**：不写审计、不提交，直接返回当前视图；前端无需额外处理。
 - 私有技能/不存在 → 404 `not_found`（「系统技能不存在」，不泄露存在性）。
 - 审计：`skill.enable`（`detail.enabled/scope="system"`）、`skill.force_disable`。
 - `SKILLS_ENABLED=false` 时列表与两个写接口仍可用（R1）。
@@ -303,14 +305,13 @@ Content-Type: application/json
   "description": "公司内网检索 MCP",
   "transport": "streamable_http",
   "url": "https://mcp.example.com/mcp",
-  "headers": {"Authorization": "secret:MCP_KEY"},
-  "auto_inject": true
+  "headers": {"Authorization": "secret:MCP_KEY"}
 }
 ```
 
 | 字段 | 必填 | 说明 |
 |---|---|---|
-| `name` | 是 | 1–128；纯空白由前端先 trim |
+| `name` | 是 | 1–128；后端 strip 后纯空白 → 422，前端仍应先 trim |
 | `slug` | 是 | 2–64，`^[a-z0-9][a-z0-9-]{1,63}$`；**创建后不可改** |
 | `description` | 否 | ≤2000 |
 | `transport` | 否 | `streamable_http`（默认）/`sse`/`stdio`；**创建后不可改** |
@@ -318,6 +319,7 @@ Content-Type: application/json
 | `headers` | 否 | 敏感头用 `secret:NAME` 或 `env:NAME` 引用，**不要发明文** |
 | `command`/`args` | stdio | `command` 必填且受 `MCP_STDIO_COMMAND_ALLOWLIST` 限制；`args` ≤32 |
 
+- 创建请求**不接收 `auto_inject`**（后端固定创建为 `true`，需要关闭时创建后用 PATCH 修改）。
 - **`secret:NAME` 要求先在 `/admin/secrets` 创建同名平台密钥**；没有密钥时改用
   `env:ENV_NAME`（运行时读环境变量）。
 - 成功 201；响应 `scope="system"`、`enabled=true`、`auto_inject=true`、
@@ -340,8 +342,12 @@ Content-Type: application/json
 - 可编辑：`name`/`description`/`url`/`headers`/`auto_inject`/`enabled`/`force_disabled`；
   至少一项；`slug`/`transport`/`command`/`args` 只读，提交 → 422 `validation_error`。
 - 空对象 `{}` → 422；`name` 纯空白 → 422。
-- **PATCH 没有同值 no-op 判定**：只要提交就写 `mcp.server.update` 审计并触发一次强制工具发现
-  （即使字段值未变）。表单「保存」按钮建议只在有改动时可用，避免无意义刷新健康状态。
+- **同值 PATCH 是 no-op**：逐字段比较后直接返回当前视图，**不写 `mcp.server.update` 审计、
+  不触发工具发现**；只有至少一个字段真实变化才审计并强制发现一次。表单「保存」按钮仍建议
+  只在有改动时可用。
+- **注意明文敏感头重放**：若 `headers` 提交的是明文（而非 `secret:`/`env:` 引用），后端每次会
+  用新的随机 nonce 重新加密，落库形态随每次请求变化，因此**同一条明文 headers 再次提交会被
+  视为真实变更**（写审计并触发发现）。保存后请回填 `secret:`/`env:` 引用形态，避免无意义重放。
 - `enabled=false` 或 `force_disabled=true` 都会让 `effective_enabled=false`；
   `force_disabled` 压过用户个人覆盖。
 - 更新后同样可能 `unhealthy`（响应 200 但连接失败）；用 `last_error` 提示。
@@ -377,6 +383,8 @@ GET /api/v1/admin/agents?health_status=healthy&enabled=true&q=code&limit=20&curs
   `limit`（1–100）、`cursor`（≤500）。
 - 响应 `AgentPage`：`items` 为 `AgentOut`（字段见 [`api.md` §2.4](../api.md#24-远程智能体m2-已实现)），
   `stats={total, healthy, degraded, unhealthy, disabled, enabled}`。
+- **stats 口径**：管理端翻页时 `stats` 是当前筛选条件下的**全量计数**（忽略 cursor，不会因
+  翻页变小）；用户侧 `GET /agents` 的 `stats` 仍随页内游标过滤，两者不同，不要混用。
 - **全局注册表（R8）**：返回**所有未软删 Agent**，后端**不按 `owner_user_id` 过滤**。
   `owner_user_id` 只是保留字段、不参与可见性；管理员通过 `POST /agents` 创建的 Agent
   （owner 是管理员）同样会出现在列表。这与立项 spec §4.2 的 `owner_user_id IS NULL` 字面
@@ -403,8 +411,8 @@ Content-Type: application/json
   不回 `headers`/明文/密文。
 - 只有真实变化才写 `agent.updated`（`detail.source="admin"`）；同值 PATCH 200 但不写审计。
 - 不存在或已软删 → 404 `not_found`。
-- 已知边界（后端延后处理）：清空 `headers`/`auth` 时旧 `auth_hint` 文本可能残留；
-  UI 不要把它当作当前凭据的强校验依据。
+- 清空 `auth`（`type=none|oauth2`）或提交 `headers={}` 时，`auth_hint` 会同步清空，
+  不会再残留旧凭据提示（最终审查修复）。
 
 ---
 
@@ -428,6 +436,9 @@ Content-Type: application/json
 
 - 机器可读契约：[`docs/openapi.json`](../openapi.json)；人读契约：
   [`docs/api.md` §12](../api.md#12-m8-实现状态2026-11-11)。
+- OpenAPI 已为 M8 的 15 个管理端操作统一覆盖 403 描述（`forbidden` +
+  `details.required_role="admin"`），并在公共 409/422/503 与 `ErrorBodyOut.code` 描述中补充
+  管理台错误码；可用它生成前端类型与错误码枚举。
 - 判断逻辑请用 `error.code`（字符串契约），不要解析 `message` 文案。
 - 共享凭据校验的 503 **code 变化**：M8 审查修复把「敏感头明文且无 `CAPABILITY_SECRET_KEY`」
   的错误码从 `service_unavailable` 统一为 `secret_store_unavailable`（HTTP 状态仍 503，
@@ -437,7 +448,8 @@ Content-Type: application/json
 
 ## 10. 兼容性、迁移与配置
 
-- **无数据库迁移**：迁移 head 仍为 `2d8f6a1c3e70`，未新增表/列/索引；
+- **无数据库迁移**：迁移 head 仍为 `2d8f6a1c3e70`，未新增表/列/索引；已用临时空库
+  `agent_hub_m8_mig` 从 0 执行 `alembic upgrade head` 并 `alembic check` 验证通过（库已删除）；
 - **无新增配置项/环境变量**：`.env.example` 与 `Settings` 零变更；系统 MCP/Agent 的
   `secret:` 引用依赖既有 `CAPABILITY_SECRET_KEY` 与 `/admin/secrets`；
 - **无新增第三方依赖**；

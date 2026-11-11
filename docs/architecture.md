@@ -398,7 +398,7 @@ flowchart TB
 
 ## 14. 管理面（M8）
 
-> 管理台后端（原 X2）于 2026-11-11 实施完成（待独立审查），契约见
+> 管理台后端（原 X2）于 2026-11-11 完成（独立审查通过），契约见
 > [`api.md` §12](api.md#12-m8-实现状态2026-11-11)，前端接入见
 > [M8 前端交接](feedback/2026-11-11-m8-frontend-handoff.md)。**无数据库迁移**。
 
@@ -426,9 +426,12 @@ flowchart TB
 - **无迁移**：复用既有 `users`（`role`/`status`）、`system_settings`/`user_settings`、
   `skills.scope/enabled/force_disabled`、`mcp_servers.scope/enabled/force_disabled`、
   `remote_agents`（`owner_user_id` 仅保留）、`user_capability_overrides`；
-- **最后管理员保护**：降级/停用活跃管理员前 `SELECT ... WHERE role='admin' AND status='active'
-  ORDER BY id FOR UPDATE`（固定加锁顺序防死锁），锁后 `refresh` 再计数，剩 0 → 409
-  `last_admin_protected`；管理员不能改自己角色、不能停用自己（422）；
+- **最后管理员保护**：所有用户 PATCH 都先 `SELECT ... WHERE role='admin' AND status='active'
+  ORDER BY id FOR UPDATE` 锁全部活跃管理员行（固定加锁顺序防死锁），再锁目标行并 refresh，
+  锁后重算 changed/remaining，剩 0 → 409 `last_admin_protected`；管理员不能改自己角色、
+  不能停用自己（422）；并发「提升+停用」与「互降」有回归测试；
+- **no-op 语义**：用户/指令/技能/MCP/Agent 的同值 PATCH 返回 200 当前视图，不写审计、
+  不触发工具发现等副作用（MCP 明文敏感头重放因随机 nonce 除外，见 api.md §12.6）；
 - **概览**：每张表一条聚合 SQL（共 8 条），只取 count/sum，不加载 ORM 行、不做 N+1；
   精确计数 O(表大小)，管理端低频只读，前端建议 ≥30s 刷新；
 - **密钥不外泄**：系统 MCP / 全局 Agent 的输出 DTO 不含 `headers`/密文，只回
@@ -441,10 +444,10 @@ flowchart TB
 
 | action | 触发 |
 |---|---|
-| `admin.user.update` | 用户角色/状态真实变更 |
-| `instruction.update`（`detail.scope="platform"`） | 平台默认指令保存/恢复 |
-| `skill.enable` / `skill.force_disable` | 系统技能全局启停/强制停用 |
-| `mcp.server.create` / `update` / `delete` / `check` | 系统 MCP 增删改与工具发现 |
+| `admin.user.update` | 用户角色/状态真实变更（同值 no-op） |
+| `instruction.update`（`detail.scope="platform"`） | 平台默认指令真实保存/恢复（无覆盖行恢复 no-op） |
+| `skill.enable` / `skill.force_disable` | 系统技能全局启停/强制停用真实变更（同值 no-op） |
+| `mcp.server.create` / `update` / `delete` / `check` | 系统 MCP 增删改与工具发现（update 同值 no-op） |
 | `agent.updated`（`detail.source="admin"`） | 全局 Agent 真实变更 |
 | `security.rbac_denied` | 非管理员访问管理端/写接口（M7） |
 

@@ -17,8 +17,8 @@
 | M4 知识库 RAG | 后端已完成（2026-11-10）；前端已联调 | 模型/pgvector 迁移/解析/切分/双通道 Embedding/7 个 API/`search_knowledge`/引用落库/`build_kb.py`/离线评测；323 测试通过、修复时钟抖动后全量 10 连跑 0 失败；语义召回率因无真实 Embedding key **未取得证据**；前端知识库页与引用展示已联调（2026-11-10） |
 | M5 审批与安全加固 | 后端已完成（2026-11-10） | HITL 迁移到 `interrupt()`/`Command(resume=...)`；超时取消、聊天限流、注入检测/输出打码、平台密钥、审计检索；395 测试通过；跨实例启动保活已并入 M6；前端 M5 已联调（2026-11-11） |
 | M6 生产化与可观测 | 后端已完成（2026-11-11） | 日志/OTel/指标/readyz/Dockerfile+Compose/清理/启动恢复/流式过滤/压测/CI；582 测试通过；Grafana 与真实 LB 滚动未实测 |
-| M7 契约补齐与安全收口 | 已完成（2026-11-11；后端契约与全量回归完成，前端待接入） | 事件回放 `event` + SSE 续流端点、agents/tasks 写操作 RBAC、审批事件字段、A2A 授权 URL 白名单、契约/OpenAPI/前端 handoff；无迁移；733 passed / 1 skipped、ruff 全绿、`alembic check` 无漂移、OpenAPI 无 diff |
-| M8 管理台后端（原 X2） | 实施完成，待独立审查（2026-11-11；前端未接入） | 15 个 `/admin/*` 端点：用户/角色、只读概览、平台指令、系统技能、系统 MCP、全局 Agent；管理端配置面绕过能力开关（R1）、全局 Agent 全局注册表口径（R8）；无迁移；810 passed / 1 skipped、ruff 全绿、`alembic check` 无漂移、OpenAPI 无 diff |
+| M7 契约补齐与安全收口 | 已完成（2026-11-11；后端契约与全量回归完成，前端待接入） | 事件回放 `event` + SSE 续流端点、agents/tasks 写操作 RBAC、审批事件字段、A2A 授权 URL 白名单、契约/OpenAPI/前端 handoff；无迁移；760 passed / 1 skipped（最终修复后）、ruff 全绿、`alembic check` 无漂移、OpenAPI 无 diff |
+| M8 管理台后端（原 X2） | 已完成（2026-11-11；独立审查通过，前端待接入） | 15 个 `/admin/*` 端点：用户/角色、只读概览、平台指令、系统技能、系统 MCP、全局 Agent；管理端配置面绕过能力开关（R1）、全局 Agent 全局注册表口径（R8）；无迁移；825 passed / 1 skipped、ruff 全绿、空库 `alembic upgrade head`/`check` 通过、OpenAPI 无 diff |
 | M9 工作流后端（原 X1） | 已立项（2026-11-11），未开始 | 轻量步骤模板 MVP（检索/工具/A2A/审批/回答）；先 spike，不引入外部引擎 |
 
 > 注：M1.5 是追加的中间里程碑，排在 M1 之后、M2 之前，不改动原 M2–M6 的编号含义。
@@ -255,13 +255,13 @@
 - [x] `authorization_url` 恶意协议/内网地址被拒并留审计，历史脏数据展示被过滤
       （`tests/test_auth_url_unit.py`、`tests/integration/test_tasks.py`）
 - [x] `openapi.json` 与代码一致；全量测试 ≥ 582 passed；ruff 全绿；无迁移
-      （Task 7 回归：733 passed, 1 skipped；ruff 全绿；`alembic check` 无漂移，head `2d8f6a1c3e70`；
+      （Task 7 回归：760 passed, 1 skipped（最终修复后）、ruff 全绿；`alembic check` 无漂移，head `2d8f6a1c3e70`；
       OpenAPI `git diff --exit-code` 干净）
 - [x] Task 7 全量回归完成（2026-11-11，证据见 [M7 后端交付报告](feedback/2026-11-11-m7-backend-report.md)）
 - [ ] Task 7 独立审查：由独立 reviewer 并行执行，发现项由后续修复轮处理
       （本里程碑状态收口不等待该结论；审查完成后另行勾选）
 
-## M8 管理台后端（原 X2，实施完成 2026-11-11，待独立审查）
+## M8 管理台后端（原 X2，已完成 2026-11-11）
 
 **目标**：给前端管理控制台提供真实契约，替代运维脚本/DB 配置。
 
@@ -269,31 +269,35 @@
 > 实施计划见 [M8 实施计划](superpowers/plans/2026-11-11-m8-admin-console.md)，
 > 前端接入见 [M8 前端交接](feedback/2026-11-11-m8-frontend-handoff.md)，
 > 回归证据与已知缺口见 [M8 后端交付报告](feedback/2026-11-11-m8-backend-report.md)。
-> 状态口径：Task 1–7 已交付，全量回归与交付报告完成（2026-11-11）；**独立审查进行中**，
-> 审查结论由控制器确认后再翻为「已完成」；M8 前端页面与联调尚未开始。
+> 状态口径：Task 1–8 已交付，全量回归 **825 passed / 1 skipped**（最终审查修复后），
+> **独立审查已通过（2026-11-11）**；M8 前端页面与联调尚未开始，前端契约已交付。
 
 范围：
 
 - [x] 用户列表/详情/角色与状态调整（不能改自己、不能停用自己、不能禁用最后一个活跃管理员）
 - [x] 平台指令、系统技能、系统 MCP、全局 Agent 的查询与管理（复用 `scope`/`force_disabled`/`system_settings`）
-- [x] `GET /admin/overview` 只读统计（8 条聚合 SQL，不加载 ORM 行）
+- [x] `GET /admin/overview` 只读统计（8 条聚合 SQL，不加载 ORM 行；不写审计）
 - [x] 管理端审计与 403 契约（`forbidden` + `details.required_role="admin"`，拒绝写审计）
-- [x] 管理端配置面绕过能力总开关（R1）；全局 Agent 采用「全部未软删」注册表口径（R8，与 spec 字面偏差已裁定）
+- [x] 管理端配置面绕过能力总开关（R1）；全局 Agent 采用「全部未软删」注册表口径（R8，与 spec 字面偏差已裁定，待产品确认）
+- [x] 管理端 no-op 语义统一（同值用户/指令/技能/MCP PATCH 不写审计；MCP 不触发发现）
+- [x] 最终审查修复：最后管理员并发锁 + 2 条真实并发回归、Agent `auth_hint` 清空、
+      MCP 创建空白 name 拒绝、OpenAPI 管理端 403/错误码描述补全（新增 15 条测试）
 - [x] 契约文档、OpenAPI、前端 handoff 同步（`docs/api.md` §12、`docs/openapi.json`）
 - [x] **无迁移**：未新增表/列/索引；迁移 head 仍 `2d8f6a1c3e70`
 
 验收：
 
 - [x] 管理员可查用户、改角色/状态；「不能改自己」「不能禁用自己的账号」「不能移除最后一个
-      活跃管理员」有 HTTP 与服务层测试（`test_admin_users.py`）
+      活跃管理员」有 HTTP/服务层/并发测试（`test_admin_users.py`，含互降与提升+停用两条并发回归）
 - [x] 平台指令、系统技能、系统 MCP、全局 Agent 可读可改；`force_disabled` 压过用户覆盖
-      （技能与 MCP 各有测试）；敏感头/密钥引用不在响应与审计回显
+      （技能与 MCP 各有测试）；敏感头/密钥引用不在响应与审计回显；同值 no-op 不写审计
 - [x] 普通用户访问任何新增 `/admin/*` 返回 403 `forbidden` + `details.required_role="admin"`；
-      未登录 401；关键写操作全部写审计（`test_admin_*` 六个文件共 50 条用例）
+      未登录 401；关键写操作全部写审计（`test_admin_*` 六个文件共 65 条用例）
 - [x] OpenAPI / `docs/api.md` / 前端 handoff / README / roadmap 同步；无迁移
-      （810 passed, 1 skipped；ruff 全绿；`alembic check` 无漂移；OpenAPI `git diff --exit-code` 干净）
+      （825 passed, 1 skipped；ruff 全绿；空库 `alembic upgrade head` + `alembic check` 通过；
+      OpenAPI `git diff --exit-code` 干净）
+- [x] 独立审查通过（2026-11-11；最终修复轮 `504cd39`，复审剩余 Minor 行宽已修）
 - [ ] 前端管理台页面接入与联调（前端 M8 范围；后端契约与 handoff 已交付）
-- [ ] 独立审查收口（审查进行中，结论由控制器确认）
 
 ## M9 工作流后端（原 X1，已立项 2026-11-11；未开始）
 
