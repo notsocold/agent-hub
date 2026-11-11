@@ -24,6 +24,9 @@ class RunContext:
     # 本轮已产出的引用（CitationOut 形状的 dict）；与 ToolRunner.citations 是同一对象，
     # 由工具追加、由终态统一去重编号后随 message.done 发出并落库。
     citations: list[dict] = field(default_factory=list)
+    # 启动/周期恢复调度的 resume 任务：checkpoint 无挂起时走 restart_lost 终态，
+    # 而不是像在线恢复那样回滚（M6）。
+    recovery: bool = False
     # 审批等待已迁移到 LangGraph interrupt()（M5）：进程内不再保存审批 waiter。
     # A2A HITL：input_required/auth_required 期间挂起；tasks 动作接口写入决定并唤醒。
     # decision 形如 {"action": "resume"|"authorize"|"reject"|"cancel"|"expired", ...}。

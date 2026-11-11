@@ -23,6 +23,7 @@ from app.core.telemetry import configure_tracing, shutdown_tracing
 from app.db.session import dispose_engine, get_session_factory
 from app.modules.approvals.service import expire_pending
 from app.modules.chat.registry import registry
+from app.modules.maintenance.recovery import recover, recovery_sweeper
 from app.modules.skills.service import sync_builtin_skills
 from app.modules.system.health import router as health_router
 from app.modules.system.metrics_router import metrics_endpoint
@@ -63,6 +64,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 logger.info("系统技能同步：%s 项变更", changed)
     except Exception:
         logger.exception("系统技能同步失败（不阻塞启动）")
+    if settings.startup_recovery_enabled:
+        try:
+            await recover(startup=True)
+        except Exception:
+            logger.exception("启动恢复失败（不阻塞启动）")
+    recovery_task: asyncio.Task[None] | None = None
+    if settings.startup_recovery_enabled and settings.recovery_interval_seconds > 0:
+        recovery_task = asyncio.create_task(
+            recovery_sweeper(settings.recovery_interval_seconds), name="recovery-sweeper"
+        )
     sweeper = asyncio.create_task(_approval_sweeper(), name="approval-sweeper")
     logger.info("agent-hub 启动完成 env=%s", settings.env)
     try:
@@ -70,7 +81,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         app.state.draining = True
         sweeper.cancel()
-        await asyncio.gather(sweeper, return_exceptions=True)
+        if recovery_task is not None:
+            recovery_task.cancel()
+        await asyncio.gather(
+            sweeper,
+            *([recovery_task] if recovery_task is not None else []),
+            return_exceptions=True,
+        )
         drained = await registry.drain(settings.shutdown_grace_seconds)
         if not drained:
             logger.warning(

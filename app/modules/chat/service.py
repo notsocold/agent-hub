@@ -956,7 +956,7 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
         )
 
 
-async def schedule_resume(run_id: uuid.UUID) -> bool:
+async def schedule_resume(run_id: uuid.UUID, *, recovery: bool = False) -> bool:
     """调度审批恢复任务；返回是否成功调度（不等待图执行）。
 
     决定可能先于图挂起到达：等待旧 execute_run 任务收尾后再检查 checkpoint，
@@ -969,7 +969,7 @@ async def schedule_resume(run_id: uuid.UUID) -> bool:
         else None
     )
     publisher = RunEventPublisher(run_id, get_session_factory(), bus)
-    context = RunContext(run_id=run_id, publisher=publisher)
+    context = RunContext(run_id=run_id, publisher=publisher, recovery=recovery)
     registry.start(context, _resume_after_wait(context, wait_task))
     return True
 
@@ -1008,6 +1008,28 @@ async def resume_after_decision(context: RunContext) -> None:
             config = {"configurable": {"thread_id": str(runtime.conversation_id)}}
             snapshot = await graph.aget_state(config)
             if not snapshot.next:
+                if context.recovery:
+                    # 启动/周期恢复：没有挂起说明重启丢了 checkpoint 状态，
+                    # 不能再把 run 丢回 interrupted 永久占锁。
+                    logger.warning("恢复时 checkpoint 无挂起，按 restart_lost 取消 run_id=%s", run_id)
+                    async with get_session_factory()() as db:
+                        await db.execute(
+                            update(Run)
+                            .where(Run.id == run_id, Run.status == "running")
+                            .values(status="interrupted")
+                        )
+                        await db.commit()
+                    # 不能走 cancel_interrupted_run：它会等待当前 resume 任务结束，
+                    # 在任务内部调用会自锁。这里直接写终态。
+                    await _finalize_canceled(
+                        context=context,
+                        content="".join(runtime.content_parts),
+                        usage=_usage_dict(runtime.usage),
+                        first_token_ms=runtime.first_token_ms,
+                        started_at=runtime.started_at,
+                        reason="restart_lost",
+                    )
+                    return
                 # 决定先于挂起：gate 已按 DB 状态继续，回滚抢占即可。
                 logger.warning("恢复时 checkpoint 无挂起，回滚 running→interrupted run_id=%s", run_id)
                 async with get_session_factory()() as db:
@@ -1274,6 +1296,9 @@ async def _finalize_failed(
     usage: dict[str, int],
     first_token_ms: int | None,
     started_at: datetime,
+    code: str = "llm_error",
+    message: str | None = None,
+    retryable: bool = True,
 ) -> None:
     if context.terminal_emitted:
         return
@@ -1286,7 +1311,7 @@ async def _finalize_failed(
     publisher = context.publisher
     now = _now()
     duration_ms = elapsed_ms(started_at, now)
-    message = "模型调用失败，请稍后重试"
+    error_message = message or "模型调用失败，请稍后重试"
     async with get_session_factory()() as db:
         run = await db.get(Run, run_id)
         if run is None:
@@ -1299,10 +1324,10 @@ async def _finalize_failed(
             assistant.status = "failed"
             assistant.usage = usage
             assistant.citations = context.citations
-            assistant.error = {"code": "llm_error", "message": message, "retryable": True}
+            assistant.error = {"code": code, "message": error_message, "retryable": retryable}
         run.status = "failed"
-        run.error_code = "llm_error"
-        run.error_message = message
+        run.error_code = code
+        run.error_message = error_message
         run.finished_at = now
         run.duration_ms = duration_ms
         run.active_duration_ms = duration_ms
@@ -1318,16 +1343,16 @@ async def _finalize_failed(
     await publisher.emit(
         "error",
         {
-            "code": "llm_error",
-            "message": message,
+            "code": code,
+            "message": error_message,
             "request_id": current_request_id(),
             "run_id": str(run_id),
-            "retryable": True,
+            "retryable": retryable,
         },
         event_type="error",
         status="error",
         title="运行失败",
-        error={"code": "llm_error", "message": message},
+        error={"code": code, "message": error_message},
     )
     record_chat_run(
         "failed",
@@ -1597,6 +1622,66 @@ async def cancel_interrupted_run(
         await halt_run(run_id)
     except Exception:
         logger.exception("清理挂起线程失败 run_id=%s", run_id)
+    return True
+
+
+async def fail_orphaned_run(
+    run_id: uuid.UUID,
+    *,
+    code: str = "run_interrupted",
+    message: str = "服务重启导致运行中断，请重试",
+) -> bool:
+    """单实例启动/巡检发现无人认领的 run：写失败终态，避免会话永久占锁。"""
+    async with get_session_factory()() as db:
+        run = await db.get(Run, run_id)
+        if run is None or run.status not in {"queued", "running"}:
+            return False
+        assistant = (
+            await db.get(Message, run.assistant_message_id) if run.assistant_message_id else None
+        )
+        content = assistant.content if assistant is not None else ""
+        usage = _usage_dict(
+            {
+                "input_tokens": run.input_tokens,
+                "output_tokens": run.output_tokens,
+                "reasoning_tokens": run.reasoning_tokens,
+            }
+        )
+        started_at = run.started_at or run.created_at
+        first_token_ms = run.first_token_ms
+    if await _has_terminal_event(run_id):
+        return False
+
+    publisher = RunEventPublisher(
+        run_id, get_session_factory(), bus, start_seq=await _event_start_seq(run_id)
+    )
+    context = RunContext(run_id=run_id, publisher=publisher)
+    await _finalize_failed(
+        context=context,
+        content=content,
+        usage=usage,
+        first_token_ms=first_token_ms,
+        started_at=started_at,
+        code=code,
+        message=message,
+        retryable=True,
+    )
+    async with get_session_factory()() as db:
+        await db.execute(
+            update(Approval)
+            .where(Approval.run_id == run_id, Approval.status.in_(("pending", "approved")))
+            .values(status="canceled")
+        )
+        await write_audit(
+            db,
+            actor_type="system",
+            actor_id="recovery",
+            action="run.recovered_failed",
+            resource_type="run",
+            resource_id=str(run_id),
+            detail={"reason": code},
+        )
+        await db.commit()
     return True
 
 
