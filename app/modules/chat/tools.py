@@ -59,8 +59,11 @@ def _now() -> datetime:
 
 
 def _compact(value: Any, limit: int = 500) -> str:
+    """把任意值压成不超过 ``limit`` 字符的字符串（截断时以省略号结尾）。"""
     raw = json.dumps(value, ensure_ascii=False, default=str)
-    return raw[:limit] + ("…" if len(raw) > limit else "")
+    if len(raw) <= limit:
+        return raw
+    return raw[: max(0, limit - 1)] + "…"
 
 
 class SaveMemoryArgs(BaseModel):
@@ -281,8 +284,17 @@ class ToolRunner:
 
     @staticmethod
     def _sanitize_args(args: dict[str, Any], limit: int = 4000) -> dict[str, Any]:
+        """参数脱敏：超长时优先保留合法 JSON；截断后不可解析则安全降级为占位。"""
         raw = _compact(args, limit)
-        return json.loads(raw) if raw.strip() else {}
+        if not raw.strip():
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            # JSONB 落库要求合法 JSON：不能把截断后的半截 JSON 直接抛出。
+            logger.warning("工具参数超过 %s 字符且截断后不是合法 JSON，已降级为占位", limit)
+            return {"_truncated": raw}
+        return parsed if isinstance(parsed, dict) else {"_truncated": raw}
 
     # ------------------------------------------------------------------ 原生工具
 

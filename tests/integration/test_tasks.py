@@ -438,6 +438,12 @@ async def test_auth_required_authorize_and_reject(
             "invalid_url",
             "<non-string>",
         ),
+        # 最终审查 Critical：WHATWG 混合十六进制 IPv4 写法同样拒绝并落 null。
+        (
+            "https://127.0x0.0.1/authorize",
+            "obfuscated_ip",
+            "https://127.0x0.0.1/authorize",
+        ),
     ],
 )
 async def test_auth_required_rejects_and_redacts_unsafe_authorization_url(

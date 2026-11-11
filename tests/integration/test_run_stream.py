@@ -57,11 +57,13 @@ async def _seed_run(
     *,
     status: str = "succeeded",
     events: list[str] | None = None,
+    payload_extras: list[dict] | None = None,
 ) -> tuple[uuid.UUID, list[int]]:
     """直接写库造 conversation + run + 已落库事件，避免真实执行图。
 
     ``events`` 按顺序占用 ``seq=1..N``，``payload._event`` 保存原始 SSE 事件名；
     未提供 ``_event`` 的事件在生成器里会被跳过，因此测试用的事件名都非空。
+    ``payload_extras`` 用于给对应 seq 的事件补额外 payload 字段（如 a2a 授权 URL）。
     """
     names = events or []
     async with get_session_factory()() as session:
@@ -80,7 +82,12 @@ async def _seed_run(
                 status="ok",
                 title="",
                 subtitle="",
-                payload={"run_id": str(run.id), "seq": seq, "_event": name},
+                payload={
+                    "run_id": str(run.id),
+                    "seq": seq,
+                    "_event": name,
+                    **(payload_extras[seq - 1] if payload_extras else {}),
+                },
                 ts=ts,
             )
             for seq, name in enumerate(names, start=1)
@@ -323,7 +330,9 @@ async def test_interrupted_stream_stays_open_then_follows_live_events(
     frames: list[dict] = []
 
     async def consume() -> None:
-        async for frame in chat_service.stream_run_events(run_id, after_seq=0):
+        async for frame in chat_service.stream_run_events(
+            run_id, after_seq=0, close_terminal_when_replayed=True
+        ):
             frames.extend(_parse_sse(frame))
 
     task = asyncio.create_task(consume())
@@ -362,3 +371,104 @@ async def test_interrupted_stream_stays_open_then_follows_live_events(
     assert [frame["event"] for frame in live] == [*names, "run.resumed", "message.done"]
     assert [frame["id"] for frame in live] == [seqs[0], seqs[1], seqs[-1] + 1, seqs[-1] + 2]
     assert live[-1]["data"]["seq"] == seqs[-1] + 2
+
+
+# ---------------------------------------------------------------- 历史脏 authorization_url
+
+
+_DIRTY_AUTH_URL = "javascript:alert(document.cookie)"
+_VALID_AUTH_URL = "https://idp.example.com/authorize?state=abc"
+
+
+async def _seed_run_with_auth_urls(user_id: str | uuid.UUID) -> uuid.UUID:
+    """造两条 a2a.auth_required（一脏一合法）+ 终态，模拟升级前的历史事件。"""
+    run_id, _ = await _seed_run(
+        user_id,
+        events=["a2a.auth_required", "a2a.auth_required", "message.done"],
+        payload_extras=[
+            {"authorization_url": _DIRTY_AUTH_URL, "scopes": ["repo:read"]},
+            {"authorization_url": _VALID_AUTH_URL, "scopes": ["repo:write"]},
+            {},
+        ],
+    )
+    return run_id
+
+
+async def test_run_events_api_filters_stale_authorization_url(
+    client: httpx.AsyncClient,
+) -> None:
+    """分页回放接口：历史 a2a.auth_required 的脏 authorization_url 置 null，合法值保留。"""
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    run_id = await _seed_run_with_auth_urls(registered["user"]["id"])
+
+    response = await client.get(f"/api/v1/runs/{run_id}/events", headers=headers)
+    assert response.status_code == 200
+    items = response.json()["items"]
+    a2a = [item for item in items if item["event"] == "a2a.auth_required"]
+    assert len(a2a) == 2
+    assert a2a[0]["payload"]["authorization_url"] is None
+    assert a2a[0]["payload"]["scopes"] == ["repo:read"]
+    assert a2a[1]["payload"]["authorization_url"] == _VALID_AUTH_URL
+    assert all(_DIRTY_AUTH_URL not in json.dumps(item["payload"]) for item in items)
+
+
+async def test_stream_replay_filters_stale_authorization_url(
+    client: httpx.AsyncClient,
+) -> None:
+    """SSE 续流回放：历史脏 authorization_url 置 null，合法值保留。"""
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    run_id = await _seed_run_with_auth_urls(registered["user"]["id"])
+
+    response = await client.get(_RUN_STREAM.format(run_id=run_id), headers=headers)
+    assert response.status_code == 200, response.text
+    frames = _parse_sse(response.text)
+    a2a = [frame for frame in frames if frame["event"] == "a2a.auth_required"]
+    assert len(a2a) == 2
+    assert a2a[0]["data"]["authorization_url"] is None
+    assert a2a[1]["data"]["authorization_url"] == _VALID_AUTH_URL
+    assert _DIRTY_AUTH_URL not in response.text
+
+
+async def test_stream_live_filters_authorization_url(user: User) -> None:
+    """实时帧防御性过滤：即使上游 payload 带脏 URL，也不会原样下发。"""
+    run_id, _ = await _seed_run(user.id, status="running", events=[])
+    frames: list[dict] = []
+
+    async def consume() -> None:
+        async for frame in chat_service.stream_run_events(run_id, after_seq=0):
+            frames.extend(_parse_sse(frame))
+
+    task = asyncio.create_task(consume())
+    try:
+        # 等生成器完成订阅，避免实时事件在订阅前发布而丢失。
+        async with asyncio.timeout(5):
+            while not bus._channels.get(run_id):
+                await asyncio.sleep(0.01)
+        publisher = RunEventPublisher(run_id, get_session_factory(), bus, start_seq=0)
+        await publisher.emit(
+            "a2a.auth_required",
+            {
+                "run_id": str(run_id),
+                "authorization_url": _DIRTY_AUTH_URL,
+                "scopes": ["repo:read"],
+            },
+            event_type="a2a",
+        )
+        await publisher.emit(
+            "message.done",
+            {"run_id": str(run_id), "finish_reason": "stop"},
+            event_type="message",
+        )
+        async with asyncio.timeout(5):
+            await task
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    live = [frame for frame in frames if frame["event"] != ": ping"]
+    assert [frame["event"] for frame in live] == ["a2a.auth_required", "message.done"]
+    assert live[0]["data"]["authorization_url"] is None
+    assert live[0]["data"]["scopes"] == ["repo:read"]

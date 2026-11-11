@@ -4,8 +4,9 @@
 > §1/§2.3/§2.4/§2.5/§3.3/§7.7/§7.8/§8.2/§9/§11 与 [`docs/openapi.json`](../openapi.json) 为准；
 > 本文件是前端接入清单，不替代 OpenAPI。
 >
-> M7 **无数据库迁移**，登录/令牌/既有事件语义不变。除两处破坏性变更（普通用户调用 agents/tasks
-> 写接口会 403、A2A `authorization_url` 可能为 `null`）外，未接入新端点、不传新字段的旧前端可继续运行。
+> M7 **无数据库迁移**，登录/令牌/既有事件语义不变。除一处破坏性变更（普通用户调用 agents/tasks
+> 写接口会 403）外，未接入新端点、不传新字段的旧前端可继续运行；A2A `authorization_url`
+> 返回 `null` 的**场景增加**（字段类型本来就是 `string | null`，前端按 §6 判空即可）。
 
 ## 1. 变更速览
 
@@ -15,7 +16,7 @@
 | `GET /api/v1/runs/{id}/events` 每项新增必填 `event` | 向后兼容（多字段） | 用 `event` 判断事件类型，不再解析 `payload._event`（该键不会返回） |
 | `approval.required.data` 新增 5 个字段 | 向后兼容（多字段） | 审批卡优先用新字段展示，缺失时回退到旧字段 |
 | agents 写接口、tasks 动作接口改为**仅管理员** | **有破坏性**（普通用户 403） | 按 `/auth/me` 的 `role` 隐藏/禁用写操作；处理 403 `details.required_role` |
-| A2A `auth_request.authorization_url` 可能为 `null` | **有破坏性**（类型变可空） | 为 `null` 显示「授权链接不可用」，不要渲染成 `<a href>` |
+| A2A `auth_request.authorization_url` 为 `null` 的场景增加（远程返回非法链接/历史脏数据被过滤） | 兼容（字段类型本来就是 `string \| null`） | 为 `null` 显示「授权链接不可用」，不要渲染成 `<a href>` |
 | 无登录、令牌、错误信封结构变化 | 兼容 | 无需改登录链路 |
 
 ---
@@ -373,10 +374,14 @@ while (true) {
 
 ## 6. A2A `authorization_url` 可能为 `null`
 
-`GET /api/v1/tasks/{id}` 的 `auth_request.authorization_url` 类型为 `string | null`。后端对远程
-Agent 返回的授权链接做白名单校验（仅 https 公网主机；dev/test 额外允许
-`http://localhost`、`http://127.0.0.1`），未通过时置为 `null`，但任务本身继续运行，
+`GET /api/v1/tasks/{id}` 的 `auth_request.authorization_url` 类型为 `string | null`（该字段
+**本来就是可空**；M7 增加的是返回 `null` 的场景）。后端对远程 Agent 返回的授权链接做白名单
+校验（仅 https 公网主机；dev/test 额外允许 `http://localhost`、`http://127.0.0.1`，以及
+`https://localhost`、`https://127.0.0.1`），未通过时置为 `null`，但任务本身继续运行，
 `auth_required` 状态与 `auth_request.scopes`/`expires_at` 仍然可用。
+
+同一过滤也作用于事件回放：`GET /runs/{id}/events` 与 `GET /runs/{id}/stream` 回放/实时帧里
+历史 `a2a.auth_required` 的 `authorization_url` 若按当前配置不合法，会返回 `null`（键保留）。
 
 前端要求：
 
@@ -394,8 +399,11 @@ Agent 返回的授权链接做白名单校验（仅 https 公网主机；dev/tes
 - **`/runs/{id}/events`**：新增 `event` 字段是向后兼容的；`payload` 中依旧没有 `_event`，
   已有解析逻辑无需改动，但建议逐步切到 `event`。
 - **`/runs/{id}/stream`** 是新增端点，不接入不影响现有断线恢复（仍可用事件分页 + `GET /runs/{id}`）。
-- **破坏性变更只有两处**：agents/tasks 写接口的 403（非管理员）与 `authorization_url` 可为 `null`；
-  其余均为增量。
+- **破坏性变更只有一处**：agents/tasks 写接口的 403（非管理员）；`authorization_url` 字段类型
+  仍为 `string | null`，只是返回 `null` 的场景增加（远程返回非法链接、历史脏数据、事件回放过滤），
+  前端按 §6 判空即可。
+- **`/runs/{id}/events` 与 `/runs/{id}/stream`**：历史 `a2a.auth_required` 事件的
+  `payload.authorization_url` 也会按当前配置过滤为 `null`（其余字段不变）。
 - **无数据库迁移**，无需前端/部署额外执行 `alembic upgrade`。
 - 错误信封不变：`{"error": {"code", "message", "request_id", "details"?}}`；续流端点在建流前的
   4xx 也返回同一信封（`Content-Type: application/json`），不要按 SSE 解析。

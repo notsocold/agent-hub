@@ -145,7 +145,7 @@ Authorization: Bearer <access_token>
 - 列表项：`id/a2a_task_id/agent{id,slug,name}/run_id/conversation{id,title}|null/state/progress/duration_ms/request_summary/error_summary/available_actions/created_at/updated_at`；
 - `stats`：`{total, submitted, working, input_required, auth_required, completed, failed, canceled, rejected}`；
 - 详情补：`tool_call_id/request{tool,args,summary}/result{artifact{type,summary,parts,data},summary}/error{code,message,retryable,at}/input_request{question,input_schema,expires_at}/auth_request{scopes,authorization_url,expires_at}/timeline[{state,at,duration_ms,note}]/started_at/finished_at`；`auth_request.authorization_url` 可能为 `null`（M7 白名单过滤，见 §9）；
-- `available_actions` 只含后端可执行动作（cancel/resume/authorize/reject），由 state 推导；
+- `available_actions` 只含后端可执行动作（cancel/resume/authorize/reject），由 state 推导；是否可执行还取决于当前用户角色（写动作仅管理员）；
 - 动作错误 409：`task_not_cancelable` / `task_not_resumable` / `task_not_authorizable` / `task_not_rejectable`；
 - 等待态 `expires_at` 到期懒过期置 canceled（timeline 追加「等待超时」，审计 `task.expired`）；`A2A_INPUT_TIMEOUT_SECONDS` 默认 30 分钟；
 - **动作接口仅管理员（M7）**：`POST /tasks/{id}/cancel`、`/resume`、`/authorize`、`/reject` 要求管理员；普通用户 403 `forbidden` + `details.required_role="admin"`，并写审计 `security.rbac_denied`；`GET /tasks*` 保持所有登录用户可用。

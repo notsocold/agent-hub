@@ -41,6 +41,7 @@ from app.core.rate_limit import limiter
 from app.core.stream_filter import StreamingOutputFilter
 from app.core.telemetry import get_tracer, start_span
 from app.core.timeutil import elapsed_ms
+from app.core.urls import validate_authorization_url
 from app.db.models.approval import Approval
 from app.db.models.chat import Run, RunEvent
 from app.db.models.conversation import Conversation, Message
@@ -1522,6 +1523,25 @@ async def get_run(db: AsyncSession, user: User, run_id: uuid.UUID) -> RunOut:
     )
 
 
+def _sanitize_replayed_event(event_name: str, data: dict[str, Any]) -> dict[str, Any]:
+    """展示层兜底：过滤历史/实时 a2a.auth_required 中的非法 authorization_url。
+
+    远程 metadata 与历史 ``run_events`` 均不可信；任务落库前已校验，这里覆盖
+    升级前已落库的旧事件以及实时帧（防御性）。只把非法值置 ``None``，不删除键、
+    不写审计（展示路径不应产生审计噪音）。
+    """
+    if event_name != "a2a.auth_required" or "authorization_url" not in data:
+        return data
+    settings = get_settings()
+    sanitized = dict(data)
+    sanitized["authorization_url"] = validate_authorization_url(
+        data.get("authorization_url"),
+        env=settings.env,
+        allowed_hosts=settings.a2a_auth_url_allowed_host_list,
+    )
+    return sanitized
+
+
 async def list_run_events(
     db: AsyncSession,
     user: User,
@@ -1558,6 +1578,7 @@ async def list_run_events(
     for row in rows:
         event_name = str((row.payload or {}).get("_event") or "")
         payload = {k: v for k, v in (row.payload or {}).items() if k != "_event"}
+        payload = _sanitize_replayed_event(event_name, payload)
         error_message = None
         if isinstance(row.error, dict):
             error_message = str(row.error.get("message") or "")
@@ -1897,6 +1918,7 @@ async def _stream_run_events_inner(
             if not event_name:
                 continue
             data = {k: v for k, v in (row.payload or {}).items() if k != "_event"}
+            data = _sanitize_replayed_event(event_name, data)
             last_seq = row.seq
             yield format_sse(row.seq, event_name, data)
             if event_name in TERMINAL_EVENTS:
@@ -1929,6 +1951,7 @@ async def _stream_run_events_inner(
                 continue
             last_seq = seq
             event_name = str(item.get("event") or "")
+            data = _sanitize_replayed_event(event_name, data)
             yield format_sse(seq, event_name, data)
             if event_name in TERMINAL_EVENTS:
                 return

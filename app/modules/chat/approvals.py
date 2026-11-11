@@ -57,8 +57,11 @@ def _now() -> datetime:
 
 
 def _compact(value: Any, limit: int = 500) -> str:
+    """把任意值压成不超过 ``limit`` 字符的字符串（截断时以省略号结尾）。"""
     raw = json.dumps(value, ensure_ascii=False, default=str)
-    return raw[:limit] + ("…" if len(raw) > limit else "")
+    if len(raw) <= limit:
+        return raw
+    return raw[: max(0, limit - 1)] + "…"
 
 
 def _side_effect(risk: str) -> str:

@@ -119,13 +119,19 @@ def test_validate_authorization_url_accepts_valid(
         ("https://0.0.0.0/authorize", "prod", []),
         ("https://224.0.0.1/authorize", "prod", []),
         ("https://240.0.0.1/authorize", "prod", []),
-        # localhost / .localhost / .local / .internal 域名（含尾点绕过尝试）。
+        # CGNAT / 非全球可达地址（Python 3.13 的 is_private/is_reserved 不含 100.64/10）。
+        ("https://100.64.0.1/authorize", "prod", []),
+        ("https://100.127.255.255/authorize", "prod", []),
+        ("https://[::ffff:100.64.0.1]/authorize", "prod", []),
+        # localhost / .localhost / .local / .internal / .localdomain 域名（含尾点绕过尝试）。
         ("https://api.localhost/authorize", "prod", []),
         ("https://localhost./authorize", "prod", []),
         ("https://svc.local/authorize", "prod", []),
         ("https://svc.local./authorize", "prod", []),
         ("https://keycloak.internal/authorize", "prod", []),
         ("https://keycloak.internal./authorize", "prod", []),
+        ("https://localhost.localdomain/authorize", "prod", []),
+        ("https://svc.localdomain/authorize", "prod", []),
         # 携带用户名/密码的 URL。
         ("https://user:pass@idp.example.com/a", "prod", []),
         ("https://user@idp.example.com/a", "prod", []),
@@ -141,6 +147,14 @@ def test_validate_authorization_url_accepts_valid(
         ("https://0x7f000001/", "prod", []),
         ("https://0177.0.0.1/", "prod", []),
         ("https://0xa9fea9fe/", "prod", []),
+        # 混合十六进制/十进制分段（WHATWG 浏览器按 IPv4 解析，如 127.0x0.0.1）。
+        ("https://127.0x0.0.1/", "prod", []),
+        ("https://127.0.0.0x1/", "prod", []),
+        ("https://127.0x0.0x1/", "prod", []),
+        ("https://10.0.0x0.1/", "prod", []),
+        ("https://192.168.0x1.1/", "prod", []),
+        ("https://169.254.0x0.1/", "prod", []),
+        ("https://0x7f.0x0.0x0.0x1/", "prod", []),
         ("https://127.0.0.1%2e/", "prod", []),
         ("https://%31%32%37.0.0.1/", "prod", []),
         # 反斜杠会被部分浏览器等价为路径分隔符。
@@ -179,6 +193,8 @@ def test_validate_authorization_url_rejects_invalid(
         ("https://localhost/a", "prod", [], "localhost_host"),
         ("https://svc.local/a", "prod", [], "local_suffix"),
         ("https://svc.internal/a", "prod", [], "internal_suffix"),
+        ("https://localhost.localdomain/", "prod", [], "localdomain_suffix"),
+        ("https://svc.localdomain/", "prod", [], "localdomain_suffix"),
         ("https://user:pass@idp.example.com/a", "prod", [], "credentials_in_url"),
         (_OVERLONG_2001_URL, "prod", [], "too_long"),
         (_OVERLONG_URL, "prod", [], "too_long"),
@@ -196,6 +212,13 @@ def test_validate_authorization_url_rejects_invalid(
         ("https://local/", "prod", [], "single_label_host"),
         ("https://127.0.0.1\\/@evil.com/", "prod", [], "backslash"),
         ("https://１２７。０。０。１/", "prod", [], "non_ascii_host"),
+        # 混合十六进制分段（浏览器等价 IPv4）。
+        ("https://127.0x0.0.1/", "prod", [], "obfuscated_ip"),
+        ("https://0x7f.0x0.0x0.0x1/", "prod", [], "obfuscated_ip"),
+        # CGNAT 100.64.0.0/10：Python 3.13 相关标志均为 False，但非全球可达。
+        ("https://100.64.0.1/a", "prod", [], "non_global_ip"),
+        ("https://100.127.255.255/a", "prod", [], "non_global_ip"),
+        ("https://[::ffff:100.64.0.1]/a", "prod", [], "non_global_ip"),
     ],
 )
 def test_rejection_reason(
@@ -259,6 +282,19 @@ def test_audit_prefix_strips_control_chars() -> None:
     assert "\x00" not in redacted
     assert "\u2028" not in redacted
     assert redacted == "https://example.com/abcde"
+
+
+def test_audit_prefix_drops_query_and_fragment() -> None:
+    """审计前缀不保留 query/fragment，避免 ?token= 等敏感参数落审计。"""
+    redacted = redact_url_for_audit(
+        "https://example.com/authorize?token=supersecret#access_token=secret"
+    )
+    assert redacted == "https://example.com/authorize"
+    assert "token" not in redacted
+    # 畸形 URL 同样要丢掉 query/fragment。
+    malformed = redact_url_for_audit("https://user:supersecret@[zz]/?token=abc")
+    assert malformed == "https://[zz]/"
+    assert "token" not in malformed
 
 
 def test_audit_prefix_truncates() -> None:

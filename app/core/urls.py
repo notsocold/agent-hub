@@ -39,6 +39,7 @@ _DEV_ENVS = frozenset({"dev", "test"})
 _LOCAL_SUFFIXES: tuple[tuple[str, str], ...] = (
     (".localhost", "localhost_host"),
     (".local", "local_suffix"),
+    (".localdomain", "localdomain_suffix"),
     (".internal", "internal_suffix"),
 )
 
@@ -47,6 +48,8 @@ _URL_USERINFO_RE = re.compile(r"//[^/?#]*@")
 _USERPASS_RE = re.compile(r"[^\s/?#:@]+:[^\s/?#@]*@")
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x1f\x7f-\x9f\u2028\u2029]")
 _NUMERIC_HOST_RE = re.compile(r"^[0-9.]+$")
+# WHATWG URL 解析允许 IPv4 段为十进制或 0x 十六进制，混用同样会被浏览器等价成 IP。
+_IPV4_SEGMENT_RE = re.compile(r"^(0[xX][0-9a-fA-F]+|[0-9]+)$")
 
 # 解码后仍出现这些字符的主机名不可信（含双重编码残留的百分号）。
 _INVALID_HOST_CHARS = frozenset("/\\%?#@")
@@ -78,8 +81,17 @@ def _has_non_ascii(host: str) -> bool:
 
 
 def _looks_like_obfuscated_ip(host: str) -> bool:
-    """``ipaddress`` 不认、但浏览器可能等价解释为 IPv4 的写法。"""
-    return bool(_NUMERIC_HOST_RE.fullmatch(host)) or host.startswith("0x")
+    """``ipaddress`` 不认、但浏览器可能按 WHATWG 规则解析为 IPv4 的写法。
+
+    覆盖：纯数字/缩写（``2130706433``/``127.1``）、``0x`` 前缀、以及 1–4 段
+    十进制与十六进制混用（``127.0x0.0.1``、``10.0.0x0.1`` 等）。
+    """
+    if _NUMERIC_HOST_RE.fullmatch(host) or host.startswith("0x"):
+        return True
+    parts = host.split(".")
+    if not 1 <= len(parts) <= 4:
+        return False
+    return all(_IPV4_SEGMENT_RE.fullmatch(part) for part in parts)
 
 
 def _blocked_ip_reason(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
@@ -99,6 +111,9 @@ def _blocked_ip_reason(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str
         return "reserved_ip"
     if ip.is_private:
         return "private_ip"
+    # CGNAT 100.64.0.0/10 等地址在 Python 3.13 的各标志均为 False，但并非全球可达。
+    if not ip.is_global:
+        return "non_global_ip"
     return ""
 
 
@@ -200,11 +215,21 @@ def validate_authorization_url(
     return evaluate_authorization_url(value, env=env, allowed_hosts=allowed_hosts)[0]
 
 
+def _strip_query_fragment(text: str) -> str:
+    """字符串层面去掉 query/fragment（畸形 URL 无法交给 urlsplit 时使用）。"""
+    for separator in ("?", "#"):
+        index = text.find(separator)
+        if index != -1:
+            text = text[:index]
+    return text
+
+
 def redact_url_for_audit(value: str, *, limit: int = 200) -> str:
-    """生成审计用的 URL 前缀：去控制字符、截断到 ``limit``，并抹掉 userinfo 凭据。
+    """生成审计用的 URL 前缀：去控制字符、截断到 ``limit``，抹掉 userinfo 与 query/fragment。
 
     不依赖 ``urlsplit`` 成功：畸形 URL（如 ``https://user:pass@[::1``）也会先剥离
-    userinfo，保证 warning 日志与审计 detail 绝不出现 ``user:pass@``。
+    userinfo，保证 warning 日志与审计 detail 绝不出现 ``user:pass@``；query/fragment
+    可能携带 ``?token=`` 等敏感参数，同样不进入审计前缀。
     """
     cleaned = _CONTROL_CHARS_RE.sub("", value.strip())
     cleaned = _URL_USERINFO_RE.sub("//", cleaned)
@@ -212,11 +237,12 @@ def redact_url_for_audit(value: str, *, limit: int = 200) -> str:
     try:
         parsed = urlsplit(cleaned)
     except ValueError:
-        return cleaned[:limit]
+        return _strip_query_fragment(cleaned)[:limit]
+    netloc = parsed.netloc
     if parsed.username is not None or parsed.password is not None:
-        netloc = parsed.netloc.rsplit("@", 1)[-1]
-        cleaned = urlunsplit((parsed.scheme, netloc, parsed.path, parsed.query, parsed.fragment))
-    return cleaned[:limit]
+        netloc = netloc.rsplit("@", 1)[-1]
+    clean = urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+    return clean[:limit]
 
 
 __all__ = [
