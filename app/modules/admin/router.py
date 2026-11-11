@@ -1,7 +1,7 @@
-"""管理台路由：用户列表/详情/角色与状态更新。
+"""管理台路由：用户列表/详情/角色与状态更新，以及只读概览。
 
 本文件是 M8 管理台路由骨架（``prefix="/admin"``）；后续任务在同一文件追加
-概览、平台指令、系统技能/MCP、全局 Agent 端点。鉴权统一走 M7 的 ``AdminUser``，
+平台指令、系统技能/MCP、全局 Agent 端点。鉴权统一走 M7 的 ``AdminUser``，
 403 信封由 ``require_admin`` 产生，不在这里重复判断角色。
 """
 
@@ -15,6 +15,7 @@ from fastapi import APIRouter, Query
 from app.core.deps import AdminUser, DbSession
 from app.modules.admin import service
 from app.modules.admin.schemas import (
+    AdminOverviewOut,
     AdminUserOut,
     AdminUserPage,
     AdminUserPatchRequest,
@@ -77,3 +78,19 @@ async def update_user(
     db: DbSession,
 ) -> AdminUserOut:
     return await service.update_user(db, admin, user_id, payload)
+
+
+@router.get(
+    "/overview",
+    response_model=AdminOverviewOut,
+    summary="管理员查看只读概览",
+    description=(
+        "实时返回用户、会话、消息、运行、A2A 任务、知识库与附件的全表计数。"
+        "``users``/``conversations``/``messages``/``runs``/``a2a_tasks``/``knowledge`` "
+        "含软删/失败/终态行；``conversations.deleted`` 单列；``attachments`` 只计"
+        "未删除行，``deleted`` 单独计数。所有状态键始终存在，无数据时为 0。"
+        "该接口只读、不写审计，每次请求执行 8 条聚合查询。"
+    ),
+)
+async def get_overview(admin: AdminUser, db: DbSession) -> AdminOverviewOut:
+    return await service.build_overview(db)

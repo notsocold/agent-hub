@@ -1,14 +1,16 @@
-"""管理台用户管理业务：列表/详情/角色与状态更新。
+"""管理台业务：用户列表/详情/角色与状态更新，以及只读概览。
 
 唯一新增的管理台业务 SQL 都在这里：列表按 ``created_at DESC, id DESC`` 游标分页，
 ``stats`` 用一次聚合查询按当前筛选条件计数；PATCH 负责自操作与「最后一个活跃
-管理员」保护，并在真实变更时写 ``admin.user.update`` 审计。
+管理员」保护，并在真实变更时写 ``admin.user.update`` 审计。概览按表各执行一条
+聚合查询（共 8 条），只取计数与求和，不加载 ORM 行。
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from collections import defaultdict
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import and_, func, or_, select
@@ -17,13 +19,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.audit import write_audit
 from app.core.cursor import decode_cursor, encode_cursor
 from app.core.errors import ConflictError, NotFoundError, ValidationFailedError
+from app.db.models.attachment import Attachment
+from app.db.models.chat import Run
+from app.db.models.conversation import Conversation, Message
+from app.db.models.knowledge import KnowledgeChunk, KnowledgeDocument
+from app.db.models.remote import A2A_TASK_STATES, A2aTask
 from app.db.models.user import User
 from app.modules.admin.schemas import (
+    AdminOverviewA2aTasks,
+    AdminOverviewAttachments,
+    AdminOverviewConversations,
+    AdminOverviewKnowledge,
+    AdminOverviewMessages,
+    AdminOverviewOut,
+    AdminOverviewRuns,
+    AdminOverviewUsers,
     AdminUserOut,
     AdminUserPage,
     AdminUserPatchRequest,
     AdminUserStats,
 )
+
+_RUN_STATUSES = ("queued", "running", "succeeded", "failed", "canceled", "interrupted")
 
 
 def _escape_like(value: str) -> str:
@@ -225,4 +242,157 @@ async def update_user(
     return _to_out(target)
 
 
-__all__ = ["get_user", "list_users", "update_user"]
+def _counts_by_status(rows: Any) -> dict[str, int]:
+    """把 ``GROUP BY status`` 的 ``(status, count)`` 行汇总成字典。
+
+    某状态没有数据时字典里没有该键，由调用方按固定状态元组补 ``0``，保证
+    响应里的状态键始终存在。
+    """
+    counts: dict[str, int] = defaultdict(int)
+    for status, count in rows:
+        counts[status] += int(count or 0)
+    return counts
+
+
+async def build_overview(db: AsyncSession) -> AdminOverviewOut:
+    """实时汇总管理台只读概览。
+
+    计数口径：``users``/``conversations``/``messages``/``runs``/``a2a_tasks``/
+    ``knowledge`` 为全表原始计数（含软删/失败/终态），``conversations.deleted``
+    单列；``attachments.total`` 只计 ``status != 'deleted'`` 的行，
+    ``storage_bytes`` 为这些行的 ``COALESCE(SUM(size_bytes), 0)``，``deleted``
+    单独计数。所有状态键始终存在，无数据时为 ``0``。
+
+    SQL 口径：每张表最多一条聚合查询，共 8 条（``users`` 一条
+    ``GROUP BY status, role``；``conversations``/``runs``/``a2a_tasks``/
+    ``knowledge_documents``/``attachments`` 各一条 ``GROUP BY status``；
+    ``messages``/``knowledge_chunks`` 各一条 ``COUNT``），不加载 ORM 行、不做 N+1。
+
+    性能口径：精确计数，O(表大小)；管理端低频只读；表规模增大后再评估统计表，
+    不在 M8。
+    """
+    # 1) users：一条 GROUP BY status, role 同时得到 total/active/disabled/admins。
+    user_rows = (
+        await db.execute(
+            select(User.status, User.role, func.count(User.id)).group_by(
+                User.status, User.role
+            )
+        )
+    ).all()
+    users_by_status: dict[str, int] = defaultdict(int)
+    users_by_role: dict[str, int] = defaultdict(int)
+    users_total = 0
+    for status, role, count in user_rows:
+        value = int(count or 0)
+        users_by_status[status] += value
+        users_by_role[role] += value
+        users_total += value
+
+    # 2) conversations：全表 GROUP BY status，deleted 单列。
+    conversation_counts = _counts_by_status(
+        (
+            await db.execute(
+                select(Conversation.status, func.count(Conversation.id)).group_by(
+                    Conversation.status
+                )
+            )
+        ).all()
+    )
+
+    # 3) messages：一条 COUNT。
+    messages_total = int(await db.scalar(select(func.count(Message.id))) or 0)
+
+    # 4) runs：全表 GROUP BY status，固定状态键由响应模型补齐。
+    run_counts = _counts_by_status(
+        (
+            await db.execute(
+                select(Run.status, func.count(Run.id)).group_by(Run.status)
+            )
+        ).all()
+    )
+
+    # 5) a2a_tasks：全表 GROUP BY state。
+    a2a_counts = _counts_by_status(
+        (
+            await db.execute(
+                select(A2aTask.state, func.count(A2aTask.id)).group_by(A2aTask.state)
+            )
+        ).all()
+    )
+
+    # 6) knowledge_documents：全表 GROUP BY status。
+    document_counts = _counts_by_status(
+        (
+            await db.execute(
+                select(
+                    KnowledgeDocument.status, func.count(KnowledgeDocument.id)
+                ).group_by(KnowledgeDocument.status)
+            )
+        ).all()
+    )
+
+    # 7) knowledge_chunks：一条 COUNT。
+    chunks_total = int(await db.scalar(select(func.count(KnowledgeChunk.id))) or 0)
+
+    # 8) attachments：一条 GROUP BY status + SUM(size_bytes)；deleted 不计入
+    # total/storage_bytes，只单独计数。
+    attachment_rows = (
+        await db.execute(
+            select(
+                Attachment.status,
+                func.count(Attachment.id),
+                func.coalesce(func.sum(Attachment.size_bytes), 0),
+            ).group_by(Attachment.status)
+        )
+    ).all()
+    attachments_total = 0
+    attachments_storage_bytes = 0
+    attachments_deleted = 0
+    for status, count, size_bytes in attachment_rows:
+        status_count = int(count or 0)
+        if status == "deleted":
+            attachments_deleted += status_count
+            continue
+        attachments_total += status_count
+        attachments_storage_bytes += int(size_bytes or 0)
+
+    return AdminOverviewOut(
+        generated_at=datetime.now(UTC),
+        users=AdminOverviewUsers(
+            total=users_total,
+            active=users_by_status.get("active", 0),
+            disabled=users_by_status.get("disabled", 0),
+            admins=users_by_role.get("admin", 0),
+        ),
+        conversations=AdminOverviewConversations(
+            total=sum(conversation_counts.values()),
+            active=conversation_counts.get("active", 0),
+            archived=conversation_counts.get("archived", 0),
+            deleted=conversation_counts.get("deleted", 0),
+        ),
+        messages=AdminOverviewMessages(total=messages_total),
+        runs=AdminOverviewRuns(
+            total=sum(run_counts.values()),
+            **{status: run_counts.get(status, 0) for status in _RUN_STATUSES},
+        ),
+        a2a_tasks=AdminOverviewA2aTasks(
+            total=sum(a2a_counts.values()),
+            **{state: a2a_counts.get(state, 0) for state in A2A_TASK_STATES},
+        ),
+        knowledge=AdminOverviewKnowledge(
+            documents=sum(document_counts.values()),
+            chunks=chunks_total,
+            documents_pending=document_counts.get("pending", 0),
+            documents_indexing=document_counts.get("indexing", 0),
+            documents_ready=document_counts.get("ready", 0),
+            documents_failed=document_counts.get("failed", 0),
+        ),
+        attachments=AdminOverviewAttachments(
+            total=attachments_total,
+            storage_bytes=attachments_storage_bytes,
+            deleted=attachments_deleted,
+        ),
+    )
+
+
+__all__ = ["build_overview", "get_user", "list_users", "update_user"]
