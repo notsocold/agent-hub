@@ -4,7 +4,7 @@
 - 业务前缀：`/api/v1`
 - 协议：HTTP + JSON；聊天流式用 SSE
 - 文档：FastAPI 自动生成 `/docs`（Swagger）与 `/redoc`
-- 状态：M1 / M1.5 / M2 / M4–M7 已实现（M7 待 Task 7 回归）；M3 入站已按 2026-11-10 需求变更取消；各里程碑实测差异见 §7–§11
+- 状态：M1 / M1.5 / M2 / M4–M8 已实现（M8 实施完成，待独立审查；前端尚未接入）；M3 入站已按 2026-11-10 需求变更取消；各里程碑实测差异见 §7–§12
 
 ## 1. 通用约定
 
@@ -47,22 +47,37 @@ Authorization: Bearer <access_token>
 | 400 | `bad_request` | 参数语义错误 |
 | 400 | `replay_too_large` | SSE 续流待回放事件超过 1000 条（M7；改用分页回放或更接近的 `after_seq`） |
 | 401 | `unauthorized` | 未登录 / token 无效 |
-| 403 | `forbidden` | 无权限；M7 起 agents/tasks 写接口要求管理员，`details.required_role="admin"` |
-| 403 | `capability_disabled` | 能力总开关关闭 |
-| 404 | `not_found` | 资源不存在 |
-| 409 | `conflict` | 状态冲突（重复审批、并发 run） |
+| 403 | `forbidden` | 无权限；M7 起 agents/tasks 写接口要求管理员，M8 起全部 `/admin/*` 要求管理员；`details.required_role="admin"`，拒绝写审计 `security.rbac_denied` |
+| 403 | `capability_disabled` | 能力总开关关闭（仅运行态接口；M8 管理端配置面不受影响，见 §12.1） |
+| 404 | `not_found` | 资源不存在（也用于隐藏他人资源） |
+| 409 | `conflict` | 状态冲突（重复审批、并发 run、M8 系统 MCP slug 跨 scope 冲突） |
+| 409 | `last_admin_protected` | M8：目标是最后一个活跃管理员，降级/停用被拒绝；`details.active_admins=1` |
 | 413 | `payload_too_large` | 技能包/上传文件超限 |
-| 422 | `validation_error` | 请求体校验失败（FastAPI 默认结构会包装为本信封） |
+| 422 | `validation_error` | 请求体/查询参数校验失败（FastAPI 默认结构会包装为本信封） |
 | 422 | `skill_invalid` | 技能包校验失败 |
-| 422 | `instruction_too_long` | 指令超过字符上限 |
-| 422 | `mcp_transport_not_allowed` | 用户自建 MCP 使用了被禁用的传输 |
+| 422 | `instruction_too_long` | 指令超过字符上限（用户指令与 M8 平台默认指令共用） |
+| 422 | `cannot_change_own_role` | M8：管理员不能修改自己的角色 |
+| 422 | `cannot_disable_self` | M8：管理员不能停用自己的账号 |
+| 422 | `mcp_transport_not_allowed` | MCP 传输被禁用（用户自建仅远程；M8 系统 MCP 同样校验） |
+| 422 | `mcp_ssrf_blocked` | MCP URL 未通过 SSRF/主机白名单校验（用户侧与 M8 系统 MCP 共用） |
+| 422 | `secret_ref_not_allowed` | 普通用户写入 `secret:` 平台密钥引用被拒绝（M8 系统 MCP/Agent 管理员路径允许） |
+| 422 | `secret_ref_invalid` | `secret:` 引用格式非法 |
 | 429 | `rate_limited` | 触发限流 |
 | 500 | `internal_error` | 未预期异常 |
 | 503 | `service_unavailable` | 依赖服务不可用（M4：Embedding 服务故障时的检索） |
 | 503 | `database_unavailable` | 数据库连接不可用（M6；连接/pool 故障） |
+| 503 | `secret_store_unavailable` | 敏感请求头以明文写入但未配置 `CAPABILITY_SECRET_KEY`（M5 `/admin/secrets`；M8 系统 MCP/Agent 写接口交叉引用） |
 | 502 | `a2a_unavailable` | 远程智能体不可用 |
 | 502 | `mcp_unreachable` | 显式选择的 MCP 服务器不可达 |
 | 504 | `a2a_timeout` | 远程调用超时 |
+
+> **M8 交叉引用（2026-11-11）**：管理端用户 PATCH 额外返回 422 `cannot_change_own_role` /
+> `cannot_disable_self` 与 409 `last_admin_protected`；系统 MCP/全局 Agent 的写接口复用既有
+> MCP/凭据校验，可能出现 422 `mcp_ssrf_blocked` / `mcp_transport_not_allowed` /
+> `secret_ref_not_allowed` / `secret_ref_invalid` 与 503 `secret_store_unavailable`；
+> 平台指令 PUT 超长返回 422 `instruction_too_long`。所有新增 `/admin/*` 端点：
+> 未登录 401 `unauthorized`，非管理员 403 `forbidden` + `details.required_role="admin"`
+> （与 M7 的 agents/tasks 写接口一致）。
 
 > M6：启用 Trace 且采样时响应头可能带 `X-Trace-ID`；`X-Request-ID` 始终存在。
 
@@ -237,21 +252,32 @@ M5 起审批恢复走 LangGraph `Command(resume=...)`，决定接口的 `resumed
 
 ### 2.12 管理端
 
+> M8（2026-11-11）起以下端点**全部要求 `users.role='admin'`**：未登录 401 `unauthorized`，
+> 非管理员 403 `forbidden` + `details.required_role="admin"`（并写审计 `security.rbac_denied`）。
+> 管理员由运维脚本 `scripts/grant_admin.py` 设置，注册流程不自动提权。详细契约与实测
+> 字段见 §12；本节只列路由。
+
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET/PUT | `/api/v1/admin/settings/instruction` | 平台默认指令（未实现，随 X2 立项为 M8） |
-| GET | `/api/v1/admin/audit-logs` | 全局审计检索（M5） |
-| GET/POST/PATCH/DELETE | `/api/v1/admin/secrets[...]` | 平台密钥管理（M5，永不回显明文） |
-| GET | `/api/v1/admin/skills` | 系统技能列表（未实现，随 X2 立项为 M8） |
-| PUT | `/api/v1/admin/skills/{id}/enabled` | 系统技能启停（未实现，随 X2 立项为 M8） |
-| PUT | `/api/v1/admin/skills/{id}/force-disable` | 强制停用（未实现，随 X2 立项为 M8） |
+| GET | `/api/v1/admin/users` | 用户分页列表（`q`/`role`/`status`/`limit`/`cursor` + `stats`） |
+| GET | `/api/v1/admin/users/{id}` | 用户详情（与列表项同形，不含 `password_hash`） |
+| PATCH | `/api/v1/admin/users/{id}` | 改 `role`/`status`（自操作 422；最后一个活跃管理员 409 `last_admin_protected`） |
+| GET | `/api/v1/admin/overview` | 只读概览计数（不写审计） |
+| GET/PUT | `/api/v1/admin/settings/instruction` | 平台默认指令；`null` 恢复内置默认 |
+| GET | `/api/v1/admin/skills` | 系统技能列表（`scope='system'`，不分页） |
+| PUT | `/api/v1/admin/skills/{id}/enabled` | 全局启停系统技能 |
+| PUT | `/api/v1/admin/skills/{id}/force-disable` | 强制停用/恢复（压过用户覆盖） |
+| GET/POST | `/api/v1/admin/mcp/servers` | 系统 MCP 列表 / 新建 |
+| PATCH/DELETE | `/api/v1/admin/mcp/servers/{id}` | 系统 MCP 更新 / 删除 |
+| GET | `/api/v1/admin/agents` | 全局 Agent 注册表（分页，查询参数同 `GET /agents`） |
+| PATCH | `/api/v1/admin/agents/{id}` | 全局 Agent 白名单字段更新 |
+| GET | `/api/v1/admin/audit-logs` | 全局审计检索（M5，M8 不变） |
+| GET/POST/PATCH/DELETE | `/api/v1/admin/secrets[...]` | 平台密钥管理（M5，M8 不变；永不回显明文） |
 
-> 表中标注「未实现」的端点属于完整管理控制台（X2），已于 2026-11-11 立项为 **M8**；
-> 当前实际可用的 `/admin/*` 只有 `audit-logs` 与 `secrets`。
-> 系统 MCP 的 `/admin/mcp/servers*` 接口**当前未实现**（旧文档误列）；M5 只提供密钥本体管理，
-> 系统 MCP 的 `secret:` 引用通过运维脚本/数据库配置，管理员自建 MCP 可直接使用。
-
-> 管理端接口要求 `users.role='admin'`，越权返回 403。管理员由运维脚本 `scripts/grant_admin.py` 设置，注册流程不自动提权。
+> **配置面不受能力总开关影响（R1）**：`INSTRUCTIONS_ENABLED` / `SKILLS_ENABLED` /
+> `MCP_ENABLED=false` 时，上表对应的管理端配置接口仍可读写；运行态接口
+> `/instructions`、`/skills`、`/mcp/*` 与聊天行为不变（仍 403 `capability_disabled`）。
+> M8 **不扩展** `/admin/audit-logs` 的过滤参数，也不改 `/admin/secrets` 接口（R9）。
 
 ### 2.13 系统
 
@@ -684,10 +710,11 @@ GET /api/v1/instructions
 - 同一会话未结束 run 由部分唯一索引 `uq_runs_active_conversation` 保证唯一；
 - `messages.run_id` 与 `runs.user_message_id/assistant_message_id` 互相引用，迁移中用 `ALTER TABLE` 补外键。
 
-### 7.6 分页契约（M1 实测）
+### 7.6 分页契约（M1 实测，M8 追加管理端）
 
-四个分页端点共用同一套不透明游标：`GET /conversations`、`GET /conversations/{id}/messages`、
-`GET /approvals`、`GET /runs/{id}/events`。
+以下分页端点共用同一套不透明游标：`GET /conversations`、`GET /conversations/{id}/messages`、
+`GET /approvals`、`GET /runs/{id}/events`，以及 M8 的 `GET /admin/users`、
+`GET /admin/agents`（与 `GET /agents` 同函数、同游标）。
 
 - `next_cursor` 是 urlsafe base64 编码的排序键，前端不得解析、拼接或当作 UUID；
 - `has_more=false` 时 `next_cursor=null`，不要继续请求；
@@ -695,6 +722,12 @@ GET /api/v1/instructions
 - `stats` 是「当前筛选条件下的全量计数」，不是当前页计数；
 - 会话排序 `last_message_at DESC NULLS LAST, id DESC`；消息与审批 `created_at DESC, id DESC`；
   运行事件 `seq ASC`；
+- **M8 `GET /admin/users`**：排序固定 `created_at DESC, id DESC`；游标 payload 为
+  `{created_at, id}`（不透明串，前端不得解析），解码失败或缺字段 → 422 `validation_error`；
+  `stats` 是当前 `q`/`role`/`status` 筛选条件（不含游标）下的全量计数
+  `{total, active, disabled, admins}`，其中 `admins` 统计 `role='admin'` 的**所有状态**行；
+- **M8 `GET /admin/agents`**：查询参数与游标语义和 `GET /agents` 完全一致
+  （`health_status`/`enabled`/`q`/`limit`/`cursor`），`stats` 为当前筛选下、排除已软删的全量计数；
 - 消息历史 `before` 与 `cursor` 二选一，同时传以 `cursor` 为准；
 - 所有时间统一 UTC、序列化以 `Z` 结尾。
 
@@ -851,7 +884,7 @@ data: {"run_id":"9a8b...","seq":44,"message_id":"e5f6...","finish_reason":"stop"
 | MCP 协议库 | 官方 `mcp` SDK | 自研 JSON-RPC 2.0 over httpx（initialize → notifications/initialized → tools/list → tools/call） | 任务口径；少一个重依赖，测试可注入 transport |
 | 系统 MCP 写工具 | 动态过滤 | `mcp_tools.admin_only/user_allowed` 落库字段 | 列表接口需展示置灰原因，前端友好 |
 | stdio | 管理员全功能 | 支持创建/校验/客户端实现；命令白名单 `MCP_STDIO_ALLOWED_COMMANDS` | v1 无隔离保证，默认关闭 |
-| 管理端 | `/api/v1/admin/…` 全套 | M1.5 未实现管理端路由；`users.role` 与数据模型已就绪，系统项可直接写库 | 任务范围仅用户侧；完整管理控制台已立项为 M8（M5 只交付审计与平台密钥） |
+| 管理端 | `/api/v1/admin/…` 全套 | M1.5 未实现管理端路由；`users.role` 与数据模型已就绪，系统项可直接写库 | 任务范围仅用户侧；完整管理控制台已在 M8 实现（2026-11-11，见 §12；M5 只交付审计与平台密钥） |
 | 附件删除 | 未定义 | 被消息引用 → 软删（status=deleted + 移除磁盘文件）；未引用 → 物理删除 | 历史消息快照仍可展示元数据 |
 
 ### 8.4 数据层差异
@@ -983,3 +1016,206 @@ A2A `auth_required` 的 `authorization_url` 来自远程 Agent，属不可信数
 - M7 专项用例：`tests/integration/test_run_stream.py`、`test_rbac.py`、`test_tasks.py`、
   `test_hitl_interrupt.py`、`tests/test_auth_url_unit.py`；
 - 无数据库迁移（迁移 head `2d8f6a1c3e70`）。
+
+## 12. M8 实现状态（2026-11-11）
+
+> 机器可读契约以 [`openapi.json`](openapi.json) 为准（由 `scripts/export_openapi.py` 导出，
+> 应与代码一致）。M8 状态：**实施完成，待独立审查；前端尚未接入**。前端接入清单见
+> [M8 前端交接](feedback/2026-11-11-m8-frontend-handoff.md)，回归证据见
+> [M8 后端交付报告](feedback/2026-11-11-m8-backend-report.md)。M8 **无数据库迁移**，
+> 迁移 head 仍为 `2d8f6a1c3e70`；**无新增配置项/环境变量**。
+
+### 12.1 端点总表
+
+| 方法 | 路径 | 成功 | 响应模型 | 说明 |
+|---|---|---|---|---|
+| GET | `/api/v1/admin/users` | 200 | `AdminUserPage` | 分页 + `q`/`role`/`status` 过滤 + `stats` |
+| GET | `/api/v1/admin/users/{user_id}` | 200 | `AdminUserOut` | 详情；不存在 404 `not_found` |
+| PATCH | `/api/v1/admin/users/{user_id}` | 200 | `AdminUserOut` | 只改 `role`/`status`；422/409 见 §12.2 |
+| GET | `/api/v1/admin/overview` | 200 | `AdminOverviewOut` | 只读计数、不写审计 |
+| GET | `/api/v1/admin/settings/instruction` | 200 | `AdminInstructionOut` | 平台默认指令与元信息 |
+| PUT | `/api/v1/admin/settings/instruction` | 200 | `AdminInstructionOut` | `null` 恢复内置默认；超长 422 |
+| GET | `/api/v1/admin/skills` | 200 | `AdminSkillListOut` | 系统技能，不分页 |
+| PUT | `/api/v1/admin/skills/{skill_id}/enabled` | 200 | `SkillOut` | 全局启停 |
+| PUT | `/api/v1/admin/skills/{skill_id}/force-disable` | 200 | `SkillOut` | 强制停用/恢复 |
+| GET | `/api/v1/admin/mcp/servers` | 200 | `McpServerListOut` | 系统 MCP，不分页 |
+| POST | `/api/v1/admin/mcp/servers` | 201 | `McpServerOut` | 复用 SSRF/`secret:`/工具发现 |
+| PATCH | `/api/v1/admin/mcp/servers/{server_id}` | 200 | `McpServerOut` | 白名单字段；提交后强制工具发现 |
+| DELETE | `/api/v1/admin/mcp/servers/{server_id}` | 204 | — | 清理用户覆盖，工具级联删除 |
+| GET | `/api/v1/admin/agents` | 200 | `AgentPage` | 全局注册表；查询参数同 `GET /agents` |
+| PATCH | `/api/v1/admin/agents/{agent_id}` | 200 | `AgentDetailOut` | 白名单字段；只读字段 422 |
+
+- 全部要求管理员：未登录 401 `unauthorized`；非管理员 403 `forbidden` +
+  `details.required_role="admin"`（拒绝写审计 `security.rbac_denied`）。
+- **R1 配置面**：`INSTRUCTIONS_ENABLED` / `SKILLS_ENABLED` / `MCP_ENABLED=false` 时，
+  上表指令/技能/MCP 的管理端读写仍返回 200/201/204；运行态接口仍 403 `capability_disabled`。
+- 所有响应带 `X-Request-ID`；错误信封与全站一致（§1）。
+
+### 12.2 用户管理规则
+
+- `GET /admin/users`：`q`（≤100，匹配 `email`/`display_name`，大小写不敏感，LIKE 通配符转义）、
+  `role`（`user|admin`）、`status`（`active|disabled`）、`limit`（1–100，默认 20）、
+  `cursor`（≤500）。排序 `created_at DESC, id DESC`。
+- `stats` 是**当前筛选条件下**的全量计数（不含游标）：`{total, active, disabled, admins}`；
+  `admins` 统计 `role='admin'` 的**所有状态**行（停用管理员也计入）。
+- `AdminUserOut`：`id/email/display_name/role/status/last_login_at/created_at/updated_at`；
+  **永不返回 `password_hash`**；详情与列表项同形，不带会话/消息计数（R6）。
+- `PATCH` 只接受 `role`/`status`（`extra="forbid"`，未知字段 422 `validation_error`），
+  且至少一项非空；无实际变化时 200 返回当前值、**不写审计**。
+- 规则与错误码：
+
+| 场景 | HTTP | code | 说明 |
+|---|---|---|---|
+| 目标用户不存在 | 404 | `not_found` | message「用户不存在」 |
+| 修改自己的 `role` | 422 | `cannot_change_own_role` | message「不能修改自己的角色」 |
+| 停用自己的 `status` | 422 | `cannot_disable_self` | message「不能停用自己的账号」 |
+| 移除最后一个活跃管理员 | 409 | `last_admin_protected` | `details={"active_admins": 1}`；message「不能移除最后一个活跃管理员」 |
+| 请求体非法/空对象/未知字段 | 422 | `validation_error` | |
+
+- 最后一个活跃管理员的判定在 `SELECT ... WHERE role='admin' AND status='active'
+  ORDER BY id FOR UPDATE` 行锁之后按最新值计算（固定 `id ASC` 防死锁），防两个管理员并发互降。
+- 真实变更写审计 `admin.user.update`，`detail={"fields": [...], "role": ..., "status": ...}`。
+
+### 12.3 只读概览
+
+```json
+{
+  "generated_at": "2026-11-11T12:00:00Z",
+  "users": {"total": 3, "active": 2, "disabled": 1, "admins": 1},
+  "conversations": {"total": 4, "active": 2, "archived": 1, "deleted": 1},
+  "messages": {"total": 5},
+  "runs": {"total": 6, "queued": 1, "running": 1, "succeeded": 1,
+           "failed": 1, "canceled": 1, "interrupted": 1},
+  "a2a_tasks": {"total": 2, "submitted": 0, "working": 0, "input_required": 0,
+                "auth_required": 0, "completed": 1, "failed": 1,
+                "canceled": 0, "rejected": 0},
+  "knowledge": {"documents": 2, "chunks": 3, "documents_pending": 0,
+                "documents_indexing": 0, "documents_ready": 1, "documents_failed": 1},
+  "attachments": {"total": 2, "storage_bytes": 300, "deleted": 1}
+}
+```
+
+- `users` / `conversations` / `messages` / `runs` / `a2a_tasks` / `knowledge` 为**全表原始计数**
+  （含软删、失败、终态行）；`conversations.deleted` 单列且仍计入 `total`；
+  `users.admins` 统计 `role='admin'` 的所有状态行。
+- `attachments.total` 只计 `status != 'deleted'` 的行（含 processing/failed），
+  `storage_bytes` 为这些行的 `COALESCE(SUM(size_bytes), 0)`（deleted 行字节不计入），
+  `deleted` 单独计数。
+- 所有状态键**始终存在**，无数据时为 `0`；`generated_at = datetime.now(UTC)`（`Z` 结尾）。
+  注意 `runs.canceled` 为单 L 拼写。
+- 性能口径：精确计数，O(表大小)；一次请求固定 **8 条聚合 SQL**（+ 鉴权 1 条，
+  上限测试断言 ≤10），不加载 ORM 行、无 N+1、无缓存。管理端低频只读，建议前端刷新 ≥30s；
+  表规模增大后再评估统计表，不在 M8。
+
+### 12.4 平台默认指令
+
+`AdminInstructionOut`（GET/PUT 同形）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `content` | `str` | 平台默认正文本体（无个人覆盖用户实际注入的内容） |
+| `is_default` | `bool` | 无 `system_settings["instruction.default"]` 行（或历史形态非法）时为 `true` |
+| `max_chars` | `int` | `settings.instruction_max_chars`（当前 4000） |
+| `user_override_count` | `int` | `user_settings.instructions IS NOT NULL` 的用户数 |
+| `updated_by` | `uuid \| null` | 最后保存该配置的管理员 |
+| `updated_by_email` | `str \| null` | 上述管理员邮箱；用户已删/不存在时为 `null` |
+| `updated_at` | `datetime \| null` | 行更新时间；使用内置默认时为 `null` |
+
+- `PUT` 请求体 `{"content": str | null}`：`content` **必填但可显式传 `null`**；strip 后空串等价于 `null`。
+- `null` → 删除 `instruction.default` 覆盖、恢复代码内置默认（无行时 no-op）；响应回到
+  `is_default=true`、`updated_at=null`。
+- 非空且 `len(content) > max_chars` → 422 `instruction_too_long`。
+- 保存写 `value={"content": ...}`、`updated_by` 并**手动刷新** `updated_at`（模型无 `onupdate`）；
+  `SystemSetting` 兼容历史两种形态：`{"content": "..."}` 与裸字符串。
+- 审计 `instruction.update`（`resource_type=system_setting`、`resource_id=instruction.default`）：
+  保存 `detail={"scope":"platform","length":N,"fingerprint":"..."}`，恢复
+  `detail={"scope":"platform","restored_default":true}`；**不落正文**。
+- 不返回 `effective_preview`（R5：`content` 已同义）；`INSTRUCTIONS_ENABLED=false` 时仍可读写（R1）。
+
+### 12.5 系统技能
+
+- `GET /admin/skills?q=`：只返回 `scope='system'`，按 `name ASC`；`q`（≤100）大小写不敏感匹配
+  名称/描述并转义 LIKE 通配符；系统技能数量有上界，**不分页**（R6）。
+- `AdminSkillListOut = {items: SkillOut[], stats: {total, enabled, force_disabled}}`；
+  `stats` 基于当前筛选结果（`total == len(items)`），`enabled` 指全局有效启用数。
+- 管理端 `items[].effective_enabled = enabled and not force_disabled`（**全局口径**，不合并任何
+  用户覆盖；用户覆盖只影响运行态 `/skills` 与 catalog）。
+- `PUT /admin/skills/{id}/enabled`：body `{"enabled": bool}`；写全局 `skills.enabled`。
+- `PUT /admin/skills/{id}/force-disable`：body `{"force_disabled": bool}`；`force_disabled=true`
+  **压过任何用户级覆盖**使技能对所有人失效；恢复 `false` 后用户覆盖仍按原值生效（未被破坏）。
+- 只允许系统技能：不存在或属于用户私有技能统一 404 `not_found`（「系统技能不存在」，不泄露存在性）。
+- 审计：`skill.enable`（`detail={"enabled": ..., "scope": "system"}`）、
+  `skill.force_disable`（`detail={"force_disabled": ...}`）；`SKILLS_ENABLED=false` 时仍可读写（R1）。
+
+### 12.6 系统 MCP
+
+- `GET /admin/mcp/servers`：只返回 `scope='system'`，按 `created_at DESC, id DESC`，**不分页**；
+  `stats` 与用户侧同形 `{total, system, user, enabled, healthy}`，其中 `user=0`、
+  `total==system==len(items)`、`enabled` 按全局有效态 `enabled and not force_disabled` 计。
+- `POST` body 复用 `McpServerCreateRequest`：`name` 1–128、`slug` 2–64（小写/数字/连字符）、
+  `description` ≤2000、`transport ∈ streamable_http|sse|stdio`、`url` ≤2048、`headers`、`command`
+  （stdio 必填）、`args` ≤32。新建固定 `scope='system'`、`enabled=true`、`auto_inject=true`、
+  `force_disabled=false`、`health_status='unknown'`。
+- 校验复用用户侧：stdio 仅管理员 + command 白名单、URL SSRF、`secret:`/`env:` 凭据引用；
+  **slug 在任意 scope 已存在 → 409 `conflict`**（系统工具名 `mcp__<slug>__*` 必须全局唯一）。
+- 创建/更新提交后立即做一次强制工具发现：可达则同步工具并标 `healthy`；**不可达仍返回
+  201/200**，`health_status='unhealthy'`、`last_error` 截断（400 字符）、`tool_count=0`。
+- `PATCH` 可编辑 `name`/`description`/`url`/`headers`/`auto_inject`/`enabled`/`force_disabled`
+  （至少一项）；`slug`/`transport`/`command`/`args` 为创建时确定的只读字段，提交显式 422。
+  只要提交就写 `mcp.server.update` 并触发一次工具发现（**PATCH 无同值 no-op 判定**，见 handoff）。
+- `DELETE` → 204：先清理该服务器的 `user_capability_overrides`（`capability='mcp_server'`），
+  `mcp_tools` 由外键 `ON DELETE CASCADE` 删除。
+- **密钥不泄露**：`McpServerOut` 从不返回 `headers`；敏感头只落 `{"secret_ref": ...}` 或密文，
+  响应只回 `credentials_hint`（如 `Authorization: secret:MCP_KEY`），审计与日志同样不含明文/密文。
+- 错误码：404 `not_found`；409 `conflict`（slug 任意 scope 占用）；422 `mcp_ssrf_blocked` /
+  `mcp_transport_not_allowed` / `secret_ref_not_allowed` / `secret_ref_invalid` / `validation_error`；
+  **503 `secret_store_unavailable`**（敏感头以明文提交且未配置 `CAPABILITY_SECRET_KEY`）；
+  `MCP_ENABLED=false` 时仍可读写（R1）。
+- 系统 MCP 的 `effective_enabled = enabled and not force_disabled`，同样压过用户覆盖。
+
+### 12.7 全局 Agent（R8 口径）
+
+- `GET /admin/agents` 的 query 与 `GET /agents` 完全一致：`health_status`、`enabled`、`q`、
+  `limit`（1–100）、`cursor`；响应 `AgentPage`（`items` 为 `AgentOut`，`stats` 同上）。
+- **全局注册表口径（R8）**：返回**所有未软删 Agent**，不按 `owner_user_id IS NULL` 过滤。
+  v1 `remote_agents` 是全局注册表，`owner_user_id` 只是保留字段、不参与可见性；
+  管理员创建的行写 `owner_user_id=管理员 id`，管理端仍必须可见。这与立项 spec §4.2 的字面
+  表述不一致，属已裁定偏差；若坚持 NULL 口径需改创建逻辑并回填历史数据（超出 M8「无迁移」前提）。
+- `PATCH` 可编辑：`name`（1–128，纯空白 422）、`enabled`、`requires_approval`、`auth`、`headers`；
+  至少一项，`extra="forbid"`。
+- 只读字段（提交即 422 `validation_error`，不静默忽略）：`slug`、`url`、`description`、
+  `protocol_version`、`card`、`skills`、`capabilities`、`health_status`、`owner_user_id`；
+  `description` 由 Agent Card 派生且 `refresh` 会覆盖（R7）。
+- 改名会置 `name_edited=true`，后续 `POST /agents/{id}/refresh` 不再用 Card 名称覆盖。
+- `auth` 支持 `secret:NAME` 平台密钥引用（**仅管理员**可写；普通用户注册/PATCH 仍只能 `env:`）；
+  `headers` 敏感头只落引用/密文；响应只回 `auth_type`/`auth_scheme`/`auth_hint`，不回 `headers`。
+- 只有真实变化才写 `agent.updated` 审计（`detail={"fields": [...], "source": "admin"}`）并提交；
+  同值 PATCH 直接返回详情、不写审计。不存在或已软删 → 404 `not_found`。
+- 已知边界：清空 `headers`/`auth` 时旧 `auth_hint` 可能残留（沿用既有用户侧语义，延后处理）。
+
+### 12.8 审计动作
+
+| action | 触发 | resource_type | detail 要点 |
+|---|---|---|---|
+| `security.rbac_denied` | 非管理员访问 `/admin/*`、agents/tasks 写接口 | 请求资源 | `method`/`path`/`required_role`（M7） |
+| `admin.user.update` | `PATCH /admin/users/{id}` 真实变更 | `user` | `fields`（`role`/`status`）、变更后 `role`/`status` |
+| `instruction.update` | `PUT /admin/settings/instruction` | `system_setting` | `scope="platform"`；保存含 `length`/`fingerprint`，恢复含 `restored_default`；**不含正文** |
+| `skill.enable` | `PUT /admin/skills/{id}/enabled` | `skill` | `enabled`、`scope="system"` |
+| `skill.force_disable` | `PUT /admin/skills/{id}/force-disable` | `skill` | `force_disabled` |
+| `mcp.server.create` | `POST /admin/mcp/servers` | `mcp_server` | `slug`/`transport`/`url`/`scope="system"`（不含 headers/凭据） |
+| `mcp.server.update` | `PATCH /admin/mcp/servers/{id}` | `mcp_server` | `fields`（字段名）、`scope="system"` |
+| `mcp.server.delete` | `DELETE /admin/mcp/servers/{id}` | `mcp_server` | `slug`、`scope="system"` |
+| `mcp.server.check` | 系统 MCP 创建/更新后的强制工具发现 | `mcp_server` | `healthy`/`tools`/`latency_ms` 或截断 `error`（`actor_type=system`，既有动作） |
+| `agent.updated` | `PATCH /admin/agents/{id}` 真实变更 | `agent` | `fields`、`source="admin"`（与 M7 用户侧 PATCH 复用同一动作） |
+
+> 审计 `detail` 只放字段名/状态值/长度/指纹/计数，**不放正文、明文密钥、密文或请求头**。
+
+### 12.9 验证与迁移
+
+- 全量 `pytest -q`：**810 passed, 1 skipped**（M7 基线 760 + M8 新增 50 条管理台集成用例；
+  1 skipped 为既有需真实 Embedding key 的知识库语义评测）；
+- `.venv/bin/python -m ruff check .`：`All checks passed!`；
+- `.venv/bin/python -m alembic check`：`No new upgrade operations detected.`；`alembic heads`
+  仍为 `2d8f6a1c3e70 (head)`；`alembic/versions/` 无新增文件；
+- `scripts/export_openapi.py` 导出后 `git diff --exit-code docs/openapi.json` 干净；
+- **M8 无迁移**：未新增/修改表、列或索引；未新增配置项或环境变量；迁移 head 仍为 `2d8f6a1c3e70`。

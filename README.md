@@ -4,16 +4,20 @@
 
 配套前端：[agent-hub-web](../../NodeJsProjects/agent-hub-web)（Vue 3 + TypeScript + Vite）。
 
-> **当前状态：M7 契约补齐与安全收口已完成（2026-11-11）。**
+> **当前状态：M8 管理台后端已实施完成（2026-11-11），待独立审查；前端尚未接入。**
 > M6 生产化与可观测已完成（结构化日志 / Prometheus 指标 / OTel Trace、`/readyz`、
 > Dockerfile + 生产 Compose、优雅停机、启动恢复、数据清理、流式实时过滤、CI）。
 > M7 新增：运行事件 SSE 续流端点、回放 `event` 字段、agents/tasks 写操作管理员 RBAC、
 > `approval.required` 5 个展示字段、A2A `authorization_url` 后端白名单；
-> M7 Task 7 全量回归 **733 passed, 1 skipped**（含全部 DB 集成用例）；ruff 全绿；
-> `alembic check` 无漂移；OpenAPI 无 diff；迁移 head `2d8f6a1c3e70`（M7 无迁移）。
+> M8 新增：用户/角色管理、只读概览、平台指令、系统技能、系统 MCP、全局 Agent 共 15 个
+> `/admin/*` 端点；管理端配置面不受能力总开关影响（R1）；全局 Agent 采用「全部未软删」
+> 注册表口径（R8）；无迁移、无新配置项。全量回归 **810 passed, 1 skipped**；ruff 全绿；
+> `alembic check` 无漂移；OpenAPI 无 diff；迁移 head `2d8f6a1c3e70`（M7/M8 均无迁移）。
 > 前端 M4/M5/M6 已完成并联调（2026-11-11）；M7 后端契约已交付，前端待按
 > [M7 前端交接](docs/feedback/2026-11-11-m7-frontend-handoff.md) 接入（「逐字续流」尚未前端验收）。
-> 后续 **M8（管理台）/ M9（工作流）已于 2026-11-11 立项、未开始**，
+> M8 前端接入见 [M8 前端交接](docs/feedback/2026-11-11-m8-frontend-handoff.md)，
+> 回归证据见 [M8 后端交付报告](docs/feedback/2026-11-11-m8-backend-report.md)。
+> 后续 **M9（工作流）已于 2026-11-11 立项、未开始**，
 > 见 [M7–M9 立项](docs/superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md)。
 
 ## 1. 项目定位
@@ -149,9 +153,9 @@ curl http://localhost:8000/healthz
 curl http://localhost:8000/api/v1/system/info   # 需要先登录拿 Bearer token
 ```
 
-## 6. 当前状态（M7 · 契约补齐与安全收口，已完成）
+## 6. 当前状态（M8 管理台后端 · 实施完成，待独立审查）
 
-后端里程碑 M0–M7 已完成（M3 入站按 2026-11-10 需求变更取消）：
+后端里程碑 M0–M8 已交付实现（M3 入站按 2026-11-10 需求变更取消；M8 实施完成，待独立审查）：
 
 | 里程碑 | 状态 |
 |---|---|
@@ -163,6 +167,7 @@ curl http://localhost:8000/api/v1/system/info   # 需要先登录拿 Bearer toke
 | M5 审批与安全加固 | 后端已完成；前端已联调（2026-11-11） |
 | M6 生产化与可观测 | 后端已完成（2026-11-11） |
 | M7 契约补齐与安全收口 | 已完成（2026-11-11；后端契约已交付，前端待接入） |
+| M8 管理台后端 | 实施完成，待独立审查（2026-11-11；前端未接入） |
 
 M6 交付：
 
@@ -196,6 +201,26 @@ M7 交付（已完成，2026-11-11；全量回归 733 passed, 1 skipped，证据
 - 全量回归 733 passed / 1 skipped，ruff 全绿，`alembic check` 无漂移，OpenAPI 无 diff；
   证据见 [M7 后端交付报告](docs/feedback/2026-11-11-m7-backend-report.md)。
 
+M8 交付（**实施完成，待独立审查**；前端未接入；全量回归 810 passed, 1 skipped，
+证据见 [M8 后端交付报告](docs/feedback/2026-11-11-m8-backend-report.md)）：
+
+- 用户管理：`GET /admin/users`（`q`/`role`/`status` 筛选 + 游标 + `stats`）、
+  `GET/PATCH /admin/users/{id}`（只改 `role`/`status`）；不能改自己角色（422
+  `cannot_change_own_role`）、不能停用自己（422 `cannot_disable_self`）、不能移除最后一个
+  活跃管理员（409 `last_admin_protected`）；写审计 `admin.user.update`；
+- 只读概览 `GET /admin/overview`：8 条聚合 SQL、不加载 ORM 行；附件计数排除 `deleted`，
+  状态键始终存在；
+- 平台默认指令 `GET/PUT /admin/settings/instruction`：`null` 恢复内置默认；审计不含正文；
+- 系统技能 `GET /admin/skills` + 全局启停/强制停用：`force_disabled` 压过用户覆盖；
+- 系统 MCP `GET/POST/PATCH/DELETE /admin/mcp/servers`：复用 SSRF/`secret:`/工具发现；
+  slug 任意 scope 冲突 409；响应/审计永不回显明文或密文；敏感头明文缺密钥 503
+  `secret_store_unavailable`；
+- 全局 Agent `GET/PATCH /admin/agents`：可编辑 `name/enabled/requires_approval/auth/headers`，
+  只读字段显式 422；`name_edited` 保护；全局注册表口径不按 owner 过滤（R8）；
+- 管理端配置面不受 `INSTRUCTIONS_ENABLED`/`SKILLS_ENABLED`/`MCP_ENABLED` 影响（R1）；
+- 契约文档、OpenAPI 与前端交接同步（[M8 前端交接](docs/feedback/2026-11-11-m8-frontend-handoff.md)）；
+  **无数据库迁移、无新增配置项/环境变量**。
+
 明确未包含：
 
 - [-] M3：A2A 入站 Server（需求变更取消）；
@@ -205,7 +230,10 @@ M7 交付（已完成，2026-11-11；全量回归 733 passed, 1 skipped，证据
 - [ ] M7 前端接入：后端契约已交付，前端待按
       [M7 前端交接](docs/feedback/2026-11-11-m7-frontend-handoff.md) 接入 SSE 续流、写操作 403
       与审批新字段（「逐字续流」尚未前端验收）；
-- [ ] M8（管理台后端）/ M9（工作流后端）：已立项、未开始（见 [路线图](docs/roadmap.md) 与
+- [ ] M8 管理台前端接入：后端 15 个 `/admin/*` 端点与
+      [M8 前端交接](docs/feedback/2026-11-11-m8-frontend-handoff.md) 已交付，前端页面与联调尚未开始；
+      M8 独立审查进行中（状态收口由控制器确认）；
+- [ ] M9（工作流后端）：已立项、未开始（见 [路线图](docs/roadmap.md) 与
       [立项文档](docs/superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md)）。
 
 本地假 Agent 联调（详见 [M2 交付报告](docs/feedback/2026-11-09-m2-backend-report.md)）：
@@ -253,10 +281,13 @@ curl -X POST http://127.0.0.1:8000/api/v1/agents \
 | [M7 实施计划](docs/superpowers/plans/2026-11-11-m7-contract-security.md) | 事件续流、RBAC、审批字段、授权 URL 白名单的任务拆分 |
 | [M7 前端交接](docs/feedback/2026-11-11-m7-frontend-handoff.md) | SSE 续流接入、审批新字段、写操作 403、`authorization_url=null` 与兼容性清单 |
 | [M7 后端交付报告](docs/feedback/2026-11-11-m7-backend-report.md) | M7 全量回归证据、关键决策、验收对照与已知缺口 |
+| [M8 实施计划](docs/superpowers/plans/2026-11-11-m8-admin-console.md) | 管理台 15 个端点、文档 / OpenAPI / 前端 handoff 与回归的任务拆分 |
+| [M8 前端交接](docs/feedback/2026-11-11-m8-frontend-handoff.md) | 管理台认证/403、用户/概览/系统项页面接入、错误码与联调自测清单 |
+| [M8 后端交付报告](docs/feedback/2026-11-11-m8-backend-report.md) | M8 全量回归证据、R1–R10 裁定、R8 偏差、已知缺口与验收对照 |
 
 ## 9. 下一步
 
-后端 M0–M7 已完成；后续工作交给部署与前端：
+后端 M0–M8 已交付实现（M8 实施完成，待独立审查）；后续工作交给独立审查、部署与前端：
 
 1. 按 [生产部署](docs/deployment.md) 在目标环境执行 `alembic upgrade head`、配置 JWT/LLM/OTLP 与 Compose；
 2. 在部署环境验证 Grafana 看板、告警与真实 LB 滚动发布（本地只做了排水与故障演练）；
@@ -264,8 +295,11 @@ curl -X POST http://127.0.0.1:8000/api/v1/agents \
    [M7 前端交接](docs/feedback/2026-11-11-m7-frontend-handoff.md) 接入 SSE 续流、写操作 403 与审批新字段；
    后端测试已覆盖契约，但「断线逐字续流」尚待前端联调验收（见
    [M7 后端交付报告](docs/feedback/2026-11-11-m7-backend-report.md) §5）；
-4. 需要多实例时再单独设计 Redis 事件总线/共享限流/跨实例 resume，不在 M6/M7 范围；
-5. M8（管理台后端）与 M9（工作流后端）按立项顺序启动，均需先冻结契约。
+4. M8 管理台：后端 15 个 `/admin/*` 端点与 [M8 前端交接](docs/feedback/2026-11-11-m8-frontend-handoff.md)
+   已交付，前端按交接文档接入用户/概览/系统项页面；独立审查进行中，审查完成前状态保持
+   「实施完成，待独立审查」（见 [M8 后端交付报告](docs/feedback/2026-11-11-m8-backend-report.md)）；
+5. 需要多实例时再单独设计 Redis 事件总线/共享限流/跨实例 resume，不在 M6/M7/M8 范围；
+6. M9（工作流后端）按立项顺序启动，需先冻结契约。
 
 编码前建议阅读：
 

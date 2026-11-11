@@ -54,6 +54,7 @@ flowchart TB
 | `modules/skills` | 本地技能包导入、校验、存储、激活 | 脚本执行（v2） |
 | `modules/memories` | 长期记忆的写入策略、检索、管理接口 | 单次会话上下文（由 checkpoint 负责） |
 | `modules/instructions` | 指令解析、覆盖合并、审计 | 基础系统提示词（代码内置） |
+| `modules/admin`（M8） | 管理台配置面：`/admin/*` 薄路由、用户管理/概览 SQL 与视图装配 | 系统项领域规则（保留在 instructions/skills/mcp/agents） |
 | `db/` | ORM 模型、会话、迁移、向量检索 SQL（`db/vector`，M4 已实现） | 业务规则 |
 | `core/` | 配置、日志、中间件、异常、鉴权原语 | 业务模块依赖 |
 
@@ -394,3 +395,58 @@ flowchart TB
 - **记忆**：存业务表 `memories`（原计划 `langgraph` schema 的 `store`，M1.5 改为业务表）；按 `user_id` 隔离；v1 只做显式保存（`save_memory`）与手动管理，自动提取列为 v2；
 - **Instruction**：用户文本整段覆盖平台默认，`null` 表示继承；基础系统提示词与安全规则不可覆盖；
 - **降级**：MCP 不可达、Store 故障都只降级不阻断对话，并发 `notice` 事件。
+
+## 14. 管理面（M8）
+
+> 管理台后端（原 X2）于 2026-11-11 实施完成（待独立审查），契约见
+> [`api.md` §12](api.md#12-m8-实现状态2026-11-11)，前端接入见
+> [M8 前端交接](feedback/2026-11-11-m8-frontend-handoff.md)。**无数据库迁移**。
+
+### 14.1 定位与边界
+
+`/admin/*` 是**配置面**，不是第二套业务实现：
+
+- `app/modules/admin/`（`router.py` / `schemas.py` / `service.py`）是薄 HTTP 适配层：
+  只有「用户管理」与「只读概览」是全新业务（SQL 与规则在 `admin/service.py`）；
+- 平台指令、系统技能、系统 MCP、全局 Agent 的校验、审计与生效优先级仍留在各自领域服务
+  （`instructions` / `skills` / `mcp` / `agents`），管理路由只做参数转换与 `AdminUser` 门禁，
+  避免复制 SSRF、`secret:` 解析、`force_disabled` 合并等易漂移逻辑；
+- 全部端点挂 `AdminUser`（M7 `require_admin`）：未登录 401，非管理员 403 `forbidden` +
+  `details.required_role="admin"`，拒绝写审计 `security.rbac_denied`；
+- 管理端**不提供**密码重置/强制下线、多角色 RBAC、数据导出/批量操作与前端页面。
+
+### 14.2 配置面与能力开关（R1）
+
+`INSTRUCTIONS_ENABLED` / `SKILLS_ENABLED` / `MCP_ENABLED=false` 时，管理端配置接口仍可读写
+持久化配置；运行态接口（`/instructions`、`/skills`、`/mcp/*`、聊天）行为不变。
+管理领域函数不调用各模块的 `_require_enabled()`，也不经过带开关门禁的可见性查询。
+
+### 14.3 数据与安全口径
+
+- **无迁移**：复用既有 `users`（`role`/`status`）、`system_settings`/`user_settings`、
+  `skills.scope/enabled/force_disabled`、`mcp_servers.scope/enabled/force_disabled`、
+  `remote_agents`（`owner_user_id` 仅保留）、`user_capability_overrides`；
+- **最后管理员保护**：降级/停用活跃管理员前 `SELECT ... WHERE role='admin' AND status='active'
+  ORDER BY id FOR UPDATE`（固定加锁顺序防死锁），锁后 `refresh` 再计数，剩 0 → 409
+  `last_admin_protected`；管理员不能改自己角色、不能停用自己（422）；
+- **概览**：每张表一条聚合 SQL（共 8 条），只取 count/sum，不加载 ORM 行、不做 N+1；
+  精确计数 O(表大小)，管理端低频只读，前端建议 ≥30s 刷新；
+- **密钥不外泄**：系统 MCP / 全局 Agent 的输出 DTO 不含 `headers`/密文，只回
+  `credentials_hint`/`auth_hint`；审计 `detail` 只写字段名、状态值、长度/指纹与计数；
+  敏感头明文且无 `CAPABILITY_SECRET_KEY` 时 503 `secret_store_unavailable`；
+- **全局 Agent 口径（R8）**：v1 `remote_agents` 是全局注册表，管理端返回全部未软删 Agent，
+  不按 `owner_user_id IS NULL` 过滤（与立项 spec 字面差异已裁定；`owner_user_id` 不参与可见性）。
+
+### 14.4 审计动作
+
+| action | 触发 |
+|---|---|
+| `admin.user.update` | 用户角色/状态真实变更 |
+| `instruction.update`（`detail.scope="platform"`） | 平台默认指令保存/恢复 |
+| `skill.enable` / `skill.force_disable` | 系统技能全局启停/强制停用 |
+| `mcp.server.create` / `update` / `delete` / `check` | 系统 MCP 增删改与工具发现 |
+| `agent.updated`（`detail.source="admin"`） | 全局 Agent 真实变更 |
+| `security.rbac_denied` | 非管理员访问管理端/写接口（M7） |
+
+> 完整字段与错误码见 [`api.md` §12](api.md#12-m8-实现状态2026-11-11)；
+> 验证证据见 [M8 后端交付报告](feedback/2026-11-11-m8-backend-report.md)。

@@ -18,7 +18,7 @@
 | M5 审批与安全加固 | 后端已完成（2026-11-10） | HITL 迁移到 `interrupt()`/`Command(resume=...)`；超时取消、聊天限流、注入检测/输出打码、平台密钥、审计检索；395 测试通过；跨实例启动保活已并入 M6；前端 M5 已联调（2026-11-11） |
 | M6 生产化与可观测 | 后端已完成（2026-11-11） | 日志/OTel/指标/readyz/Dockerfile+Compose/清理/启动恢复/流式过滤/压测/CI；582 测试通过；Grafana 与真实 LB 滚动未实测 |
 | M7 契约补齐与安全收口 | 已完成（2026-11-11；后端契约与全量回归完成，前端待接入） | 事件回放 `event` + SSE 续流端点、agents/tasks 写操作 RBAC、审批事件字段、A2A 授权 URL 白名单、契约/OpenAPI/前端 handoff；无迁移；733 passed / 1 skipped、ruff 全绿、`alembic check` 无漂移、OpenAPI 无 diff |
-| M8 管理台后端（原 X2） | 已立项（2026-11-11），未开始 | 用户/角色、系统指令/技能/MCP/Agent、只读概览；依赖 M7 的 RBAC |
+| M8 管理台后端（原 X2） | 实施完成，待独立审查（2026-11-11；前端未接入） | 15 个 `/admin/*` 端点：用户/角色、只读概览、平台指令、系统技能、系统 MCP、全局 Agent；管理端配置面绕过能力开关（R1）、全局 Agent 全局注册表口径（R8）；无迁移；810 passed / 1 skipped、ruff 全绿、`alembic check` 无漂移、OpenAPI 无 diff |
 | M9 工作流后端（原 X1） | 已立项（2026-11-11），未开始 | 轻量步骤模板 MVP（检索/工具/A2A/审批/回答）；先 spike，不引入外部引擎 |
 
 > 注：M1.5 是追加的中间里程碑，排在 M1 之后、M2 之前，不改动原 M2–M6 的编号含义。
@@ -261,23 +261,39 @@
 - [ ] Task 7 独立审查：由独立 reviewer 并行执行，发现项由后续修复轮处理
       （本里程碑状态收口不等待该结论；审查完成后另行勾选）
 
-## M8 管理台后端（原 X2，已立项 2026-11-11；未开始）
+## M8 管理台后端（原 X2，实施完成 2026-11-11，待独立审查）
 
 **目标**：给前端管理控制台提供真实契约，替代运维脚本/DB 配置。
 
-> 设计见 [M7–M9 立项](superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md) §4。
+> 立项设计见 [M7–M9 立项](superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md) §4，
+> 实施计划见 [M8 实施计划](superpowers/plans/2026-11-11-m8-admin-console.md)，
+> 前端接入见 [M8 前端交接](feedback/2026-11-11-m8-frontend-handoff.md)，
+> 回归证据与已知缺口见 [M8 后端交付报告](feedback/2026-11-11-m8-backend-report.md)。
+> 状态口径：Task 1–7 已交付，全量回归与交付报告完成（2026-11-11）；**独立审查进行中**，
+> 审查结论由控制器确认后再翻为「已完成」；M8 前端页面与联调尚未开始。
 
 范围：
 
-- [ ] 用户列表/详情/角色与状态调整（不能改自己、不能禁用最后一个 admin）
-- [ ] 平台指令、系统技能、系统 MCP、全局 Agent 的查询与管理（复用 `scope`/`force_disabled`/`system_settings`）
-- [ ] `GET /admin/overview` 只读统计
-- [ ] 管理端审计与 403 契约
+- [x] 用户列表/详情/角色与状态调整（不能改自己、不能停用自己、不能禁用最后一个活跃管理员）
+- [x] 平台指令、系统技能、系统 MCP、全局 Agent 的查询与管理（复用 `scope`/`force_disabled`/`system_settings`）
+- [x] `GET /admin/overview` 只读统计（8 条聚合 SQL，不加载 ORM 行）
+- [x] 管理端审计与 403 契约（`forbidden` + `details.required_role="admin"`，拒绝写审计）
+- [x] 管理端配置面绕过能力总开关（R1）；全局 Agent 采用「全部未软删」注册表口径（R8，与 spec 字面偏差已裁定）
+- [x] 契约文档、OpenAPI、前端 handoff 同步（`docs/api.md` §12、`docs/openapi.json`）
+- [x] **无迁移**：未新增表/列/索引；迁移 head 仍 `2d8f6a1c3e70`
 
 验收：
 
-- [ ] 管理员可完成上述操作且关键写操作有审计；普通用户访问 `/admin/*` 全 403
-- [ ] 预计无迁移；OpenAPI/文档/前端 handoff 同步
+- [x] 管理员可查用户、改角色/状态；「不能改自己」「不能禁用自己的账号」「不能移除最后一个
+      活跃管理员」有 HTTP 与服务层测试（`test_admin_users.py`）
+- [x] 平台指令、系统技能、系统 MCP、全局 Agent 可读可改；`force_disabled` 压过用户覆盖
+      （技能与 MCP 各有测试）；敏感头/密钥引用不在响应与审计回显
+- [x] 普通用户访问任何新增 `/admin/*` 返回 403 `forbidden` + `details.required_role="admin"`；
+      未登录 401；关键写操作全部写审计（`test_admin_*` 六个文件共 50 条用例）
+- [x] OpenAPI / `docs/api.md` / 前端 handoff / README / roadmap 同步；无迁移
+      （810 passed, 1 skipped；ruff 全绿；`alembic check` 无漂移；OpenAPI `git diff --exit-code` 干净）
+- [ ] 前端管理台页面接入与联调（前端 M8 范围；后端契约与 handoff 已交付）
+- [ ] 独立审查收口（审查进行中，结论由控制器确认）
 
 ## M9 工作流后端（原 X1，已立项 2026-11-11；未开始）
 

@@ -550,6 +550,23 @@ CREATE INDEX ix_mcp_servers_owner ON mcp_servers (owner_user_id, enabled);
 M5 只存本表，管理员通过 `/api/v1/admin/secrets` 管理；运行时 `secret:NAME` 无条件解析
 （写入时按提交者角色限制，普通用户只能用 `env:`）。
 
+### 4.20 M8 管理台复用（无新表/列）
+
+M8 管理台后端（2026-11-11）**没有新增或修改任何表、列、索引、约束**，只读写既有数据：
+
+| 表 | 管理端用途 |
+|---|---|
+| `users` | 用户列表/详情；`role`/`status` 调整；最后活跃管理员行锁保护 |
+| `system_settings` | 平台默认指令（`key='instruction.default'`，`value` 兼容 `{"content": ...}` 与裸字符串） |
+| `user_settings` | `user_override_count`（`instructions IS NOT NULL`） |
+| `skills` | 系统技能列表（`scope='system'`）与 `enabled`/`force_disabled` 全局开关 |
+| `mcp_servers` / `mcp_tools` | 系统 MCP（`scope='system'`）CRUD、工具发现缓存；删除时工具随 FK CASCADE |
+| `user_capability_overrides` | 删除系统 MCP 时同事务清理 `capability='mcp_server'` 的孤儿覆盖 |
+| `remote_agents` | 全局 Agent 注册表（未软删行；`owner_user_id` 仅保留、不参与可见性，R8） |
+| `audit_logs` | 管理端写操作审计（`admin.user.update`、`instruction.update`、`skill.*`、`mcp.server.*`、`agent.updated`） |
+
+`alembic/versions/` **无新增迁移文件**，迁移 head 仍为 `2d8f6a1c3e70`。
+
 ## 5. 向量检索设计
 
 ### 5.1 索引选择
@@ -674,6 +691,10 @@ M4/M5 新增迁移：
 > **M7（2026-11-11）：无迁移。** 事件回放的 `event` 字段由既有 `run_events.payload._event`
 > 派生；SSE 续流、agents/tasks 写操作 RBAC、`approval.required` 展示字段与
 > A2A `authorization_url` 白名单均为代码/契约变更，表结构不变；迁移 head 仍为 `2d8f6a1c3e70`。
+
+> **M8（2026-11-11）：无迁移。** 管理台用户管理、只读概览、平台指令、系统技能、系统 MCP
+> 与全局 Agent 全部复用既有列（见 §4.20）；`alembic/versions/` 无新增文件，
+> `alembic check` 无漂移，迁移 head 仍为 `2d8f6a1c3e70`。
 
 ## 9. 数据生命周期
 
