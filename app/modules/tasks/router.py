@@ -8,6 +8,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
+from app.api.schemas import ErrorEnvelopeOut
 from app.core.deps import AdminUser, CurrentUser, DbSession
 from app.modules.tasks import service
 from app.modules.tasks.schemas import (
@@ -20,6 +21,14 @@ from app.modules.tasks.schemas import (
 )
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+# 动作接口的管理员门禁 403：覆盖 include 级通用 403（capability_disabled 口径）。
+_ADMIN_ACTION_RESPONSES: dict[int | str, dict] = {
+    403: {
+        "model": ErrorEnvelopeOut,
+        "description": "需要管理员权限（`forbidden`，`details.required_role=\"admin\"`）",
+    }
+}
 
 
 @router.get("", response_model=TaskPage)
@@ -57,26 +66,34 @@ async def get_task(task_id: uuid.UUID, db: DbSession, user: CurrentUser) -> A2aT
     return await service.get_task_detail(db, task_id)
 
 
-@router.post("/{task_id}/cancel", response_model=A2aTaskDetail)
+@router.post(
+    "/{task_id}/cancel", response_model=A2aTaskDetail, responses=_ADMIN_ACTION_RESPONSES
+)
 async def cancel_task(task_id: uuid.UUID, db: DbSession, admin: AdminUser) -> A2aTaskDetail:
     return await service.cancel_task_action(db, admin, task_id)
 
 
-@router.post("/{task_id}/resume", response_model=TaskResumeResult)
+@router.post(
+    "/{task_id}/resume", response_model=TaskResumeResult, responses=_ADMIN_ACTION_RESPONSES
+)
 async def resume_task(
     task_id: uuid.UUID, payload: TaskResumeRequest, db: DbSession, admin: AdminUser
 ) -> TaskResumeResult:
     return await service.resume_task_action(db, admin, task_id, payload)
 
 
-@router.post("/{task_id}/authorize", response_model=A2aTaskDetail)
+@router.post(
+    "/{task_id}/authorize", response_model=A2aTaskDetail, responses=_ADMIN_ACTION_RESPONSES
+)
 async def authorize_task(
     task_id: uuid.UUID, payload: TaskAuthorizeRequest, db: DbSession, admin: AdminUser
 ) -> A2aTaskDetail:
     return await service.authorize_task_action(db, admin, task_id, payload)
 
 
-@router.post("/{task_id}/reject", response_model=A2aTaskDetail)
+@router.post(
+    "/{task_id}/reject", response_model=A2aTaskDetail, responses=_ADMIN_ACTION_RESPONSES
+)
 async def reject_task(
     task_id: uuid.UUID, payload: TaskRejectRequest, db: DbSession, admin: AdminUser
 ) -> A2aTaskDetail:

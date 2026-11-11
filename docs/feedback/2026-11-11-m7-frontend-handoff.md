@@ -4,13 +4,14 @@
 > §1/§2.3/§2.4/§2.5/§3.3/§7.7/§7.8/§8.2/§9/§11 与 [`docs/openapi.json`](../openapi.json) 为准；
 > 本文件是前端接入清单，不替代 OpenAPI。
 >
-> M7 **无数据库迁移**，登录/令牌/既有事件语义不变；未接入新端点、不传新字段的旧前端可以继续运行。
+> M7 **无数据库迁移**，登录/令牌/既有事件语义不变。除两处破坏性变更（普通用户调用 agents/tasks
+> 写接口会 403、A2A `authorization_url` 可能为 `null`）外，未接入新端点、不传新字段的旧前端可继续运行。
 
 ## 1. 变更速览
 
 | 变更 | 兼容性 | 前端动作 |
 |---|---|---|
-| 新增 `GET /api/v1/runs/{id}/stream?after_seq=`（SSE 续流） | 新能力（可选接入） | 断线后从最后 `seq` 续流；替换「只轮询事件分页」的降级方案 |
+| 新增 `GET /api/v1/runs/{id}/stream?after_seq=`（SSE 续流） | 新能力（可选接入） | 断线后从最后 `seq` 续流**已落库事件** + 后续实时事件；断线窗口的 `message.delta` 不补发，终态后需拉消息终稿 |
 | `GET /api/v1/runs/{id}/events` 每项新增必填 `event` | 向后兼容（多字段） | 用 `event` 判断事件类型，不再解析 `payload._event`（该键不会返回） |
 | `approval.required.data` 新增 5 个字段 | 向后兼容（多字段） | 审批卡优先用新字段展示，缺失时回退到旧字段 |
 | agents 写接口、tasks 动作接口改为**仅管理员** | **有破坏性**（普通用户 403） | 按 `/auth/me` 的 `role` 隐藏/禁用写操作；处理 403 `details.required_role` |
@@ -38,6 +39,10 @@ Accept: text/event-stream
   `Cache-Control: no-cache`、`X-Accel-Buffering: no`。
 - 帧格式与 `/chat/stream` 相同：`id: <seq>`、`event: <事件名>`、`data: <单行 JSON>`；
   心跳是注释帧 `: ping`（每 15s，不占 `seq`）。
+- **回放只覆盖已写入 `run_events` 的事件**：`message.delta` / `reasoning.delta` 以
+  `persist=False` 发出，不落库，断线窗口内的增量文本**不会补发**。重连后只从服务端当前实时点继续；
+  收到 `message.done`/`error`（或 `run.interrupted`）后，必须用
+  `GET /api/v1/conversations/{conversation_id}/messages` 拉取该条助手消息的终稿覆盖本地累积文本。
 
 ### 2.2 推荐接入方式（`@microsoft/fetch-event-source`）
 
@@ -48,6 +53,8 @@ import { fetchEventSource } from '@microsoft/fetch-event-source'
 type RunStreamHandlers = {
   onEvent: (event: string, data: Record<string, unknown>) => void
   onFatal: (message: string) => void
+  // 服务端已终态但回放中没有终态事件时回调（此时应停止重连并刷新终态/消息终稿）。
+  onRunEnd?: (status: 'succeeded' | 'failed' | 'canceled') => void
 }
 
 export function connectRunStream(params: {
@@ -65,6 +72,14 @@ export function connectRunStream(params: {
   let retryDelay = 300
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  const fetchRunStatus = async (): Promise<string | null> => {
+    const response = await fetch(`${baseUrl}/api/v1/runs/${runId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    if (!response.ok) return null
+    return (await response.json())?.status ?? null
+  }
 
   const loop = async () => {
     while (!ctrl.signal.aborted && !terminal) {
@@ -90,6 +105,8 @@ export function connectRunStream(params: {
             },
             onmessage: (ev) => {
               const seq = Number(ev.id)
+              // 重连窗口内可能重复回放：已处理过的 seq 直接丢弃。
+              if (Number.isFinite(seq) && seq <= lastSeq) return
               if (Number.isFinite(seq)) lastSeq = seq
               if (!ev.data) return
               const data = JSON.parse(ev.data) as Record<string, unknown>
@@ -127,20 +144,28 @@ export function connectRunStream(params: {
           return handlers.onFatal('无权访问该运行')
         }
         if (status === 400 && code === 'replay_too_large') {
-          return handlers.onFatal('待回放事件过多，请先用 /runs/{id}/events 分页补齐历史')
+          return handlers.onFatal('待回放事件过多，请先用 /runs/{id}/events 分页回放已落库历史')
         }
         if (status === 422) {
           return handlers.onFatal('续流参数非法（after_seq 必须是 >=0 的整数）')
         }
 
-        // 网络错误 / 5xx / 429：指数退避后用最新 lastSeq 重连（补齐可能落库的终态事件）。
+        // 网络错误 / 5xx / 429：指数退避后用最新 lastSeq 重连（只补已落库事件，delta 不补）。
         await sleep(retryDelay + Math.random() * 200)
         retryDelay = Math.min(retryDelay * 2, 5000)
         continue
       }
 
-      // 正常 EOF：若还没收到终态事件，按最后 seq 重连。
+      // 正常 EOF：若还没收到终态事件，先查一次 run 状态再决定是否重连。
       if (!terminal && !ctrl.signal.aborted) {
+        // 服务端对「已终态且回放里没有终态事件」的 run 会回放完直接关闭：
+        // 此时重连只会每 5 秒空转，必须停止重连并刷新终态。
+        const status = await fetchRunStatus().catch(() => null)
+        if (status === 'succeeded' || status === 'failed' || status === 'canceled') {
+          handlers.onRunEnd?.(status)
+          return
+        }
+        // 仍为 running/interrupted 或状态查询失败：按最后 seq 退避重连。
         await sleep(retryDelay + Math.random() * 200)
         retryDelay = Math.min(retryDelay * 2, 5000)
         continue
@@ -157,12 +182,17 @@ export function connectRunStream(params: {
 说明：
 
 - 每收到一帧就把 `ev.id` 记为 `lastSeq`（`id` 就是 `seq`，纯数字）；重连时作为 `after_seq`，
-  服务端只补发更大的 `seq`，天然去重。若收到 `seq <= lastSeq` 的帧（重连窗口内的重复），前端应丢弃。
-- 在收到 `message.done` / `error` 后**不要重连**；UI 以 `GET /api/v1/runs/{id}` 的终态为准刷新。
-- 若服务端在未发送终态事件的情况下 EOF（例如 `interrupted` 等待超时后关闭），按最后 `seq` 重连即可：
-  若 run 已终态，服务端会先回放终态事件再关闭；若仍在 `interrupted`，连上后会继续等待审批恢复。
-- 单实例部署：后端事件总线是进程内实现。多实例/重部署时实时帧可能丢失，但重连后的回放能补齐
-  **已落库**事件；不要假设跨实例实时性。
+  服务端只回放 `seq > after_seq` 的已落库事件。示例在 `onmessage` 里显式丢弃 `seq <= lastSeq`
+  的重复帧，防止重连窗口导致消息重复。
+- 收到 `message.done` / `error`：属于终态事件，**不要重连**；UI 以 `GET /api/v1/runs/{id}` 的终态为准，
+  并用 `GET /api/v1/conversations/{id}/messages` 拉取助手消息终稿，覆盖本地累积的增量文本。
+- EOF 且未收到终态事件时分两种：
+  1. **run 已终态**（`succeeded`/`failed`/`canceled`）但回放里没有终态事件：服务端回放完就关闭，
+     示例会先查 `GET /runs/{id}`，命中终态则停止重连并回调 `onRunEnd`；
+  2. **run 仍运行 / `interrupted`**（或状态查询失败）：按最后 `seq` 退避重连；`interrupted` 连上后
+     继续等审批恢复。
+- 单实例部署：后端事件总线是进程内实现。多实例/重部署时实时帧可能丢失，重连后的回放只能补齐
+  **已落库**事件；`message.delta`/`reasoning.delta` 不落库，断线窗口的增量文本不补，需靠终稿覆盖。
 
 ### 2.3 用原生 `fetch` 接入（无第三方依赖）
 
@@ -180,7 +210,7 @@ const response = await fetch(
 
 if (!response.ok) {
   const body = await response.json().catch(() => null)
-  // 错误信封：{ error: { code, message, request_id } }，按 §2.5 的错误表处理。
+  // 错误信封：{ error: { code, message, request_id, details? } }，见 docs/api.md §1。
   throw Object.assign(new Error(body?.error?.message ?? '续流失败'), {
     status: response.status,
     code: body?.error?.code,
@@ -217,13 +247,15 @@ while (true) {
 }
 ```
 
-（生产建议直接用 `@microsoft/fetch-event-source`，它已处理分块、注释帧与字段拼接。）
+（生产建议直接用 `@microsoft/fetch-event-source`，它已处理分块、注释帧与字段拼接。
+原始 `fetch` 版本同样需要按 §2.2 的规则去重、终态后停止、EOF 时先查 `GET /runs/{id}`，
+并在终态/`interrupted` 后拉消息历史终稿。）
 
 ### 2.4 续流生命周期
 
 | 场景 | 服务端行为 | 前端处理 |
 |---|---|---|
-| 正常回放 + 运行中 | 回放历史后持续推实时帧 | 正常渲染；无帧时等待心跳 |
+| 正常回放 + 运行中 | 回放**已落库**事件后持续推实时帧 | 正常渲染；无帧时等待心跳；断线窗口的 delta 不补 |
 | 回放/实时收到 `message.done` 或 `error` | 立即关闭流 | 视为终态，**不重连**；用 `GET /runs/{id}` 刷新终态 |
 | run 已终态且回放里有终态事件 | 回放完立即关闭 | 收到终态事件后停止 |
 | run 已终态但回放里没有终态事件 | 回放完关闭（避免空挂） | 收到 EOF 后查一次 `GET /runs/{id}`，不要无限重连 |
@@ -233,6 +265,8 @@ while (true) {
 | 未登录/令牌过期 | 401 `unauthorized` | 刷新令牌后从原 `lastSeq` 重试；刷新失败则登出 |
 | 非本人 run / 不存在 | 404 `not_found` | 停止重连，提示「运行不存在或无权访问」 |
 | 403 | 403 `forbidden`（通用；续流不要求管理员，当前正常路径不返回） | 停止重连，按通用无权限提示 |
+| run 已终态但回放无终态事件 | 回放完直接关闭 | 先 `GET /runs/{id}` 确认终态，停止重连并拉消息终稿 |
+| 断线期间产生的 `message.delta` | **不落库、不回放** | 无法补齐增量文本；终态/`interrupted` 后拉消息历史终稿覆盖 |
 
 > 心跳 `: ping` **不是事件**，不要写进消息列表，也不要因为 15s 没数据就主动断开。
 > 浏览器/网关的空闲超时要大于 15s（Nginx 已由 `X-Accel-Buffering: no` 关闭缓冲，仍建议
@@ -250,13 +284,20 @@ while (true) {
   "seq": 41,
   "ts": "2026-11-11T12:00:00Z",
   "type": "message",
-  "event": "message.delta",
+  "event": "message.created",
   "status": "ok",
-  "title": "",
-  "subtitle": "",
+  "title": "用户消息",
+  "subtitle": "你好",
   "duration_ms": null,
   "tokens": null,
-  "payload": { "run_id": "...", "seq": 41, "message_id": "...", "delta": "你好" },
+  "payload": {
+    "run_id": "...",
+    "seq": 41,
+    "message_id": "...",
+    "role": "user",
+    "client_message_id": null,
+    "created_at": "2026-11-11T12:00:00Z"
+  },
   "error": null
 }
 ```
@@ -265,6 +306,8 @@ while (true) {
   历史数据缺少内部 `_event` 时为 `""`。未知事件按「忽略/通用展示」处理，不要抛异常。
 - `payload` 仍会剔除内部字段 `_event`，其余与 SSE 帧 `data` 一致；`type` 仍是原分类字段，语义不变。
 - 用 `event`（而不是 `type`）判断事件种类；`type` 继续用于分组/筛选。
+- **注意**：回放里不会出现 `message.delta` / `reasoning.delta`（二者不落库）；不要用回放示例假设
+  能恢复断线期间的增量文本，完整回复请以消息历史终稿为准。
 
 ---
 
@@ -356,11 +399,12 @@ Agent 返回的授权链接做白名单校验（仅 https 公网主机；dev/tes
 ## 8. 联调自测清单
 
 - [ ] 未登录请求续流 → 401；用他人 run → 404；`after_seq=-1` → 422。
-- [ ] 完整跑一轮聊天，断线后用最后 `seq` 续流，能拿到缺失的 `message.delta`/`message.done`，无重复消息。
+- [ ] 完整跑一轮聊天，断线后用最后 `seq` 续流，能拿到断线期间缺失的**已落库事件**与终态事件，且无重复帧；
+      确认 `message.delta` 不会补发，终态后从 `GET /conversations/{id}/messages` 拉到的终稿完整。
 - [ ] 收到 `message.done` 后停止重连（观察不再发新请求）。
 - [ ] 触发审批：`approval.required` 能展示 5 个新字段；`run.interrupted` 后连接保持，收到 `: ping`
       不报错；审批通过后收到 `run.resumed` 与后续增量。
 - [ ] 普通用户点击 agents/tasks 写操作 → 403 `forbidden` + `details.required_role="admin"`；
       管理员操作成功。
 - [ ] 构造 `authorization_url=null` 的任务详情，页面不出现空链接/`"null"`。
-- [ ] 400 `replay_too_large` 时走分页回放兜底，能补齐历史后继续。
+- [ ] 400 `replay_too_large` 时走分页回放兜底，能补齐**已落库**历史后继续。

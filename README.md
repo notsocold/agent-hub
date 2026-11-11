@@ -9,8 +9,8 @@
 > Dockerfile + 生产 Compose、优雅停机、启动恢复、数据清理、流式实时过滤、CI）。
 > M7 新增：运行事件 SSE 续流端点、回放 `event` 字段、agents/tasks 写操作管理员 RBAC、
 > `approval.required` 5 个展示字段、A2A `authorization_url` 后端白名单；
-> M7 Task 6 在本机实跑 **454 passed, 280 skipped**（PostgreSQL 未运行，DB 集成用例由 conftest
-> 自动跳过；待 Task 7 在有库环境回归）；ruff 全绿；迁移 head `2d8f6a1c3e70`（M7 无迁移）。
+> M7 Task 6 修复轮全量 **733 passed, 1 skipped**（含全部 DB 集成用例）；ruff 全绿；
+> 迁移 head `2d8f6a1c3e70`（M7 无迁移）。
 > 前端 M4/M5/M6 已完成并联调（2026-11-11）；M7 前端接入见
 > [M7 前端交接](docs/feedback/2026-11-11-m7-frontend-handoff.md)。
 > 后续 **M8（管理台）/ M9（工作流）已于 2026-11-11 立项、未开始**，
@@ -183,7 +183,8 @@ M6 交付：
 M7 交付（实施中，待 Task 7 全量回归与独立审查）：
 
 - `GET /runs/{id}/events` 每项新增 `event`；新增 `GET /runs/{id}/stream?after_seq=` SSE 续流
-  （回放 + 实时跟随、回放上限 1000、终态关闭、`interrupted` 等待恢复、15s 心跳、单实例）；
+  （回放已落库事件 + 实时跟随、回放上限 1000、终态关闭、`interrupted` 等待恢复、15s 心跳、单实例；
+  `message.delta` 不落库，断线窗口的增量不补，终态后以消息历史终稿为准）；
 - agents 写接口（注册/修改/删除/刷新/健康检查）与 tasks 动作接口（取消/补输入/授权/拒绝）
   收紧为管理员：非管理员 403 `forbidden` + `details.required_role="admin"`，拒绝写审计
   `security.rbac_denied`；读接口与 `POST /agents/preview` 不变；

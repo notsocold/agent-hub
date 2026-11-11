@@ -162,7 +162,7 @@ sequenceDiagram
   后台任务以 `Command(resume=...)` 恢复同一条 run（发 `run.resumed`），继续输出 `message.delta`；
 - 图挂起时 run → `interrupted`，发非终态 `run.interrupted`；SSE 按 D8 保持连接，
   空闲 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭，前端用事件分页回放 + 终态刷新补齐，
-  或用 M7 的逐字续流端点 `GET /runs/{id}/stream?after_seq=` 从断点继续；
+  或用 M7 的续流端点 `GET /runs/{id}/stream?after_seq=` 从断点继续（只补已落库事件，增量 delta 不补）；
 - 超时未处理：定时巡检把审批置 `expired`，run → `canceled`，发
   `message.done(finish_reason="canceled", reason="approval_timeout")`；
 - 取消/超时后用**专用 halt gate** 清理 checkpoint 挂起（补「已取消」ToolMessage），
@@ -180,7 +180,8 @@ sequenceDiagram
 - 收到 `message.done`/`error` 立即关闭；run 已终态且回放中没有终态事件时回放完即关闭；
   `interrupted` 的 run 保持连接等待审批恢复，空闲超过 `HITL_STREAM_TIMEOUT_SECONDS` 关闭；
 - 实时帧来自 `app/modules/chat/bus.py` 的**进程内单实例总线**；多实例部署时实时帧可能丢失，
-  断线/多实例场景靠 `after_seq` 回放已落库事件补齐；服务端**不支持 `Last-Event-ID`**；
+  断线/多实例场景靠 `after_seq` 回放**已落库**事件补齐；`message.delta`/`reasoning.delta`
+  不落库、不补发，终态/`interrupted` 后以消息历史终稿为准；服务端**不支持 `Last-Event-ID`**；
 - 旧 `POST /chat/stream` 复用同一生成器但保持旧语义（不设回放上限、不因 run 已终态提前关闭）；
 - 回放接口 `GET /runs/{id}/events` 每项新增 `event`（原始事件名，`payload._event` 的对外映射），
   `payload` 仍剔除内部 `_event`。
@@ -281,8 +282,9 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 - 前端 SSE 断开不影响后端执行（默认策略）；
 - 前端重连后用 `GET /api/v1/runs/{run_id}` 获取状态，或
   `GET /api/v1/runs/{run_id}/events?after_seq=` 分页回放（已实现）；
-- M7 起用 `GET /runs/{id}/stream?after_seq=` 做逐字续流（回放 + 实时跟随），
-  前端必须显式传最后 `seq`（服务端不支持 `Last-Event-ID`）；
+- M7 起用 `GET /runs/{id}/stream?after_seq=` 做续流（回放已落库事件 + 实时跟随），
+  前端必须显式传最后 `seq`（服务端不支持 `Last-Event-ID`）；断线窗口内的增量 delta 不补，
+  终态/`interrupted` 后用消息历史终稿覆盖；
 - 图执行状态由 checkpointer 保证；M5 的审批恢复不依赖进程内 waiter，决定接口即可触发
   `Command(resume=...)`（同进程/同线程 checkpoint 均可恢复）；
 - 进程启动恢复已在 M6 实现：孤儿 `running` 一律 `failed`，`interrupted` 走 resume / `restart_lost` 取消。

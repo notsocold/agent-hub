@@ -103,7 +103,8 @@ Authorization: Bearer <access_token>
 > 续流端点鉴权：`Authorization: Bearer <access token>`；未登录/无效 token 401 `unauthorized`，
 > 非本人或不存在统一 404 `not_found`（不泄露存在性），待回放事件 >1000 条 400 `replay_too_large`，
 > `after_seq` 非法 422 `validation_error`；**不支持 `Last-Event-ID`**，重连必须显式传 `after_seq`。
-> 详见 §7.8。
+> 回放只覆盖已落库事件：`message.delta`/`reasoning.delta` 不落 `run_events`，断线窗口内的增量
+> 不会补发；终态或 `interrupted` 后用 `GET /conversations/{id}/messages` 取终稿覆盖。详见 §7.8。
 
 ### 2.4 远程智能体（M2 已实现）
 
@@ -713,6 +714,11 @@ GET /api/v1/instructions
 | 过滤 | `after_seq`、`types`（逗号分隔）、`q`（标题/副标题模糊匹配）、`cursor` |
 | 分页 | `after_seq` 与 `cursor` 可同时递增；`has_more=false` 即取完 |
 
+> **回放边界（M7）**：本接口只返回已写入 `run_events` 的事件。`message.delta` 与
+> `reasoning.delta` 以 `persist=False` 发送，**不落库、不可回放**；断线期间的增量文本永久缺失。
+> 需要完整回复时，以 `message.done`（或 `run.interrupted`）后 `GET /conversations/{id}/messages`
+> 返回的消息正文为准。
+
 ### 7.8 运行续流与恢复端点
 
 #### 7.8.1 SSE 续流（`GET /runs/{id}/stream?after_seq=`，M7）
@@ -727,7 +733,8 @@ GET /api/v1/instructions
 | `interrupted` | run 停在审批时保持连接等待 `run.resumed` 与后续事件；空闲超过 `HITL_STREAM_TIMEOUT_SECONDS`（默认 900s）后关闭，客户端按最后 `seq` 重连 |
 | 心跳 | 等待实时事件期间每 15s 发送注释帧 `: ping`，不占 `seq`，客户端忽略 |
 | `Last-Event-ID` | **不支持**；重连必须显式把最后收到事件的 `seq` 作为 `after_seq` 传入（`id:` 行的值可直接使用） |
-| 部署 | 事件总线为进程内实现（单实例）；多实例部署时实时帧可能丢失，靠 `after_seq` 回放补齐 |
+| 回放边界 | 只回放已写入 `run_events` 的事件；`message.delta`/`reasoning.delta` 不落库、**断线期间不补发**；终态或 `interrupted` 后用 `GET /conversations/{id}/messages` 取终稿覆盖 |
+| 部署 | 事件总线为进程内实现（单实例）；多实例部署时实时帧可能丢失，靠 `after_seq` 回放**已落库**事件补齐（增量 delta 不补） |
 | 响应头 | `X-Run-ID`、`X-Request-ID`、`Cache-Control: no-cache`、`X-Accel-Buffering: no` |
 
 ```text
@@ -736,8 +743,8 @@ Authorization: Bearer <token>
 Accept: text/event-stream
 
 id: 43
-event: message.delta
-data: {"run_id":"9a8b...","seq":43,"message_id":"e5f6...","delta":"你好"}
+event: message.created
+data: {"run_id":"9a8b...","seq":43,"message_id":"e5f6...","role":"user"}
 
 : ping
 
@@ -747,6 +754,11 @@ data: {"run_id":"9a8b...","seq":44,"message_id":"e5f6...","finish_reason":"stop"
 ```
 
 > 旧端点 `POST /chat/stream` 语义不变：它本身不设回放上限、也不在「run 已终态」时提前关闭。
+>
+> **重连终态判断**：EOF 且未收到 `message.done`/`error` 时，先查 `GET /runs/{id}`：
+> 若已 `succeeded`/`failed`/`canceled`（回放里没有终态事件）则**停止重连**并按终态刷新；
+> 若仍 `running`/`interrupted` 才按最后 `seq` 重连。`interrupted` 后消息正文已落库，
+> 可用 `GET /conversations/{id}/messages` 获取该条助手消息的完整正文并覆盖本地累积文本（`message.delta` 本身不回放）。
 
 #### 7.8.2 运行恢复端点（占位）
 
@@ -885,9 +897,10 @@ A2A `auth_required` 的 `authorization_url` 来自远程 Agent，属不可信数
   收到后 **SSE 保持连接**（按 D8，空闲 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭）；
 - `run.resumed`（非终态）：审批决定后恢复执行；
 - 断线后 `GET /runs/{id}/events?after_seq=` 分页回放已落库事件；**不跟随实时流**。
-  M7 起改用 `GET /runs/{id}/stream?after_seq=` 逐字续流：先回放再跟随实时事件，待回放 >1000 条
+  M7 起改用 `GET /runs/{id}/stream?after_seq=` 续流：先回放已落库事件再跟随实时事件，待回放 >1000 条
   返回 400 `replay_too_large`，收到 `message.done`/`error` 后关闭，`interrupted` 保持连接等审批恢复，
-  空闲每 15s 发 `: ping`，**不支持 `Last-Event-ID`**（见 §7.8）；事件回放每项新增 `event` 字段；
+  空闲每 15s 发 `: ping`，**不支持 `Last-Event-ID`**（见 §7.8）；`message.delta` 不落库，
+  断线窗口内的增量不补发，终态/`interrupted` 后以消息历史终稿为准；事件回放每项新增 `event` 字段；
 - `POST /runs/{id}/resume` 仍为占位（409），审批恢复无需调用它。
 
 ### 10.3 安全能力
@@ -905,7 +918,8 @@ A2A `auth_required` 的 `authorization_url` 来自远程 Agent，属不可信数
 1. 收到 `approval.required` 后，等待 `run.interrupted`（run=`interrupted`），**不会**再收到
    `message.done(finish_reason="interrupted")`；
 2. 审批决定后监听 `run.resumed` 与后续 `message.delta`/`message.done`；断线用
-   `GET /runs/{id}/stream?after_seq=`（M7）从最后 `seq` 逐字续流；只需历史查询时用
+   `GET /runs/{id}/stream?after_seq=`（M7）续流已落库事件 + 后续实时事件（断线窗口的增量 delta 不补；
+   终态/`interrupted` 后用 `GET /conversations/{id}/messages` 取终稿覆盖）；只需历史查询时用
    `GET /runs/{id}/events?after_seq=` 分页回放；
 3. 审批超时：`message.done.finish_reason="canceled"`、`reason="approval_timeout"`；
 4. 新端点：`GET /audit-logs`、`GET /admin/audit-logs`、`/admin/secrets` CRUD；
@@ -930,6 +944,7 @@ A2A `auth_required` 的 `authorization_url` 来自远程 Agent，属不可信数
 | `GET /runs/{id}/stream?after_seq=` | 新 SSE 端点；Bearer 鉴权；先回放 `seq > after_seq` 再跟随实时；401/404/400/422 语义见 §7.8 |
 | 回放上限 | 1000 条（建流前返回 400 `replay_too_large`） |
 | 终态/中断 | `message.done`/`error` 关闭；已终态 run 回放完即关闭；`interrupted` 保持连接等恢复，空闲上限 `HITL_STREAM_TIMEOUT_SECONDS` |
+| 回放边界 | 只回放已落库事件；`message.delta`/`reasoning.delta` 不落库、断线不补；终稿以 `GET /conversations/{id}/messages` 为准 |
 | 心跳/部署 | 15s 注释帧 `: ping`；**不支持 `Last-Event-ID`**；进程内事件总线，单实例语义 |
 | `approval.required` | 新增 `tool_display_name`、`executor`、`target`、`side_effect`、`payload_preview`（旧字段不变） |
 
@@ -958,8 +973,8 @@ A2A `auth_required` 的 `authorization_url` 来自远程 Agent，属不可信数
 ### 11.4 验证证据（2026-11-11）
 
 - OpenAPI：`scripts/export_openapi.py` 导出后 `git diff --exit-code docs/openapi.json` 干净；
-- 全量测试（Task 6）：本机 PostgreSQL 未运行，集成用例由 conftest 自动跳过，实跑 `454 passed, 280 skipped`；
-  DB 相关回归待 Task 7 在有库环境完成（目标 ≥582 passed）。`ruff check .` 全绿；
+- 测试（Task 6 修复轮）：全量 **733 passed, 1 skipped**（含全部 DB 集成用例；首轮曾因 PostgreSQL
+  未运行出现 454 passed/280 skipped，DB 恢复后已复跑全绿）。`ruff check .` 全绿；
 - M7 专项用例：`tests/integration/test_run_stream.py`、`test_rbac.py`、`test_tasks.py`、
   `test_hitl_interrupt.py`、`tests/test_auth_url_unit.py`；
 - 无数据库迁移（迁移 head `2d8f6a1c3e70`）。

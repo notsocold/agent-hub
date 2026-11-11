@@ -43,7 +43,8 @@ _SSE_DESCRIPTION = (
     "事件回放（HTTP 200，`X-Run-ID` 不变，`seq` 从 1 开始），不会创建新消息。\n\n"
     "**断开**：客户端断开不会取消运行；用 `GET /runs/{id}` 与 "
     "`GET /runs/{id}/events?after_seq=` 分页回放已落库事件（不跟随实时流），"
-    "或改用 SSE 续流端点 `GET /runs/{id}/stream?after_seq=` 从断点继续跟随；"
+    "或改用 SSE 续流端点 `GET /runs/{id}/stream?after_seq=` 从断点继续跟随"
+    "（仅回放已落库事件，增量 delta 不补）；"
     "已发出的 delta 不回溯，挂起时已产出的内容会落库。\n\n"
     "**事件 data 关键字段**：`conversation.created` → `conversation_id`、`title`；"
     "`run.started` → `run_id`、`conversation_id`、`user_message_id`、`client_message_id`、"
@@ -107,14 +108,19 @@ _RUN_STREAM_DESCRIPTION = (
     "**续流**：先回放 `seq > after_seq` 的已落库事件（`after_seq` 默认 0），"
     "再订阅事件总线跟随实时事件；回放超过 1000 条返回 400 `replay_too_large`，"
     "请改用 `GET /runs/{id}/events?after_seq=` 分页回放，或传入更接近的 `after_seq`。\n\n"
+    "**回放边界**：`message.delta`/`reasoning.delta` 以 `persist=False` 发出，不写入"
+    "`run_events`，断线窗口内的增量文本不会补发；收到 `message.done`/`error` 或"
+    "`run.interrupted` 后，请用 `GET /conversations/{id}/messages` 拉取助手消息终稿"
+    "覆盖本地累积内容。\n\n"
     "**关闭**：收到终态事件（`message.done`/`error`）后立即关闭；run 已结束"
     "（`succeeded`/`failed`/`canceled`）且回放里没有终态事件时，回放完即关闭。"
     "`interrupted` 的 run 保持连接等待审批恢复，空闲超过 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭。\n\n"
     "**重连**：本端点不读取 `Last-Event-ID` 请求头；若流以 EOF 结束且尚未收到终态事件，"
-    "请携带最后收到事件的 `id`/`seq` 作为 `after_seq` 重连，补齐可能仍在落库的终态事件。\n\n"
+    "先查 `GET /runs/{id}`：已终态（`succeeded`/`failed`/`canceled`）时停止重连并刷新终稿；"
+    "否则携带最后收到事件的 `id`/`seq` 作为 `after_seq` 重连，只补齐断线期间已落库的事件。\n\n"
     "**心跳**：等待实时事件期间每 15 秒发送注释帧 `: ping`（不占 `seq`）。\n\n"
     "**部署**：事件总线为进程内实现（单实例）；多实例部署时实时帧可能丢失，"
-    "重连时请携带 `after_seq` 通过回放补齐。"
+    "重连时请携带 `after_seq` 回放已落库事件（增量 delta 不补）。"
 )
 
 _RUN_STREAM_SUMMARY = (
@@ -133,8 +139,8 @@ _RUN_STREAM_RESPONSES: dict[int | str, dict] = {
                     "event: run.started\n"
                     'data: {"run_id":"...","seq":41,"conversation_id":"..."}\n\n'
                     "id: 42\n"
-                    "event: message.delta\n"
-                    'data: {"run_id":"...","seq":42,"message_id":"...","delta":"你好"}\n\n'
+                    "event: message.created\n"
+                    'data: {"run_id":"...","seq":42,"message_id":"...","role":"user"}\n\n'
                     ": ping\n\n"
                     "id: 43\n"
                     "event: message.done\n"
@@ -186,9 +192,24 @@ _RUN_STREAM_RESPONSES: dict[int | str, dict] = {
             "状态冲突（`conflict`）；本端点正常路径不返回 409，保留共享错误信封的响应集合"
         ),
     },
+    413: {
+        "model": ErrorEnvelopeOut,
+        "description": "共享错误信封占位；续流请求无请求体，本端点不产生 413",
+    },
     422: {
         "model": ErrorEnvelopeOut,
         "description": "`after_seq` 不是整数或超出 `0..2147483647`（`validation_error`）",
+    },
+    429: {
+        "model": ErrorEnvelopeOut,
+        "description": "共享错误信封占位；本端点不经过聊天限流，当前不产生 429",
+    },
+    503: {
+        "model": ErrorEnvelopeOut,
+        "description": (
+            "共享错误信封占位；本端点不依赖 Embedding 等外部服务，"
+            "数据库不可用时可能返回 `database_unavailable`"
+        ),
     },
 }
 

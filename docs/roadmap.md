@@ -233,6 +233,7 @@
 范围：
 
 - [x] `GET /runs/{id}/events` 新增 `event` 字段；新增 `GET /runs/{id}/stream?after_seq=` SSE 续流端点
+      （续流只回放已落库事件；`message.delta`/`reasoning.delta` 不落库、断线不补）
 - [x] agents/tasks 写接口收紧到 `AdminUser`（403 `forbidden` + `details.required_role`），读接口不变
 - [x] `approval.required` 补 `tool_display_name/executor/target/side_effect/payload_preview`
 - [x] A2A `authorization_url` 协议/域名白名单，违规置空并审计
@@ -241,13 +242,13 @@
 
 验收：
 
-- [x] 前端断线后可从 `lastSeq` 逐字续流；非本人 run 404、未登录 401
-      （后端契约与 `tests/integration/test_run_stream.py` 已交付；前端按 handoff 接入）
+- [ ] 前端断线后可从 `lastSeq` 续流已落库事件；非本人 run 404、未登录 401
+      （后端契约已交付并有 `tests/integration/test_run_stream.py`；前端待按 handoff 接入；
+      断线窗口内的 delta 不补发，终态后需拉消息终稿）
 - [x] 普通用户写 agents/tasks 返回 403；管理员成功且写审计
       （`tests/integration/test_rbac.py`；拒绝审计 `security.rbac_denied`）
-- [ ] `openapi.json` 与代码一致（Task 6 已导出核对）；全量测试 ≥ 582 passed；无迁移
-      （本机 PostgreSQL 未运行，Task 6 实跑 454 passed / 280 skipped；DB 用例待 Task 7 在有库环境回归；
-      迁移 head `2d8f6a1c3e70` 不变）
+- [x] `openapi.json` 与代码一致（Task 6 导出后 `git diff --exit-code` 干净）；全量测试 ≥ 582 passed；无迁移
+      （Task 6 修复轮全量 733 passed, 1 skipped；迁移 head `2d8f6a1c3e70` 不变）
 - [ ] Task 7：全量回归 + 独立审查（完成后里程碑状态改为「已完成」）
 
 ## M8 管理台后端（原 X2，已立项 2026-11-11；未开始）
