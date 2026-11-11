@@ -256,15 +256,16 @@ class SendMessageRunner:
         append_timeline(task, state, note=note)
         await _persist_task(task)
 
-    async def _audit_auth_url_rejected(self, raw: str, reason: str) -> None:
+    async def _audit_auth_url_rejected(self, raw: object, reason: str) -> None:
         """违规 authorization_url：warning + 独立事务审计；审计失败不影响 A2A 任务。
 
-        ``detail`` 只保存脱敏后的截断前缀，绝不落完整 URL 或 userinfo 里的凭据。
+        ``detail`` 只保存脱敏后的截断前缀，绝不落完整 URL 或 userinfo 里的凭据；
+        非字符串 metadata（dict/list 等）只写固定占位，避免 ``str(value)`` 把凭据带出来。
         """
         task = self.task
         if task is None:
             return
-        prefix = redact_url_for_audit(raw)
+        prefix = redact_url_for_audit(raw) if isinstance(raw, str) else "<non-string>"
         logger.warning(
             "A2A authorization_url 未通过白名单（task=%s, reason=%s）：%s",
             task.id,
@@ -584,8 +585,6 @@ class SendMessageRunner:
                 _now() + timedelta(seconds=settings.a2a_input_timeout_seconds)
             ).isoformat()
             raw_auth_url = metadata.get("authorization_url")
-            if raw_auth_url is not None and not isinstance(raw_auth_url, str):
-                raw_auth_url = str(raw_auth_url)
             auth_url, reject_reason = evaluate_authorization_url(
                 raw_auth_url,
                 env=settings.env,
@@ -593,7 +592,7 @@ class SendMessageRunner:
             )
             if auth_url is None and reject_reason not in {"", "blank"}:
                 # 恶意/不可信链接只收敛为 None，不影响 A2A 任务本身的状态流转。
-                await self._audit_auth_url_rejected(raw_auth_url or "", reject_reason)
+                await self._audit_auth_url_rejected(raw_auth_url, reject_reason)
             task.auth_request = {
                 "scopes": [str(item) for item in scopes] if isinstance(scopes, list) else [],
                 "authorization_url": auth_url,

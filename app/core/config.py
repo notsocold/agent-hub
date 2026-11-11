@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     a2a_client_timeout_seconds: int = 60
     a2a_allowed_hosts: str = ""
     # authorization_url 主机白名单（逗号分隔，精确匹配）；为空表示不额外限制。
+    # 白名单只收窄、不放宽：命中白名单也不能放行私网/回环主机。
     a2a_auth_url_allowed_hosts: str = ""
     # None 表示跟随环境：dev/test 允许回环（本地假 Agent 联调），prod 默认拒绝。
     a2a_allow_loopback: bool | None = None

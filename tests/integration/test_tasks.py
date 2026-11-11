@@ -6,6 +6,7 @@ import json
 import uuid
 
 import httpx
+import pytest
 
 from app.modules.a2a.client import register_test_transport
 from app.modules.chat import service as chat_service
@@ -420,12 +421,35 @@ async def test_auth_required_authorize_and_reject(
     assert again.json()["error"]["code"] == "task_not_rejectable"
 
 
-async def test_auth_required_rejects_malicious_authorization_url(
-    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
+@pytest.mark.parametrize(
+    ("authorization_url", "expected_reason", "expected_prefix"),
+    [
+        # 合法解析但带凭据：审计前缀去掉 userinfo 并指向真实主机。
+        (
+            "https://user:supersecret@169.254.169.254/latest/meta-data",
+            "credentials_in_url",
+            "https://169.254.169.254/latest/meta-data",
+        ),
+        # Critical 1：畸形 URL（urlsplit 抛错）也必须先剥离凭据再截断。
+        ("https://user:supersecret@[zz]/", "invalid_url", "https://[zz]/"),
+        # Critical 2：非字符串 metadata 不做 str()，审计只写固定占位。
+        (
+            {"authorization_url": "https://user:supersecret@169.254.169.254/"},
+            "invalid_url",
+            "<non-string>",
+        ),
+    ],
+)
+async def test_auth_required_rejects_and_redacts_unsafe_authorization_url(
+    client: httpx.AsyncClient,
+    monkeypatch,
+    admin_auth: dict[str, str],
+    authorization_url: object,
+    expected_reason: str,
+    expected_prefix: str,
 ) -> None:
-    """恶意 authorization_url 落库为 None：SSE/详情不返回，独立审计留痕且不含凭据。"""
-    malicious = "https://user:supersecret@169.254.169.254/latest/meta-data"
-    _register_fake(authorization_url=malicious)
+    """恶意 authorization_url 落库为 None；审计/日志不泄漏完整 URL 或凭据。"""
+    _register_fake(authorization_url=authorization_url)
     registered = await register_user(client)
     headers = auth_headers(registered["access_token"])
     await _create_agent(client, admin_auth, slug="fake")
@@ -474,7 +498,7 @@ async def test_auth_required_rejects_malicious_authorization_url(
     assert body["state"] == "rejected"
     assert body["auth_request"]["authorization_url"] is None
     assert body["auth_request"]["scopes"] == ["repo:read"]
-    assert malicious not in detail.text
+    assert "supersecret" not in detail.text
 
     # 独立 session 写入的安全审计：定位到任务，且不泄漏完整 URL / 凭据。
     audit = await client.get(
@@ -489,8 +513,9 @@ async def test_auth_required_rejects_malicious_authorization_url(
     assert item["actor_id"] == "a2a"
     assert item["resource_type"] == "a2a_task"
     assert item["resource_id"] == task_id
-    assert item["detail"]["reason"] == "credentials_in_url"
-    assert item["detail"]["url_prefix"].startswith("https://169.254.169.254")
+    assert item["detail"]["reason"] == expected_reason
+    assert item["detail"]["url_prefix"] == expected_prefix
+    assert "@" not in item["detail"]["url_prefix"]
     assert "supersecret" not in json.dumps(item["detail"], ensure_ascii=False)
 
 
@@ -500,7 +525,10 @@ async def test_auth_url_audit_failure_does_not_break_task(
     """审计写入失败只告警：恶意 URL 仍收敛为 None，A2A 任务照常进入 auth_required。"""
     from app.modules.a2a import tool as a2a_tool
 
+    audit_calls: list[dict] = []
+
     async def _broken_write_audit(*args, **kwargs) -> None:
+        audit_calls.append(kwargs)
         raise RuntimeError("audit 数据库不可用（模拟）")
 
     monkeypatch.setattr(a2a_tool, "write_audit", _broken_write_audit)
@@ -548,6 +576,15 @@ async def test_auth_url_audit_failure_does_not_break_task(
     assert task_id
     detail = await client.get(f"/api/v1/tasks/{task_id}", headers=headers)
     assert detail.json()["auth_request"]["authorization_url"] is None
+    # 审计确实被调用（失败被吞掉），且 detail 只含截断前缀。
+    assert len(audit_calls) == 1
+    assert audit_calls[0]["action"] == "security.auth_url_rejected"
+    assert audit_calls[0]["actor_type"] == "system"
+    assert audit_calls[0]["actor_id"] == "a2a"
+    assert audit_calls[0]["detail"] == {
+        "url_prefix": "javascript:alert(1)",
+        "reason": "unsupported_scheme",
+    }
 
 
 async def test_task_detail_filters_historical_dirty_auth_url(

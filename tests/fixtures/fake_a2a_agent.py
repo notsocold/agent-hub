@@ -38,7 +38,7 @@ class FakeA2aAgent:
         requires_approval: bool = False,
         base_path: str = "",
         protocol_version: str = "0.3.0",
-        authorization_url: str = "https://example.com/authorize",
+        authorization_url: Any = "https://example.com/authorize",
     ) -> None:
         self.name = name
         self.slug = slug
