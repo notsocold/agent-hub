@@ -110,12 +110,87 @@ _RUN_STREAM_DESCRIPTION = (
     "**关闭**：收到终态事件（`message.done`/`error`）后立即关闭；run 已结束"
     "（`succeeded`/`failed`/`canceled`）且回放里没有终态事件时，回放完即关闭。"
     "`interrupted` 的 run 保持连接等待审批恢复，空闲超过 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭。\n\n"
-    "**重连**：若流以 EOF 结束且尚未收到终态事件，请携带最后收到事件的 `seq` 作为 "
-    "`after_seq` 重连，补齐可能仍在落库的终态事件。\n\n"
+    "**重连**：本端点不读取 `Last-Event-ID` 请求头；若流以 EOF 结束且尚未收到终态事件，"
+    "请携带最后收到事件的 `id`/`seq` 作为 `after_seq` 重连，补齐可能仍在落库的终态事件。\n\n"
     "**心跳**：等待实时事件期间每 15 秒发送注释帧 `: ping`（不占 `seq`）。\n\n"
     "**部署**：事件总线为进程内实现（单实例）；多实例部署时实时帧可能丢失，"
     "重连时请携带 `after_seq` 通过回放补齐。"
 )
+
+_RUN_STREAM_SUMMARY = (
+    "运行事件 SSE 续流：先回放 `seq > after_seq` 的已落库事件，再跟随实时事件。"
+    "鉴权、关闭、心跳、重连与单实例约束见 200 响应说明。"
+)
+
+_RUN_STREAM_RESPONSES: dict[int | str, dict] = {
+    200: {
+        "description": _RUN_STREAM_DESCRIPTION,
+        "content": {
+            "text/event-stream": {
+                "schema": {"type": "string"},
+                "example": (
+                    "id: 41\n"
+                    "event: run.started\n"
+                    'data: {"run_id":"...","seq":41,"conversation_id":"..."}\n\n'
+                    "id: 42\n"
+                    "event: message.delta\n"
+                    'data: {"run_id":"...","seq":42,"message_id":"...","delta":"你好"}\n\n'
+                    ": ping\n\n"
+                    "id: 43\n"
+                    "event: message.done\n"
+                    'data: {"run_id":"...","seq":43,"message_id":"...","finish_reason":"stop"}\n\n'
+                ),
+            }
+        },
+        "headers": {
+            "X-Run-ID": {
+                "description": "被续流的运行 ID，建连时即返回",
+                "schema": {"type": "string", "format": "uuid"},
+            },
+            "X-Request-ID": {
+                "description": "请求 ID，错误响应体中的 request_id 与之一致",
+                "schema": {"type": "string"},
+            },
+            "Cache-Control": {
+                "description": "固定 `no-cache`，避免中间层缓存 SSE 帧",
+                "schema": {"type": "string", "enum": ["no-cache"]},
+            },
+            "X-Accel-Buffering": {
+                "description": "固定 `no`，关闭 Nginx 等反向代理的响应缓冲",
+                "schema": {"type": "string", "enum": ["no"]},
+            },
+        },
+    },
+    400: {
+        "model": ErrorEnvelopeOut,
+        "description": (
+            "回放事件超过 1000 条（`replay_too_large`）：请改用 "
+            "`GET /runs/{id}/events?after_seq=` 分页回放，或传入更接近的 `after_seq`"
+        ),
+    },
+    401: {
+        "model": ErrorEnvelopeOut,
+        "description": "未携带、无效或过期的 Bearer access token（`unauthorized`）",
+    },
+    403: {
+        "model": ErrorEnvelopeOut,
+        "description": "通用拒绝（`forbidden`）；本端点不要求管理员，当前正常路径不返回 403",
+    },
+    404: {
+        "model": ErrorEnvelopeOut,
+        "description": "运行不存在或不属于当前用户（`not_found`，统一 404 不泄露存在性）",
+    },
+    409: {
+        "model": ErrorEnvelopeOut,
+        "description": (
+            "状态冲突（`conflict`）；本端点正常路径不返回 409，保留共享错误信封的响应集合"
+        ),
+    },
+    422: {
+        "model": ErrorEnvelopeOut,
+        "description": "`after_seq` 不是整数或超出 `0..2147483647`（`validation_error`）",
+    },
+}
 
 
 @router.post("/chat/stream", response_class=StreamingResponse, responses=_SSE_RESPONSES)
@@ -166,8 +241,8 @@ async def list_run_events(
 @router.get(
     "/runs/{run_id}/stream",
     response_class=StreamingResponse,
-    responses=_SSE_RESPONSES,
-    description=_RUN_STREAM_DESCRIPTION,
+    responses=_RUN_STREAM_RESPONSES,
+    description=_RUN_STREAM_SUMMARY,
 )
 async def stream_run(
     run_id: uuid.UUID,

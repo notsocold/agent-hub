@@ -161,14 +161,29 @@ sequenceDiagram
 - 用户批准/拒绝后，`POST /approvals/{id}/decision` 落库决定；当该 run 已无 pending 审批时，
   后台任务以 `Command(resume=...)` 恢复同一条 run（发 `run.resumed`），继续输出 `message.delta`；
 - 图挂起时 run → `interrupted`，发非终态 `run.interrupted`；SSE 按 D8 保持连接，
-  空闲 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭，前端用事件分页回放 + 终态刷新补齐
-  （逐字续流端点 `GET /runs/{id}/stream` 已立项 M7）；
+  空闲 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭，前端用事件分页回放 + 终态刷新补齐，
+  或用 M7 的逐字续流端点 `GET /runs/{id}/stream?after_seq=` 从断点继续；
 - 超时未处理：定时巡检把审批置 `expired`，run → `canceled`，发
   `message.done(finish_reason="canceled", reason="approval_timeout")`；
 - 取消/超时后用**专用 halt gate** 清理 checkpoint 挂起（补「已取消」ToolMessage），
   同一会话线程可继续对话；
 - 审批 gate 独立成节点是为了避免工具节点因 `interrupt()` 恢复而重跑导致副作用重复
   （M5 实测：gate 重跑 2 次、tools 只执行 1 次）。
+
+### 4.5 SSE 回放与续流（M7）
+
+- `GET /api/v1/runs/{id}/stream?after_seq=` 先按 `seq ASC` 回放 `run_events` 中
+  `seq > after_seq` 的已落库事件，再订阅进程内事件总线跟随实时事件；回放与实时帧共用
+  `format_sse`，`id` 即 `seq`，前端把最后收到的 `seq` 作为下一次 `after_seq`；
+- 建流前先校验 run 所有权（不存在/非本人统一 404，不泄露存在性）与回放上限
+  （>1000 条返回 400 `replay_too_large`，避免一次回放拖垮连接）；
+- 收到 `message.done`/`error` 立即关闭；run 已终态且回放中没有终态事件时回放完即关闭；
+  `interrupted` 的 run 保持连接等待审批恢复，空闲超过 `HITL_STREAM_TIMEOUT_SECONDS` 关闭；
+- 实时帧来自 `app/modules/chat/bus.py` 的**进程内单实例总线**；多实例部署时实时帧可能丢失，
+  断线/多实例场景靠 `after_seq` 回放已落库事件补齐；服务端**不支持 `Last-Event-ID`**；
+- 旧 `POST /chat/stream` 复用同一生成器但保持旧语义（不设回放上限、不因 run 已终态提前关闭）；
+- 回放接口 `GET /runs/{id}/events` 每项新增 `event`（原始事件名，`payload._event` 的对外映射），
+  `payload` 仍剔除内部 `_event`。
 
 ## 5. 状态模型
 
@@ -266,7 +281,8 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 - 前端 SSE 断开不影响后端执行（默认策略）；
 - 前端重连后用 `GET /api/v1/runs/{run_id}` 获取状态，或
   `GET /api/v1/runs/{run_id}/events?after_seq=` 分页回放（已实现）；
-  SSE 续流 `GET /runs/{id}/stream?after_seq=` 已立项 M7；
+- M7 起用 `GET /runs/{id}/stream?after_seq=` 做逐字续流（回放 + 实时跟随），
+  前端必须显式传最后 `seq`（服务端不支持 `Last-Event-ID`）；
 - 图执行状态由 checkpointer 保证；M5 的审批恢复不依赖进程内 waiter，决定接口即可触发
   `Command(resume=...)`（同进程/同线程 checkpoint 均可恢复）；
 - 进程启动恢复已在 M6 实现：孤儿 `running` 一律 `failed`，`interrupted` 走 resume / `restart_lost` 取消。
@@ -276,7 +292,8 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 | 边界 | 措施 |
 |---|---|
 | 用户认证 | JWT access/refresh；密码 argon2；登录限流 |
-| 用户授权 | 会话/消息按 `user_id` 过滤；管理员接口单独角色 |
+| 用户授权 | 会话/消息按 `user_id` 过滤；管理员接口单独角色；M7 起 agents 写接口与 tasks 动作接口要求 `admin`，普通用户 403 `forbidden` + `details.required_role`，拒绝写审计 `security.rbac_denied`；读接口与 `POST /agents/preview` 仍对登录用户开放 |
+| A2A 授权链接 | M7 起 `authorization_url` 落库前做离线白名单（仅 https 公网主机；dev/test 允许本地回环），违规置 `null` 且任务继续运行，写审计 `security.auth_url_rejected`；`A2A_AUTH_URL_ALLOWED_HOSTS` 只收窄不放宽 |
 | A2A 入站 | 不提供（2026-11-10 需求变更：仅出站） |
 | A2A 出站 | SSRF 防护（默认拒绝内网/回环，白名单放行）；Agent Card URL 校验；TLS 校验 |
 | MCP 出站 | SSRF 校验（拒绝私网/回环/云元数据地址，`MCP_ALLOWED_HOSTS` 白名单）；TLS 校验；超时与响应大小限制 |

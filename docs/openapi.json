@@ -1894,7 +1894,7 @@
         },
         "responses": {
           "200": {
-            "description": "Server-Sent Events 流，`Content-Type: text/event-stream`。\n\n**事件顺序**：`conversation.created`（仅新会话）→ `run.started` → `message.created` → `message.started` → `message.delta`（0..n）→ `message.done`；致命错误只发送 `error` 并关闭流。\n\n**HITL（M5）**：需要审批时插入 `approval.required` → `run.interrupted`（非终态，SSE 保持连接，空闲 15 分钟后关闭）；审批决定后 `run.resumed` → 后续 `message.delta` → `message.done`。审批超时取消时 `message.done.finish_reason=canceled`、`reason=approval_timeout`。\n\n**帧格式**：`id: <seq>`、`event: <事件名>`、`data: <JSON>`，心跳为注释帧 `: ping`（每 15 秒，不占 `seq`）。`seq` 从 1 开始单调递增；`message.delta` 不落库，事件回放的 `seq` 允许跳号。\n\n**幂等**：相同 `conversation_id + client_message_id` 再次请求时返回同一 run 的事件回放（HTTP 200，`X-Run-ID` 不变，`seq` 从 1 开始），不会创建新消息。\n\n**断开**：客户端断开不会取消运行；用 `GET /runs/{id}` 与 `GET /runs/{id}/events?after_seq=` 分页回放已落库事件（不跟随实时流；SSE 续流端点已在 M7 立项）；已发出的 delta 不回溯，挂起时已产出的内容会落库。\n\n**事件 data 关键字段**：`conversation.created` → `conversation_id`、`title`；`run.started` → `run_id`、`conversation_id`、`user_message_id`、`client_message_id`、`model`、`reasoning_effort`；`message.created` → `message_id`、`role`；`message.started` → `message_id`；`message.delta` → `message_id`、`delta`；`message.done` → `run_id`、`message_id`、`conversation_id`、`usage`、`finish_reason`、`model`、`first_token_ms`、`duration_ms`、`active_duration_ms`、`citations`、`artifacts`、`reasoning`；`error` → `code`、`message`、`request_id`。完整字段与示例见 `docs/api.md` §3.3、§7.3、§7.9。",
+            "description": "Server-Sent Events 流，`Content-Type: text/event-stream`。\n\n**事件顺序**：`conversation.created`（仅新会话）→ `run.started` → `message.created` → `message.started` → `message.delta`（0..n）→ `message.done`；致命错误只发送 `error` 并关闭流。\n\n**HITL（M5）**：需要审批时插入 `approval.required` → `run.interrupted`（非终态，SSE 保持连接，空闲 15 分钟后关闭）；审批决定后 `run.resumed` → 后续 `message.delta` → `message.done`。审批超时取消时 `message.done.finish_reason=canceled`、`reason=approval_timeout`。\n\n**帧格式**：`id: <seq>`、`event: <事件名>`、`data: <JSON>`，心跳为注释帧 `: ping`（每 15 秒，不占 `seq`）。`seq` 从 1 开始单调递增；`message.delta` 不落库，事件回放的 `seq` 允许跳号。\n\n**幂等**：相同 `conversation_id + client_message_id` 再次请求时返回同一 run 的事件回放（HTTP 200，`X-Run-ID` 不变，`seq` 从 1 开始），不会创建新消息。\n\n**断开**：客户端断开不会取消运行；用 `GET /runs/{id}` 与 `GET /runs/{id}/events?after_seq=` 分页回放已落库事件（不跟随实时流），或改用 SSE 续流端点 `GET /runs/{id}/stream?after_seq=` 从断点继续跟随；已发出的 delta 不回溯，挂起时已产出的内容会落库。\n\n**事件 data 关键字段**：`conversation.created` → `conversation_id`、`title`；`run.started` → `run_id`、`conversation_id`、`user_message_id`、`client_message_id`、`model`、`reasoning_effort`；`message.created` → `message_id`、`role`；`message.started` → `message_id`；`message.delta` → `message_id`、`delta`；`message.done` → `run_id`、`message_id`、`conversation_id`、`usage`、`finish_reason`、`model`、`first_token_ms`、`duration_ms`、`active_duration_ms`、`citations`、`artifacts`、`reasoning`；`error` → `code`、`message`、`request_id`。完整字段与示例见 `docs/api.md` §3.3、§7.3、§7.9。",
             "headers": {
               "X-Run-ID": {
                 "description": "本次（或幂等重放命中的）运行 ID，建连时即返回",
@@ -2341,6 +2341,191 @@
           },
           "422": {
             "description": "参数校验失败（validation_error）或模型不在白名单（model_not_allowed）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/runs/{run_id}/stream": {
+      "get": {
+        "tags": [
+          "聊天与运行"
+        ],
+        "summary": "Stream Run",
+        "description": "运行事件 SSE 续流：先回放 `seq > after_seq` 的已落库事件，再跟随实时事件。鉴权、关闭、心跳、重连与单实例约束见 200 响应说明。",
+        "operationId": "stream_run_api_v1_runs__run_id__stream_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "after_seq",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2147483647,
+              "minimum": 0,
+              "default": 0,
+              "title": "After Seq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "运行事件 SSE 续流端点，`Content-Type: text/event-stream`。\n\n**鉴权**：需要 `Authorization: Bearer <access token>`；非本人或不存在统一 404（不泄露存在性）。浏览器 `EventSource` 不支持自定义请求头，请用 `fetch`/`@microsoft/fetch-event-source` 携带 Bearer。\n\n**续流**：先回放 `seq > after_seq` 的已落库事件（`after_seq` 默认 0），再订阅事件总线跟随实时事件；回放超过 1000 条返回 400 `replay_too_large`，请改用 `GET /runs/{id}/events?after_seq=` 分页回放，或传入更接近的 `after_seq`。\n\n**关闭**：收到终态事件（`message.done`/`error`）后立即关闭；run 已结束（`succeeded`/`failed`/`canceled`）且回放里没有终态事件时，回放完即关闭。`interrupted` 的 run 保持连接等待审批恢复，空闲超过 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭。\n\n**重连**：本端点不读取 `Last-Event-ID` 请求头；若流以 EOF 结束且尚未收到终态事件，请携带最后收到事件的 `id`/`seq` 作为 `after_seq` 重连，补齐可能仍在落库的终态事件。\n\n**心跳**：等待实时事件期间每 15 秒发送注释帧 `: ping`（不占 `seq`）。\n\n**部署**：事件总线为进程内实现（单实例）；多实例部署时实时帧可能丢失，重连时请携带 `after_seq` 通过回放补齐。",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "id: 41\nevent: run.started\ndata: {\"run_id\":\"...\",\"seq\":41,\"conversation_id\":\"...\"}\n\nid: 42\nevent: message.delta\ndata: {\"run_id\":\"...\",\"seq\":42,\"message_id\":\"...\",\"delta\":\"你好\"}\n\n: ping\n\nid: 43\nevent: message.done\ndata: {\"run_id\":\"...\",\"seq\":43,\"message_id\":\"...\",\"finish_reason\":\"stop\"}\n\n"
+              }
+            },
+            "headers": {
+              "X-Run-ID": {
+                "description": "被续流的运行 ID，建连时即返回",
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "X-Request-ID": {
+                "description": "请求 ID，错误响应体中的 request_id 与之一致",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Cache-Control": {
+                "description": "固定 `no-cache`，避免中间层缓存 SSE 帧",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no-cache"
+                  ]
+                }
+              },
+              "X-Accel-Buffering": {
+                "description": "固定 `no`，关闭 Nginx 等反向代理的响应缓冲",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "no"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "回放事件超过 1000 条（`replay_too_large`）：请改用 `GET /runs/{id}/events?after_seq=` 分页回放，或传入更接近的 `after_seq`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未携带、无效或过期的 Bearer access token（`unauthorized`）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "通用拒绝（`forbidden`）；本端点不要求管理员，当前正常路径不返回 403",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "运行不存在或不属于当前用户（`not_found`，统一 404 不泄露存在性）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突（`conflict`）；本端点正常路径不返回 409，保留共享错误信封的响应集合",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`after_seq` 不是整数或超出 `0..2147483647`（`validation_error`）",
             "content": {
               "application/json": {
                 "schema": {
@@ -10305,7 +10490,7 @@
           "agents"
         ],
         "summary": "Create Agent",
-        "description": "注册远程 Agent；同 url+slug 幂等返回已有记录。",
+        "description": "注册远程 Agent（仅管理员）；同 url+slug 幂等返回已有记录。",
         "operationId": "create_agent_api_v1_agents_post",
         "security": [
           {
@@ -16691,6 +16876,11 @@
             "type": "string",
             "title": "Type"
           },
+          "event": {
+            "type": "string",
+            "title": "Event",
+            "description": "原始 SSE 事件名；未知时为空字符串"
+          },
           "status": {
             "type": "string",
             "title": "Status"
@@ -16752,6 +16942,7 @@
           "seq",
           "ts",
           "type",
+          "event",
           "status",
           "title",
           "subtitle",

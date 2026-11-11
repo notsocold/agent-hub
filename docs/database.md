@@ -671,6 +671,10 @@ M4/M5 新增迁移：
 | `9c1d4e7a2b60` | `platform_secrets` 表 |
 | `2d8f6a1c3e70` | `approvals.tool_call_id` + 部分唯一索引 |
 
+> **M7（2026-11-11）：无迁移。** 事件回放的 `event` 字段由既有 `run_events.payload._event`
+> 派生；SSE 续流、agents/tasks 写操作 RBAC、`approval.required` 展示字段与
+> A2A `authorization_url` 白名单均为代码/契约变更，表结构不变；迁移 head 仍为 `2d8f6a1c3e70`。
+
 ## 9. 数据生命周期
 
 M6 已实现运维类数据的自动清理；消息/运行正文属于用户数据，删除策略仍由产品决定，M6 不自动清理。

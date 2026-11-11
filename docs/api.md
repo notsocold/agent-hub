@@ -4,7 +4,7 @@
 - 业务前缀：`/api/v1`
 - 协议：HTTP + JSON；聊天流式用 SSE
 - 文档：FastAPI 自动生成 `/docs`（Swagger）与 `/redoc`
-- 状态：M1 / M1.5 / M2 已实现；M3 入站已按 2026-11-10 需求变更取消；M4–M6 待实现
+- 状态：M1 / M1.5 / M2 / M4–M7 已实现（M7 待 Task 7 回归）；M3 入站已按 2026-11-10 需求变更取消；各里程碑实测差异见 §7–§11
 
 ## 1. 通用约定
 
@@ -45,8 +45,9 @@ Authorization: Bearer <access_token>
 | HTTP | code | 说明 |
 |---|---|---|
 | 400 | `bad_request` | 参数语义错误 |
+| 400 | `replay_too_large` | SSE 续流待回放事件超过 1000 条（M7；改用分页回放或更接近的 `after_seq`） |
 | 401 | `unauthorized` | 未登录 / token 无效 |
-| 403 | `forbidden` | 无权限 |
+| 403 | `forbidden` | 无权限；M7 起 agents/tasks 写接口要求管理员，`details.required_role="admin"` |
 | 403 | `capability_disabled` | 能力总开关关闭 |
 | 404 | `not_found` | 资源不存在 |
 | 409 | `conflict` | 状态冲突（重复审批、并发 run） |
@@ -94,29 +95,36 @@ Authorization: Bearer <access_token>
 |---|---|---|
 | POST | `/api/v1/chat/stream` | 发送消息，SSE 流式返回 |
 | GET | `/api/v1/runs/{run_id}` | 运行状态与用量 |
-| GET | `/api/v1/runs/{run_id}/events` | 事件回放（断线恢复，规划） |
+| GET | `/api/v1/runs/{run_id}/events` | 事件分页回放（不跟随实时流；每项含 `event` 原始事件名，M7） |
+| GET | `/api/v1/runs/{run_id}/stream` | 运行事件 SSE 续流：先回放 `seq > after_seq` 的已落库事件，再跟随实时事件（M7） |
 | POST | `/api/v1/runs/{run_id}/cancel` | 取消运行 |
 | POST | `/api/v1/runs/{run_id}/resume` | 恢复 `input-required` 的运行 |
+
+> 续流端点鉴权：`Authorization: Bearer <access token>`；未登录/无效 token 401 `unauthorized`，
+> 非本人或不存在统一 404 `not_found`（不泄露存在性），待回放事件 >1000 条 400 `replay_too_large`，
+> `after_seq` 非法 422 `validation_error`；**不支持 `Last-Event-ID`**，重连必须显式传 `after_seq`。
+> 详见 §7.8。
 
 ### 2.4 远程智能体（M2 已实现）
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/api/v1/agents/preview` | 拉取并校验 Agent Card，不落库（`{valid, card, normalized, warnings}`） |
-| POST | `/api/v1/agents` | 注册远程 Agent（拉取 Agent Card；同 url+slug 幂等返回已有） |
+| POST | `/api/v1/agents` | 注册远程 Agent（拉取 Agent Card；同 url+slug 幂等返回已有）（**仅管理员**） |
 | GET | `/api/v1/agents` | 已注册 Agent 列表：`health_status`、`enabled`、`q`、`limit`、`cursor` + `stats` |
 | GET | `/api/v1/agents/{id}` | Agent 详情（含原始 Card、skills、auth_hint、last_*、recent_tasks） |
-| PATCH | `/api/v1/agents/{id}` | 修改 `{enabled?, name?, auth?{type,secret_ref}, headers?}`（headers 敏感头只存引用/密文） |
-| DELETE | `/api/v1/agents/{id}` | 软删除（有运行中任务 409 `agent_has_active_tasks`） |
-| POST | `/api/v1/agents/{id}/refresh` | 重新拉取 Agent Card，返回 `{agent, changed, changed_fields}`；失败保留旧 Card 标 unhealthy |
-| POST | `/api/v1/agents/{id}/health` | 主动健康检查（拉 Card + tasks/get 探测），返回 `{health_status, latency_ms, checked_at, error}` |
+| PATCH | `/api/v1/agents/{id}` | 修改 `{enabled?, name?, auth?{type,secret_ref}, headers?}`（headers 敏感头只存引用/密文）（**仅管理员**） |
+| DELETE | `/api/v1/agents/{id}` | 软删除（有运行中任务 409 `agent_has_active_tasks`）（**仅管理员**） |
+| POST | `/api/v1/agents/{id}/refresh` | 重新拉取 Agent Card，返回 `{agent, changed, changed_fields}`；失败保留旧 Card 标 unhealthy（**仅管理员**） |
+| POST | `/api/v1/agents/{id}/health` | 主动健康检查（拉 Card + tasks/get 探测），返回 `{health_status, latency_ms, checked_at, error}`（**仅管理员**） |
 
 字段与错误码：
 
 - 列表项：`id/slug/name/description/url/protocol_version/skills[{id,name,description}]/skill_count/auth_type(none|api_key|oauth2)/auth_scheme(bearer|header|oauth2|none)/auth_hint/capabilities{streaming,push_notifications}/health_status(unknown|healthy|degraded|unhealthy)/enabled/last_checked_at/last_latency_ms/last_error/recent_task{id,a2a_task_id,state,duration_ms,finished_at}|null/created_at/updated_at`；
 - `stats`：`{total, healthy, degraded, unhealthy, disabled, enabled}`；
 - 注册/预览失败：422 `agent_card_invalid`（Card 非法/不可达/超时/跨源重定向）或 `agent_url_not_allowed`（协议/内网/凭据 URL）；
-- 健康阈值：成功且延迟 <2s → healthy，≥2s → degraded；连续失败 ≥3 → unhealthy；`A2A_ALLOW_LOOPBACK` 仅 dev/test 默认放行回环（本地假 Agent 联调），prod 默认拒绝。
+- 健康阈值：成功且延迟 <2s → healthy，≥2s → degraded；连续失败 ≥3 → unhealthy；`A2A_ALLOW_LOOPBACK` 仅 dev/test 默认放行回环（本地假 Agent 联调），prod 默认拒绝；
+- **写接口仅管理员（M7）**：上表 `POST /agents`、`PATCH/DELETE /agents/{id}`、`POST /agents/{id}/refresh`、`POST /agents/{id}/health` 要求管理员（`AdminUser`）；普通用户返回 403 `forbidden` + `details.required_role="admin"`，并写审计 `security.rbac_denied`（detail 含 method/path/required_role）。`GET /agents*` 与 `POST /agents/preview` 对所有登录用户开放。
 
 ### 2.5 任务（M2 已实现）
 
@@ -124,19 +132,20 @@ Authorization: Bearer <access_token>
 |---|---|---|
 | GET | `/api/v1/tasks` | A2A 任务列表：`state`（可重复/逗号）、`agent_id`、`run_id`、`conversation_id`、`q`、`from`、`to`、`limit`、`cursor` + `stats` |
 | GET | `/api/v1/tasks/{id}` | 任务详情（request/result/error/input_request/auth_request/timeline） |
-| POST | `/api/v1/tasks/{id}/cancel` | 取消（submitted/working/input_required/auth_required；尽力远程 tasks/cancel） |
-| POST | `/api/v1/tasks/{id}/resume` | 补充输入（仅 input_required；`{input}` → `{task, run:{id,status}|null}`，同一 a2a_task_id 继续） |
-| POST | `/api/v1/tasks/{id}/authorize` | 授权重试（仅 auth_required；`{scopes?, note?}`） |
-| POST | `/api/v1/tasks/{id}/reject` | 拒绝（auth_required 或 input_required；`{reason?}`，state=rejected） |
+| POST | `/api/v1/tasks/{id}/cancel` | 取消（submitted/working/input_required/auth_required；尽力远程 tasks/cancel）（**仅管理员**） |
+| POST | `/api/v1/tasks/{id}/resume` | 补充输入（仅 input_required；`{input}` → `{task, run:{id,status}|null}`，同一 a2a_task_id 继续）（**仅管理员**） |
+| POST | `/api/v1/tasks/{id}/authorize` | 授权重试（仅 auth_required；`{scopes?, note?}`）（**仅管理员**） |
+| POST | `/api/v1/tasks/{id}/reject` | 拒绝（auth_required 或 input_required；`{reason?}`，state=rejected）（**仅管理员**） |
 
 字段与错误码：
 
 - 列表项：`id/a2a_task_id/agent{id,slug,name}/run_id/conversation{id,title}|null/state/progress/duration_ms/request_summary/error_summary/available_actions/created_at/updated_at`；
 - `stats`：`{total, submitted, working, input_required, auth_required, completed, failed, canceled, rejected}`；
-- 详情补：`tool_call_id/request{tool,args,summary}/result{artifact{type,summary,parts,data},summary}/error{code,message,retryable,at}/input_request{question,input_schema,expires_at}/auth_request{scopes,authorization_url,expires_at}/timeline[{state,at,duration_ms,note}]/started_at/finished_at`；
+- 详情补：`tool_call_id/request{tool,args,summary}/result{artifact{type,summary,parts,data},summary}/error{code,message,retryable,at}/input_request{question,input_schema,expires_at}/auth_request{scopes,authorization_url,expires_at}/timeline[{state,at,duration_ms,note}]/started_at/finished_at`；`auth_request.authorization_url` 可能为 `null`（M7 白名单过滤，见 §9）；
 - `available_actions` 只含后端可执行动作（cancel/resume/authorize/reject），由 state 推导；
 - 动作错误 409：`task_not_cancelable` / `task_not_resumable` / `task_not_authorizable` / `task_not_rejectable`；
-- 等待态 `expires_at` 到期懒过期置 canceled（timeline 追加「等待超时」，审计 `task.expired`）；`A2A_INPUT_TIMEOUT_SECONDS` 默认 30 分钟。
+- 等待态 `expires_at` 到期懒过期置 canceled（timeline 追加「等待超时」，审计 `task.expired`）；`A2A_INPUT_TIMEOUT_SECONDS` 默认 30 分钟；
+- **动作接口仅管理员（M7）**：`POST /tasks/{id}/cancel`、`/resume`、`/authorize`、`/reject` 要求管理员；普通用户 403 `forbidden` + `details.required_role="admin"`，并写审计 `security.rbac_denied`；`GET /tasks*` 保持所有登录用户可用。
 
 ### 2.6 知识库
 
@@ -340,7 +349,7 @@ data: <单行 JSON>
 | `a2a.artifact` | 远程产出片段 | `task_id`、`a2a_task_id`、`artifact{type,summary,parts,data}` |
 | `a2a.input_required` | 远程要求补充信息 | `task_id`、`a2a_task_id`、`agent`、`agent_detail`、`question`、`input_schema`、`expires_at` |
 | `a2a.auth_required` | 远程要求授权 | `task_id`、`a2a_task_id`、`agent`、`agent_detail`、`scopes`、`authorization_url`、`expires_at` |
-| `approval.required` | 需要人工确认（gate 创建审批时） | `approval_id`、`tool_call_id`、`tool`、`source`、`risk`、`reason`、`payload`、`expires_at` |
+| `approval.required` | 需要人工确认（gate 创建审批时） | `approval_id`、`tool_call_id`、`tool`、`tool_display_name`、`source`、`executor`、`target`、`side_effect`、`risk`、`reason`、`payload`、`payload_preview`、`expires_at`（M7 起补齐 5 个展示字段） |
 | `run.interrupted` | 图停在审批 gate（M5） | `run_id`、`conversation_id`、`message_id`、`status="interrupted"`、`approvals`（pending 审批 id 列表） |
 | `run.resumed` | 审批决定后恢复执行（M5） | `run_id`、`conversation_id`、`status="running"` |
 | `skill.activated` | 本轮技能激活 | `skill_id`、`slug`、`name`、`scope`、`estimated_tokens` |
@@ -349,6 +358,10 @@ data: <单行 JSON>
 | `message.done` | 本轮结束 | `run_id`、`message_id`、`usage`、`finish_reason`；审批超时取消时 `finish_reason="canceled"`、`reason="approval_timeout"` |
 | `error` | 流内错误 | `code`、`message`、`request_id` |
 | `ping` | 心跳（也可用注释） | — |
+
+> M7：事件回放接口 `GET /runs/{id}/events` 的每一项新增 `event` 字段，值即本表的原始 SSE
+> 事件名（未知/历史缺失时为 `""`）；`payload` 仍剔除内部字段 `_event`，分类字段 `type` 不变。
+> 详见 §7.7。
 
 ### 3.4 示例
 
@@ -692,13 +705,50 @@ GET /api/v1/instructions
 |---|---|
 | `id` | 形如 `<run_id>:<seq>` 的不透明字符串，不是 UUID |
 | `seq` | 运行内递增，允许跳号（`message.delta` 不落库） |
+| `type` | 事件分类（历史字段，取值不变） |
+| `event` | 原始 SSE 事件名（M7 新增；由 `payload._event` 映射，未知/历史缺失时为 `""`） |
 | `tokens` | 对象或 `null`，键始终存在 |
 | `error` | 字符串摘要或 `null`，不是对象；结构化错误在 `message.done`/`error` 事件里 |
-| `payload` | 已剔除内部字段 `_event` |
+| `payload` | 已剔除内部字段 `_event`，其余与 SSE 帧 `data` 一致 |
 | 过滤 | `after_seq`、`types`（逗号分隔）、`q`（标题/副标题模糊匹配）、`cursor` |
 | 分页 | `after_seq` 与 `cursor` 可同时递增；`has_more=false` 即取完 |
 
-### 7.8 运行恢复端点
+### 7.8 运行续流与恢复端点
+
+#### 7.8.1 SSE 续流（`GET /runs/{id}/stream?after_seq=`，M7）
+
+| 项 | 实际行为 |
+|---|---|
+| 鉴权 | `Authorization: Bearer <access token>`；未携带/无效/过期 401 `unauthorized` |
+| 所有权 | run 不存在或不属于当前用户统一 404 `not_found`（不泄露存在性） |
+| `after_seq` | 默认 0；只回放 `seq > after_seq` 的已落库事件，随后跟随实时事件；取值 `0..2147483647`，非法 422 `validation_error` |
+| 回放上限 | 待回放事件 >1000 条在建流前返回 400 `replay_too_large`；改用 `GET /runs/{id}/events?after_seq=` 分页回放，或传入更接近的 `after_seq` |
+| 终态关闭 | 回放或实时收到 `message.done`/`error` 后立即关闭；run 已终态（`succeeded`/`failed`/`canceled`）且回放里没有终态事件时，回放完即关闭 |
+| `interrupted` | run 停在审批时保持连接等待 `run.resumed` 与后续事件；空闲超过 `HITL_STREAM_TIMEOUT_SECONDS`（默认 900s）后关闭，客户端按最后 `seq` 重连 |
+| 心跳 | 等待实时事件期间每 15s 发送注释帧 `: ping`，不占 `seq`，客户端忽略 |
+| `Last-Event-ID` | **不支持**；重连必须显式把最后收到事件的 `seq` 作为 `after_seq` 传入（`id:` 行的值可直接使用） |
+| 部署 | 事件总线为进程内实现（单实例）；多实例部署时实时帧可能丢失，靠 `after_seq` 回放补齐 |
+| 响应头 | `X-Run-ID`、`X-Request-ID`、`Cache-Control: no-cache`、`X-Accel-Buffering: no` |
+
+```text
+GET /api/v1/runs/9a8b.../stream?after_seq=42
+Authorization: Bearer <token>
+Accept: text/event-stream
+
+id: 43
+event: message.delta
+data: {"run_id":"9a8b...","seq":43,"message_id":"e5f6...","delta":"你好"}
+
+: ping
+
+id: 44
+event: message.done
+data: {"run_id":"9a8b...","seq":44,"message_id":"e5f6...","finish_reason":"stop"}
+```
+
+> 旧端点 `POST /chat/stream` 语义不变：它本身不设回放上限、也不在「run 已终态」时提前关闭。
+
+#### 7.8.2 运行恢复端点（占位）
 
 `POST /runs/{id}/resume` 仍保留占位，恒返回 `409 run_not_resumable`：
 
@@ -772,7 +822,7 @@ GET /api/v1/instructions
 - 选择不存在/他人的资源 404；已停用资源 422；`knowledge_categories` 自 M4 起可用（`KNOWLEDGE_ENABLED=false` 时 403）；`workflow_id` 仍禁用；
 - 新事件：`skill.activated`（首个 `message.delta` 之前）、`memory.saved`、`notice`、`tool.start`/`tool.result`（`source` ∈ native/skill/mcp/a2a；MCP 带 `server`）、`approval.required`；
 - `tool.result` 在工具产生了知识库引用时带 `citations` 字段（与 `message.done.citations` 同形状）；
-- `approval.required.data`：`approval_id`、`tool_call_id`、`tool`、`source`、`risk`、`reason`、`payload`、`expires_at`；
+- `approval.required.data`：`approval_id`、`tool_call_id`、`tool`、`tool_display_name`、`source`、`executor`、`target`、`side_effect`、`risk`、`reason`、`payload`、`payload_preview`、`expires_at`；M7 新增 `tool_display_name`/`executor`/`target`/`side_effect`/`payload_preview` 五个展示字段，旧字段与语义不变（`target` 截断到 2000 字符、`payload_preview` 截断到约 500 字符并以 `…` 结尾）；
 - 审批超时后 `message.done.finish_reason="canceled"`（`reason="approval_timeout"`），run 状态 `canceled`；
 - `message.done` 保持 M1 字段，新增 `reason`（审批超时/取消等场景出现）。
 
@@ -806,6 +856,17 @@ GET /api/v1/instructions
 - **入站（M3，已取消）**：本服务不发布 Agent Card、不暴露 JSON-RPC 端点；`/a2a` 与 `/a2a/.well-known/agent-card.json` 返回 404；
 - 需求变更记录见 [feedback/2026-11-10-requirement-change-outbound-only.md](feedback/2026-11-10-requirement-change-outbound-only.md)。
 
+### 9.1 `authorization_url` 后端白名单（M7，2026-11-11）
+
+A2A `auth_required` 的 `authorization_url` 来自远程 Agent，属不可信数据。M7 起后端在**落库前**做纯离线白名单校验（不联网），任务详情展示历史值时再按当前配置过滤一次：
+
+- **协议**：仅 `https`；`dev`/`test` 额外允许 `http://localhost` 与 `http://127.0.0.1`（精确字面量）；
+- **拒绝**：`javascript:`/`data:`/`file:`/`ftp:`/无 scheme 等非 https；URL 内嵌用户名或密码；回环/私网/链路本地/保留/组播/未指定 IP 字面量；浏览器等价 IP 写法（十进制 `2130706433`、十六进制 `0x7f000001`、简写 `127.1`、含八进制段）；主机先做百分号解码再判断（编码后的回环/私网 IP 仍会被拒，双重编码残留 `%` 等非法字符也拒）；非 ASCII/IDN 主机；反斜杠；单标签主机；`*.local`/`*.internal`/`*.localhost`；长度 >2000 字符；
+- **违规处理**：`authorization_url` 收敛为 `null`，A2A 任务**继续运行**（不报错、不改任务状态）；后端记 warning 并写审计 `security.auth_url_rejected`（detail 只含脱敏后的 `url_prefix` 与 `reason`，不落完整 URL 或凭据）；
+- **历史数据**：已落库的旧值不修改，只在任务详情返回时按当前配置重新过滤（展示层过滤不写审计）；
+- **配置 `A2A_AUTH_URL_ALLOWED_HOSTS`**：逗号分隔的精确主机名（大小写不敏感），默认空 = 不额外限制；非空时主机必须命中白名单；**只收窄不放宽**——即使命中白名单，私网/回环等主机仍被拒绝；非 ASCII 主机一律拒绝（如需 IDN 请先转 punycode 再配置）；
+- **已知限制**：静态离线校验无法识别「公网域名 DNS 解析到内网」的别名（如 nip.io），需网络层/出口策略兜底。
+
 ## 10. M5 审批与安全加固实现状态（2026-11-10）
 
 ### 10.1 审批链路（行为变化）
@@ -824,7 +885,9 @@ GET /api/v1/instructions
   收到后 **SSE 保持连接**（按 D8，空闲 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭）；
 - `run.resumed`（非终态）：审批决定后恢复执行；
 - 断线后 `GET /runs/{id}/events?after_seq=` 分页回放已落库事件；**不跟随实时流**。
-  SSE 续流端点（`GET /runs/{id}/stream?after_seq=`）与回放的 `event` 字段已立项为 M7；
+  M7 起改用 `GET /runs/{id}/stream?after_seq=` 逐字续流：先回放再跟随实时事件，待回放 >1000 条
+  返回 400 `replay_too_large`，收到 `message.done`/`error` 后关闭，`interrupted` 保持连接等审批恢复，
+  空闲每 15s 发 `: ping`，**不支持 `Last-Event-ID`**（见 §7.8）；事件回放每项新增 `event` 字段；
 - `POST /runs/{id}/resume` 仍为占位（409），审批恢复无需调用它。
 
 ### 10.3 安全能力
@@ -841,9 +904,62 @@ GET /api/v1/instructions
 
 1. 收到 `approval.required` 后，等待 `run.interrupted`（run=`interrupted`），**不会**再收到
    `message.done(finish_reason="interrupted")`；
-2. 审批决定后监听 `run.resumed` 与后续 `message.delta`/`message.done`；断线用事件回放**查询**补历史事件，
-   逐字续流待 M7 提供 SSE 续流端点；
+2. 审批决定后监听 `run.resumed` 与后续 `message.delta`/`message.done`；断线用
+   `GET /runs/{id}/stream?after_seq=`（M7）从最后 `seq` 逐字续流；只需历史查询时用
+   `GET /runs/{id}/events?after_seq=` 分页回放；
 3. 审批超时：`message.done.finish_reason="canceled"`、`reason="approval_timeout"`；
 4. 新端点：`GET /audit-logs`、`GET /admin/audit-logs`、`/admin/secrets` CRUD；
 5. 聊天 429：`rate_limited`，`details.retry_after_seconds`；
 6. 多审批：每次决定可能返回 `resumed=false` + `resume_error="本轮还有其他审批待处理"`，属正常。
+
+> **M7 增量（2026-11-11）**：① 新增 `GET /runs/{id}/stream?after_seq=` 续流端点；② `/runs/{id}/events` 每项新增 `event`；
+> ③ `approval.required` 补 5 个展示字段；④ agents/tasks 写接口仅管理员，普通用户 403 `forbidden` +
+> `details.required_role="admin"`（拒绝写审计 `security.rbac_denied`）；⑤ A2A `authorization_url` 可能为 `null`。详见 §11。
+
+## 11. M7 实现状态（2026-11-11）
+
+> 机器可读契约以 [`openapi.json`](openapi.json) 为准（由 `scripts/export_openapi.py` 导出，应与代码一致）。
+> M7 无数据库迁移，迁移 head 仍为 `2d8f6a1c3e70`；前端接入见
+> [M7 前端交接](feedback/2026-11-11-m7-frontend-handoff.md)。
+
+### 11.1 端点与字段
+
+| 项 | 实际行为 |
+|---|---|
+| `GET /runs/{id}/events` 的 `event` | 新增必填 `str`：原始 SSE 事件名（由 `payload._event` 映射），未知/历史缺失时为 `""`；`payload` 仍剔除 `_event`，`type` 不变 |
+| `GET /runs/{id}/stream?after_seq=` | 新 SSE 端点；Bearer 鉴权；先回放 `seq > after_seq` 再跟随实时；401/404/400/422 语义见 §7.8 |
+| 回放上限 | 1000 条（建流前返回 400 `replay_too_large`） |
+| 终态/中断 | `message.done`/`error` 关闭；已终态 run 回放完即关闭；`interrupted` 保持连接等恢复，空闲上限 `HITL_STREAM_TIMEOUT_SECONDS` |
+| 心跳/部署 | 15s 注释帧 `: ping`；**不支持 `Last-Event-ID`**；进程内事件总线，单实例语义 |
+| `approval.required` | 新增 `tool_display_name`、`executor`、`target`、`side_effect`、`payload_preview`（旧字段不变） |
+
+### 11.2 权限与审计
+
+| 端点组 | 权限 | 拒绝行为 |
+|---|---|---|
+| `GET /agents*`、`POST /agents/preview` | 任意登录用户 | 401 `unauthorized` |
+| `POST /agents`、`PATCH/DELETE /agents/{id}`、`POST /agents/{id}/refresh`、`POST /agents/{id}/health` | 管理员 | 403 `forbidden` + `details.required_role="admin"`，审计 `security.rbac_denied` |
+| `GET /tasks*` | 任意登录用户 | 401 `unauthorized` |
+| `POST /tasks/{id}/cancel`、`resume`、`authorize`、`reject` | 管理员 | 403 `forbidden` + `details.required_role="admin"`，审计 `security.rbac_denied` |
+| `GET /runs/{id}/stream` | 登录用户且为 run 所有者 | 401；非本人/不存在统一 404 |
+
+- RBAC 拒绝审计由 `require_admin` 依赖集中写入（独立 session；审计写失败只记 warning，不影响 403 返回）；
+- `security.auth_url_rejected`：A2A 授权 URL 白名单拒绝审计（`resource_type=a2a_task`，detail 为脱敏 `url_prefix` + `reason`）。
+
+### 11.3 配置
+
+| 配置 | 默认 | 说明 |
+|---|---|---|
+| `A2A_AUTH_URL_ALLOWED_HOSTS` | 空 | 逗号分隔精确主机名；只收窄不放宽；空 = 不额外限制；不能放行私网/回环主机 |
+| `HITL_STREAM_TIMEOUT_SECONDS` | `900` | `interrupted` 续流保持连接的最长空闲时间 |
+
+> `.env.example` 与 `Settings` 均为 145 项；M7 新增 `A2A_AUTH_URL_ALLOWED_HOSTS`。
+
+### 11.4 验证证据（2026-11-11）
+
+- OpenAPI：`scripts/export_openapi.py` 导出后 `git diff --exit-code docs/openapi.json` 干净；
+- 全量测试（Task 6）：本机 PostgreSQL 未运行，集成用例由 conftest 自动跳过，实跑 `454 passed, 280 skipped`；
+  DB 相关回归待 Task 7 在有库环境完成（目标 ≥582 passed）。`ruff check .` 全绿；
+- M7 专项用例：`tests/integration/test_run_stream.py`、`test_rbac.py`、`test_tasks.py`、
+  `test_hitl_interrupt.py`、`tests/test_auth_url_unit.py`；
+- 无数据库迁移（迁移 head `2d8f6a1c3e70`）。

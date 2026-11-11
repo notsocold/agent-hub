@@ -17,7 +17,7 @@
 | M4 知识库 RAG | 后端已完成（2026-11-10）；前端已联调 | 模型/pgvector 迁移/解析/切分/双通道 Embedding/7 个 API/`search_knowledge`/引用落库/`build_kb.py`/离线评测；323 测试通过、修复时钟抖动后全量 10 连跑 0 失败；语义召回率因无真实 Embedding key **未取得证据**；前端知识库页与引用展示已联调（2026-11-10） |
 | M5 审批与安全加固 | 后端已完成（2026-11-10） | HITL 迁移到 `interrupt()`/`Command(resume=...)`；超时取消、聊天限流、注入检测/输出打码、平台密钥、审计检索；395 测试通过；跨实例启动保活已并入 M6；前端 M5 已联调（2026-11-11） |
 | M6 生产化与可观测 | 后端已完成（2026-11-11） | 日志/OTel/指标/readyz/Dockerfile+Compose/清理/启动恢复/流式过滤/压测/CI；582 测试通过；Grafana 与真实 LB 滚动未实测 |
-| M7 契约补齐与安全收口 | 已立项（2026-11-11），未开始 | 事件回放 `event` + SSE 续流端点、agents/tasks 写操作 RBAC、审批事件字段、A2A 授权 URL 白名单；无迁移 |
+| M7 契约补齐与安全收口 | 实施中（2026-11-11；Task 1–6 已交付，待 Task 7 回归） | 事件回放 `event` + SSE 续流端点、agents/tasks 写操作 RBAC、审批事件字段、A2A 授权 URL 白名单、契约/OpenAPI/前端 handoff；无迁移 |
 | M8 管理台后端（原 X2） | 已立项（2026-11-11），未开始 | 用户/角色、系统指令/技能/MCP/Agent、只读概览；依赖 M7 的 RBAC |
 | M9 工作流后端（原 X1） | 已立项（2026-11-11），未开始 | 轻量步骤模板 MVP（检索/工具/A2A/审批/回答）；先 spike，不引入外部引擎 |
 
@@ -221,26 +221,34 @@
 - [x] 故障演练：数据库短时不可用后自动恢复：TCP 代理切断后 `/readyz` 503、业务请求 503
   `database_unavailable`，恢复后 `/readyz` 200 且聊天成功，API 进程未重启。
 
-## M7 契约补齐与安全收口（已立项，2026-11-11；未开始）
+## M7 契约补齐与安全收口（实施中，2026-11-11；待 Task 7 回归）
 
 **目标**：补齐前端已提出的契约缺口，给写操作真正的权限边界。
 
 > 立项设计见 [M7–M9 立项](superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md) §3，
-> 实施计划见 [M7 实施计划](superpowers/plans/2026-11-11-m7-contract-security.md)。
+> 实施计划见 [M7 实施计划](superpowers/plans/2026-11-11-m7-contract-security.md)，
+> 前端接入见 [M7 前端交接](feedback/2026-11-11-m7-frontend-handoff.md)。
+> 状态口径：Task 1–6 已交付；Task 7（全量回归 + 独立审查）完成后本里程碑改为「已完成」。
 
 范围：
 
-- [ ] `GET /runs/{id}/events` 新增 `event` 字段；新增 `GET /runs/{id}/stream?after_seq=` SSE 续流端点
-- [ ] agents/tasks 写接口收紧到 `AdminUser`（403 `forbidden`），读接口不变
-- [ ] `approval.required` 补 `tool_display_name/executor/target/side_effect/payload_preview`
-- [ ] A2A `authorization_url` 协议/域名白名单，违规置空并审计
-- [ ] 契约文档、OpenAPI、前端 handoff 同步
+- [x] `GET /runs/{id}/events` 新增 `event` 字段；新增 `GET /runs/{id}/stream?after_seq=` SSE 续流端点
+- [x] agents/tasks 写接口收紧到 `AdminUser`（403 `forbidden` + `details.required_role`），读接口不变
+- [x] `approval.required` 补 `tool_display_name/executor/target/side_effect/payload_preview`
+- [x] A2A `authorization_url` 协议/域名白名单，违规置空并审计
+- [x] 契约文档、OpenAPI、前端 handoff 同步（`docs/api.md` §11、`docs/openapi.json`、
+      [M7 前端交接](feedback/2026-11-11-m7-frontend-handoff.md)）
 
 验收：
 
-- [ ] 前端断线后可从 `lastSeq` 逐字续流；非本人 run 404、未登录 401
-- [ ] 普通用户写 agents/tasks 返回 403；管理员成功且写审计
-- [ ] `openapi.json` 与代码一致；全量测试 ≥ 582 passed；无迁移
+- [x] 前端断线后可从 `lastSeq` 逐字续流；非本人 run 404、未登录 401
+      （后端契约与 `tests/integration/test_run_stream.py` 已交付；前端按 handoff 接入）
+- [x] 普通用户写 agents/tasks 返回 403；管理员成功且写审计
+      （`tests/integration/test_rbac.py`；拒绝审计 `security.rbac_denied`）
+- [ ] `openapi.json` 与代码一致（Task 6 已导出核对）；全量测试 ≥ 582 passed；无迁移
+      （本机 PostgreSQL 未运行，Task 6 实跑 454 passed / 280 skipped；DB 用例待 Task 7 在有库环境回归；
+      迁移 head `2d8f6a1c3e70` 不变）
+- [ ] Task 7：全量回归 + 独立审查（完成后里程碑状态改为「已完成」）
 
 ## M8 管理台后端（原 X2，已立项 2026-11-11；未开始）
 
