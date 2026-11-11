@@ -23,6 +23,7 @@ from app.core.telemetry import configure_tracing, shutdown_tracing
 from app.db.session import dispose_engine, get_session_factory
 from app.modules.approvals.service import expire_pending
 from app.modules.chat.registry import registry
+from app.modules.maintenance.cleanup import cleanup_sweeper
 from app.modules.maintenance.recovery import recover, recovery_sweeper
 from app.modules.skills.service import sync_builtin_skills
 from app.modules.system.health import router as health_router
@@ -75,6 +76,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             recovery_sweeper(settings.recovery_interval_seconds), name="recovery-sweeper"
         )
     sweeper = asyncio.create_task(_approval_sweeper(), name="approval-sweeper")
+    cleanup_task: asyncio.Task[None] | None = None
+    if settings.cleanup_enabled:
+        cleanup_task = asyncio.create_task(
+            cleanup_sweeper(settings.cleanup_interval_seconds), name="cleanup-sweeper"
+        )
     logger.info("agent-hub 启动完成 env=%s", settings.env)
     try:
         yield
@@ -83,9 +89,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         sweeper.cancel()
         if recovery_task is not None:
             recovery_task.cancel()
+        if cleanup_task is not None:
+            cleanup_task.cancel()
         await asyncio.gather(
             sweeper,
             *([recovery_task] if recovery_task is not None else []),
+            *([cleanup_task] if cleanup_task is not None else []),
             return_exceptions=True,
         )
         drained = await registry.drain(settings.shutdown_grace_seconds)
