@@ -219,11 +219,34 @@ async def test_patch_empty_and_not_found(
     assert empty.status_code == 422, empty.text
     assert empty.json()["error"]["code"] == "validation_error"
 
+    blank_name = await client.patch(
+        f"{ADMIN_URL}/{agent['id']}", json={"name": "   "}, headers=admin_auth
+    )
+    assert blank_name.status_code == 422, blank_name.text
+    assert blank_name.json()["error"]["code"] == "validation_error"
+
     missing = await client.patch(
         f"{ADMIN_URL}/{uuid.uuid4()}", json={"name": "不存在"}, headers=admin_auth
     )
     assert missing.status_code == 404, missing.text
     assert missing.json()["error"]["code"] == "not_found"
+
+
+async def test_patch_soft_deleted_not_found(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """软删后的 Agent 对管理端 PATCH 视为不存在。"""
+    _register_fake()
+    agent = await _create_agent(client, admin_auth, slug="soft-deleted-agent")
+
+    deleted = await client.delete(f"{AGENTS_URL}/{agent['id']}", headers=admin_auth)
+    assert deleted.status_code == 204, deleted.text
+
+    patched = await client.patch(
+        f"{ADMIN_URL}/{agent['id']}", json={"name": "软删后改名"}, headers=admin_auth
+    )
+    assert patched.status_code == 404, patched.text
+    assert patched.json()["error"]["code"] == "not_found"
 
 
 async def test_non_admin_forbidden_and_unauthorized(

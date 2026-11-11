@@ -110,6 +110,17 @@ class AdminAgentUpdateRequest(BaseModel):
             raise ValueError("至少需要修改一个字段")
         return self
 
+    @field_validator("name")
+    @classmethod
+    def _reject_blank_name(cls, value: str | None) -> str | None:
+        """管理端改名必须是有内容的名称；纯空白提前 422 而不是落库空白串。"""
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("name 不能为空白")
+        return value
+
 
 class AgentRecentTask(BaseModel):
     id: uuid.UUID

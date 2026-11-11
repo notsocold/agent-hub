@@ -21,7 +21,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings, reset_settings_cache
 from app.core.security import create_access_token
 from app.db.models.audit import AuditLog
 from app.db.models.mcp import McpServer, McpTool, UserCapabilityOverride
@@ -270,6 +270,12 @@ async def test_patch_fields_force_disable_and_discovery(
     assert empty.status_code == 422, empty.text
     assert empty.json()["error"]["code"] == "validation_error"
 
+    blank_name = await client.patch(
+        f"{ADMIN_URL}/{server['id']}", json={"name": "   "}, headers=admin_auth
+    )
+    assert blank_name.status_code == 422, blank_name.text
+    assert blank_name.json()["error"]["code"] == "validation_error"
+
     # slug/transport/command/args 不可编辑，显式 422 而不是静默忽略。
     for field, value in (
         ("slug", "renamed-slug"),
@@ -392,6 +398,88 @@ async def test_audit(
     assert len(deleted) == 1
     assert deleted[0].detail == {"slug": "audit-mcp", "scope": "system"}
     assert deleted[0].resource_id == server["id"]
+
+
+async def test_admin_mcp_scope_and_not_found_boundaries(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """管理端看不到也改不到用户自建 MCP；随机 id 的 PATCH/DELETE 均为 404。"""
+    _register_mock(MCP_URL, [MOCK_TOOL_READ])
+    registered = await register_user(client)
+    user_headers = auth_headers(registered["access_token"])
+    user_created = await client.post(
+        USER_URL,
+        json={
+            "name": "用户自建 MCP",
+            "slug": "user-only-mcp",
+            "transport": "streamable_http",
+            "url": MCP_URL,
+        },
+        headers=user_headers,
+    )
+    assert user_created.status_code == 201, user_created.text
+    user_server_id = user_created.json()["id"]
+
+    listing = await client.get(ADMIN_URL, headers=admin_auth)
+    assert listing.status_code == 200, listing.text
+    assert user_server_id not in {item["id"] for item in listing.json()["items"]}
+
+    missing_id = str(uuid.uuid4())
+    for server_id in (user_server_id, missing_id):
+        patched = await client.patch(
+            f"{ADMIN_URL}/{server_id}", json={"name": "越权改名"}, headers=admin_auth
+        )
+        assert patched.status_code == 404, patched.text
+        assert patched.json()["error"]["code"] == "not_found"
+        assert patched.json()["error"]["message"] == "系统 MCP 服务器不存在"
+        deleted = await client.delete(f"{ADMIN_URL}/{server_id}", headers=admin_auth)
+        assert deleted.status_code == 404, deleted.text
+        assert deleted.json()["error"]["code"] == "not_found"
+
+
+async def test_secret_store_unavailable_on_plaintext_sensitive_headers(
+    client: httpx.AsyncClient,
+    admin_auth: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """无 CAPABILITY_SECRET_KEY 时，敏感头明文 POST/PATCH 都是 503 专用码。"""
+    _register_mock(MCP_URL, [MOCK_TOOL_READ])
+    server = await _create_system(client, admin_auth, slug="secret-store-mcp")
+
+    monkeypatch.delenv("CAPABILITY_SECRET_KEY", raising=False)
+    # 本地 .env 可能配置了密钥；显式构造空密钥配置，保证本地与 CI 语义一致。
+    monkeypatch.setattr(
+        "app.core.ssrf.get_settings",
+        lambda: Settings(
+            capability_secret_key="",
+            mcp_allowed_hosts="mcp.example.com",
+            _env_file=None,
+        ),
+    )
+    reset_settings_cache()
+    try:
+        created = await client.post(
+            ADMIN_URL,
+            json=_payload(
+                "secret-store-mcp-2",
+                headers={"Authorization": "Bearer plain-secret"},
+            ),
+            headers=admin_auth,
+        )
+        assert created.status_code == 503, created.text
+        assert created.json()["error"]["code"] == "secret_store_unavailable"
+        assert "plain-secret" not in created.text
+
+        patched = await client.patch(
+            f"{ADMIN_URL}/{server['id']}",
+            json={"headers": {"Authorization": "Bearer plain-secret"}},
+            headers=admin_auth,
+        )
+        assert patched.status_code == 503, patched.text
+        assert patched.json()["error"]["code"] == "secret_store_unavailable"
+        assert "plain-secret" not in patched.text
+    finally:
+        reset_settings_cache()
 
 
 async def test_capability_disabled_does_not_block_admin(

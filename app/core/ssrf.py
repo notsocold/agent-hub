@@ -231,7 +231,8 @@ def normalize_headers(
                 ciphertext = encrypt_secret(value)
                 if ciphertext is None:
                     raise ServiceUnavailableError(
-                        "保存凭据需要配置 CAPABILITY_SECRET_KEY，或改用 env:环境变量名 引用"
+                        "保存凭据需要配置 CAPABILITY_SECRET_KEY，或改用 env:环境变量名 引用",
+                        code="secret_store_unavailable",
                     )
                 stored[name] = {"ciphertext": ciphertext}
                 hints.append(f"{name}: ****{value[-4:]}")
