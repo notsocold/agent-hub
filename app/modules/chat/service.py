@@ -25,6 +25,7 @@ from app.core.audit import content_fingerprint, write_audit
 from app.core.config import get_settings
 from app.core.cursor import encode_cursor
 from app.core.errors import (
+    BadRequestError,
     CapabilityDisabledError,
     ConflictError,
     NotFoundError,
@@ -85,6 +86,8 @@ from app.modules.conversations.schemas import (
 logger = logging.getLogger(__name__)
 
 _ACTIVE_STATUSES = ("queued", "running", "interrupted")
+# SSE 空闲心跳周期：等待实时事件超过该周期就发一条注释帧（不占 seq）。
+_SSE_HEARTBEAT_SECONDS = 15
 _DEFAULT_CAPABILITIES: dict[str, Any] = {
     "skills": [],
     "mcp_servers": [],
@@ -1795,15 +1798,45 @@ async def resume_run(
     raise ConflictError("当前版本不支持恢复运行", code="run_not_resumable")
 
 
-async def stream_run_events(run_id: uuid.UUID, *, after_seq: int = 0) -> AsyncIterator[str]:
+async def ensure_replay_size(
+    db: AsyncSession,
+    run_id: uuid.UUID,
+    after_seq: int,
+    *,
+    max_replay: int = 1000,
+) -> None:
+    """SSE 续流前的回放上限检查：超限时提示改用分页接口或更接近的 after_seq。"""
+    count = await db.scalar(
+        select(func.count())
+        .select_from(RunEvent)
+        .where(RunEvent.run_id == run_id, RunEvent.seq > after_seq)
+    )
+    if int(count or 0) > max_replay:
+        # HTTP 状态码只能在建流前决定；生成器内部另有 limit(max_replay + 1) 兜底。
+        raise BadRequestError(
+            f"回放事件超过 {max_replay} 条，请使用事件分页接口分批回放，"
+            "或传入更接近的 after_seq 后重试",
+            code="replay_too_large",
+        )
+
+
+async def stream_run_events(
+    run_id: uuid.UUID, *, after_seq: int = 0, max_replay: int = 1000
+) -> AsyncIterator[str]:
     """SSE 生成器：包一层 ``sse.stream`` span，内部回放 + 实时跟随。"""
     span = get_tracer().start_span(
         "sse.stream",
-        attributes={"app.run_id": str(run_id), "app.sse.after_seq": after_seq},
+        attributes={
+            "app.run_id": str(run_id),
+            "app.sse.after_seq": after_seq,
+            "app.sse.max_replay": max_replay,
+        },
     )
     events = 0
     try:
-        async for frame in _stream_run_events_inner(run_id, after_seq=after_seq):
+        async for frame in _stream_run_events_inner(
+            run_id, after_seq=after_seq, max_replay=max_replay
+        ):
             events += 1
             yield frame
     finally:
@@ -1812,7 +1845,7 @@ async def stream_run_events(run_id: uuid.UUID, *, after_seq: int = 0) -> AsyncIt
 
 
 async def _stream_run_events_inner(
-    run_id: uuid.UUID, *, after_seq: int = 0
+    run_id: uuid.UUID, *, after_seq: int = 0, max_replay: int = 1000
 ) -> AsyncIterator[str]:
     """SSE 生成器：先回放已落库事件，再跟随实时事件。"""
     settings = get_settings()
@@ -1822,18 +1855,25 @@ async def _stream_run_events_inner(
     run_token = run_id_ctx.set(str(run_id))
     try:
         async with get_session_factory()() as db:
+            # 先读 run 状态再读事件：缩小「状态已终态、终态事件刚提交」的漏帧窗口。
+            run = await db.get(Run, run_id)
+            run_status = run.status if run is not None else None
             rows = list(
                 (
                     await db.execute(
                         select(RunEvent)
                         .where(RunEvent.run_id == run_id, RunEvent.seq > last_seq)
                         .order_by(RunEvent.seq.asc())
+                        # 多取一条用于判断是否超限；生成器启动后无法再改状态码，
+                        # 超限时只发前 max_replay 条并关闭（路由层已提前返回 400）。
+                        .limit(max_replay + 1)
                     )
                 )
                 .scalars()
                 .all()
             )
-        for row in rows:
+        truncated = len(rows) > max_replay
+        for row in rows[:max_replay]:
             if row.seq <= last_seq:
                 continue
             event_name = str((row.payload or {}).get("_event") or "")
@@ -1844,9 +1884,18 @@ async def _stream_run_events_inner(
             yield format_sse(row.seq, event_name, data)
             if event_name in TERMINAL_EVENTS:
                 return
+        if truncated:
+            return
+        # 所有权校验之后 run 被删除：事件已级联删除，不会再有实时帧。
+        if run is None:
+            return
+        # 已结束的 run 不会再有终态事件：回放完立即关闭，避免空流挂到空闲超时。
+        # interrupted 不在终态集合内，仍需保持连接等待审批恢复。
+        if run_status in {"succeeded", "failed", "canceled"}:
+            return
 
         idle_seconds = 0
-        heartbeat_seconds = 15
+        heartbeat_seconds = _SSE_HEARTBEAT_SECONDS
         while True:
             try:
                 item = await asyncio.wait_for(queue.get(), timeout=heartbeat_seconds)

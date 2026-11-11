@@ -42,8 +42,8 @@ _SSE_DESCRIPTION = (
     "**幂等**：相同 `conversation_id + client_message_id` 再次请求时返回同一 run 的"
     "事件回放（HTTP 200，`X-Run-ID` 不变，`seq` 从 1 开始），不会创建新消息。\n\n"
     "**断开**：客户端断开不会取消运行；用 `GET /runs/{id}` 与 "
-    "`GET /runs/{id}/events?after_seq=` 分页回放已落库事件（不跟随实时流；"
-    "SSE 续流端点已在 M7 立项）；"
+    "`GET /runs/{id}/events?after_seq=` 分页回放已落库事件（不跟随实时流），"
+    "或改用 SSE 续流端点 `GET /runs/{id}/stream?after_seq=` 从断点继续跟随；"
     "已发出的 delta 不回溯，挂起时已产出的内容会落库。\n\n"
     "**事件 data 关键字段**：`conversation.created` → `conversation_id`、`title`；"
     "`run.started` → `run_id`、`conversation_id`、`user_message_id`、`client_message_id`、"
@@ -100,6 +100,21 @@ _SSE_RESPONSES: dict[int | str, dict] = {
     },
 }
 
+_RUN_STREAM_DESCRIPTION = (
+    "运行事件 SSE 续流端点，`Content-Type: text/event-stream`。\n\n"
+    "**鉴权**：需要 `Authorization: Bearer <access token>`；非本人或不存在统一 404（不泄露存在性）。"
+    "浏览器 `EventSource` 不支持自定义请求头，请用 `fetch`/`@microsoft/fetch-event-source` 携带 Bearer。\n\n"
+    "**续流**：先回放 `seq > after_seq` 的已落库事件（`after_seq` 默认 0），"
+    "再订阅事件总线跟随实时事件；回放超过 1000 条返回 400 `replay_too_large`，"
+    "请改用 `GET /runs/{id}/events?after_seq=` 分页回放，或传入更接近的 `after_seq`。\n\n"
+    "**关闭**：收到终态事件（`message.done`/`error`）后立即关闭；run 已结束"
+    "（`succeeded`/`failed`/`canceled`）且回放里没有终态事件时，回放完即关闭。"
+    "`interrupted` 的 run 保持连接等待审批恢复，空闲超过 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭。\n\n"
+    "**心跳**：等待实时事件期间每 15 秒发送注释帧 `: ping`（不占 `seq`）。\n\n"
+    "**部署**：事件总线为进程内实现（单实例）；多实例部署时实时帧可能丢失，"
+    "重连时请携带 `after_seq` 通过回放补齐。"
+)
+
 
 @router.post("/chat/stream", response_class=StreamingResponse, responses=_SSE_RESPONSES)
 async def chat_stream(
@@ -143,6 +158,33 @@ async def list_run_events(
         types=types,
         q=q,
         cursor=cursor,
+    )
+
+
+@router.get(
+    "/runs/{run_id}/stream",
+    response_class=StreamingResponse,
+    responses=_SSE_RESPONSES,
+    description=_RUN_STREAM_DESCRIPTION,
+)
+async def stream_run(
+    run_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbSession,
+    after_seq: int = Query(default=0, ge=0),
+) -> StreamingResponse:
+    # 所有权校验先于建流：非本人/不存在统一 404，不泄露存在性。
+    await service.get_run(db, user, run_id)
+    await service.ensure_replay_size(db, run_id, after_seq, max_replay=1000)
+    headers: dict[str, str] = {
+        **_SSE_HEADERS,
+        "X-Run-ID": str(run_id),
+        "X-Request-ID": current_request_id(),
+    }
+    return StreamingResponse(
+        service.stream_run_events(run_id, after_seq=after_seq, max_replay=1000),
+        media_type="text/event-stream",
+        headers=headers,
     )
 
 
