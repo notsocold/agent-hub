@@ -234,6 +234,58 @@ async def _wait_interrupted(run_id: str) -> tuple[list[tuple[str, dict]], dict]:
     return events, interrupted
 
 
+async def test_approval_required_event_carries_approval_card_fields(
+    client: httpx.AsyncClient, monkeypatch
+) -> None:
+    """approval.required 直接携带审批卡字段，值与 GET /approvals/{id} 一致。"""
+    registered, headers, _ = await _setup(client, monkeypatch)
+    result = await _start_run(registered, "创建工单")
+    events, _interrupted = await _wait_interrupted(str(result.run_id))
+    approval_event = next(data for name, data in events if name == "approval.required")
+
+    response = await client.get(
+        f"/api/v1/approvals/{approval_event['approval_id']}", headers=headers
+    )
+    assert response.status_code == 200
+    approval = response.json()
+
+    # 新增的 5 个审批卡字段：值必须与 GET 详情一致，前端无需再补拉。
+    for field in (
+        "tool_display_name",
+        "executor",
+        "target",
+        "side_effect",
+        "payload_preview",
+    ):
+        assert field in approval_event, f"approval.required 缺少字段 {field}"
+        assert approval_event[field] == approval[field]
+
+    # 既有字段保持不变；payload 仍是脱敏后的审批参数，且不含内部 _event。
+    assert {
+        "approval_id",
+        "tool_call_id",
+        "tool",
+        "source",
+        "risk",
+        "reason",
+        "payload",
+        "expires_at",
+    } <= approval_event.keys()
+    assert approval_event["approval_id"] == approval["id"]
+    assert approval_event["tool_call_id"]
+    assert approval_event["tool"] == approval["tool_name"]
+    assert approval_event["source"] == approval["source"]
+    assert approval_event["risk"] == approval["risk"]
+    assert approval_event["reason"] == approval["reason"]
+    assert approval_event["expires_at"]
+    assert approval_event["payload"] == approval["payload"] == {"title": "x"}
+    assert "_event" not in approval_event
+    assert "_event" not in approval_event["payload"]
+
+    # 清理挂起状态，避免影响后续用例。
+    await chat_service.halt_run(result.run_id)
+
+
 async def test_two_approvals_decided_one_by_one(
     client: httpx.AsyncClient, monkeypatch
 ) -> None:
