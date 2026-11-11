@@ -190,9 +190,37 @@ KNOWLEDGE_EVAL_REAL=1 EMBEDDING_API_KEY=<真实key> \
 - 存储后端：`STORAGE_BACKEND=local`（默认，目录 `KNOWLEDGE_DIR`）或 `s3`（`S3_*` 六项）；
   本机 `dev_minio` 可用于 s3 联调，CI 用注入 client 的单元测试，不依赖 minio。
 
+### 8.1 M6 本地验证
+
+```bash
+# 全量测试（本机已有 dev_postgres，不新起容器）
+TEST_DATABASE_URL=postgresql+psycopg://devuser:devpass@localhost:54321/agent_hub_test \
+  .venv/bin/python -m pytest -q
+.venv/bin/python -m ruff check .
+
+# 迁移一致性（临时库）
+DATABASE_URL=postgresql+psycopg://devuser:devpass@localhost:54321/agent_hub_m6_scratch \
+  .venv/bin/python -m alembic upgrade head
+DATABASE_URL=... .venv/bin/python -m alembic check
+
+# 50 并发 SSE（服务端 RATE_LIMIT_ENABLED=false、LLM_PROVIDER=fake）
+.venv/bin/python scripts/load_test_sse.py --concurrency 50 --rounds 1
+
+# 故障/停机演练
+.venv/bin/python scripts/db_outage_drill.py
+.venv/bin/python scripts/graceful_shutdown_drill.py
+
+# 清理 dry-run
+.venv/bin/python scripts/cleanup.py --dry-run
+```
+
+CI 会额外跑空库迁移、`alembic check`、OpenAPI diff 与镜像构建，见 `.github/workflows/ci.yml`。
+
 ## 9. 调试
 
-- 请求追踪：响应头 `X-Request-ID`，日志中同一 ID 可串起整条链路；
+- 请求追踪：响应头 `X-Request-ID`；启用 Trace 后还有 `X-Trace-ID`，日志中 `trace_id`/`span_id` 可串链路；
+- 指标：`curl -s localhost:8000/metrics | grep agent_hub_`；关闭时 404；
+- Trace 本地导出：`OTEL_ENABLED=true OTEL_EXPORTER=console OTEL_SAMPLE_RATIO=1.0`；
 - 图调试：LangGraph Studio（可选）或 `graph.get_graph().draw_mermaid()`；
 - SQL：`DB_ECHO=true` 打印语句（仅本地）；
 - SSE：`curl -N -H "Accept: text/event-stream" ...` 观察原始帧；
@@ -210,6 +238,10 @@ KNOWLEDGE_EVAL_REAL=1 EMBEDDING_API_KEY=<真实key> \
 | embedding 维度不匹配 | 模型维度与 `EMBEDDING_DIM` 不一致 | 改配置并重建向量表，不能原地 ALTER |
 | `429 Too Many Requests` | 限流（默认注册 5 次/小时/IP、登录 10 次/5 分钟/IP） | 调 `RATE_LIMIT_*` 配置，或直接用 `scripts/seed_dev_account.py` 复用固定账号 |
 | SSE 无输出 | 反向代理缓冲 | Nginx `proxy_buffering off`、`X-Accel-Buffering: no` |
+| `/metrics` 404 | `METRICS_ENABLED=false` 或 `METRICS_PATH` 被改 | 检查配置后重启；路径不能是 `/healthz`/`/readyz` |
+| `/readyz` 503 `migrations` | 生产库未执行迁移 | `alembic upgrade head`；测试库用 `create_all` 时应保持 `READINESS_CHECK_MIGRATIONS=false` |
+| SIGTERM 后进程不退出 | 在跑 run 超过排水窗口，或任务卡住 | 调大 `SHUTDOWN_GRACE_SECONDS`；看日志「排水超时」与 run 状态 |
+| 指标里出现用户/run 标签 | 指标接入违反白名单 | 只允许路由模板、模型白名单、工具白名单标签；见 `docs/observability.md` |
 
 ## 11. Git 约定
 

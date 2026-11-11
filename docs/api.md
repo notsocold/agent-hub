@@ -58,9 +58,12 @@ Authorization: Bearer <access_token>
 | 429 | `rate_limited` | 触发限流 |
 | 500 | `internal_error` | 未预期异常 |
 | 503 | `service_unavailable` | 依赖服务不可用（M4：Embedding 服务故障时的检索） |
+| 503 | `database_unavailable` | 数据库连接不可用（M6；连接/pool 故障） |
 | 502 | `a2a_unavailable` | 远程智能体不可用 |
 | 502 | `mcp_unreachable` | 显式选择的 MCP 服务器不可达 |
 | 504 | `a2a_timeout` | 远程调用超时 |
+
+> M6：启用 Trace 且采样时响应头可能带 `X-Trace-ID`；`X-Request-ID` 始终存在。
 
 ## 2. 端点总表
 
@@ -240,9 +243,11 @@ M5 起审批恢复走 LangGraph `Command(resume=...)`，决定接口的 `resumed
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/healthz` | 存活探针（不查库） |
-| GET | `/readyz` | 就绪探针（检查 DB/迁移版本，规划） |
+| GET | `/healthz` | 存活探针（不查依赖；返回 version/build/env） |
+| GET | `/readyz` | 就绪探针（DB/迁移/checkpoint/存储/排水；关键失败 503） |
+| GET | `/metrics` | Prometheus 指标（根路径，M6；可用 `METRICS_TOKEN` 保护，关闭时 404） |
 | GET | `/api/v1/system/info` | 版本、模型配置、A2A 入站状态、能力开关 |
+| GET | `/metrics` | Prometheus 文本指标；不在 OpenAPI schema 中 |
 
 `system/info.a2a` 字段（2026-11-10 起）：
 

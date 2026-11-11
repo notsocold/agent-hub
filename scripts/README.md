@@ -12,6 +12,10 @@
 | `grant_admin.py` | 已实现：设置/撤销用户管理员角色（`users.role`），用于首个管理员引导 |
 | `seed_dev_account.py` | 已实现：幂等创建/重置开发账号（默认 `dev@example.com`），绕开注册限流 |
 | `export_openapi.py` | 已实现：导出 `docs/openapi.json`，作为前后端契约源 |
+| `cleanup.py` | 已实现：checkpoint/run_events/审计/附件/token 清理（支持 `--dry-run`/`--only`） |
+| `load_test_sse.py` | 已实现：50 并发 SSE 压测 |
+| `db_outage_drill.py` | 已实现：数据库短时不可用演练 |
+| `graceful_shutdown_drill.py` | 已实现：优雅停机/双实例排水演练 |
 
 脚本必须通过 `app.core.config.get_settings()` 读取配置，不重复实现环境变量解析。
 

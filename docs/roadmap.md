@@ -16,7 +16,7 @@
 | M3 A2A 入站 | 已取消（2026-11-10 需求变更） | 本服务只做 A2A 出站 Client，不发布 Agent Card、不提供 JSON-RPC 入站；原范围/验收不适用，M4 顺延 |
 | M4 知识库 RAG | 后端已完成（2026-11-10）；前端待做 | 模型/pgvector 迁移/解析/切分/双通道 Embedding/7 个 API/`search_knowledge`/引用落库/`build_kb.py`/离线评测；323 测试通过、修复时钟抖动后全量 10 连跑 0 失败；语义召回率因无真实 Embedding key **未取得证据** |
 | M5 审批与安全加固 | 后端已完成（2026-11-10） | HITL 迁移到 `interrupt()`/`Command(resume=...)`；超时取消、聊天限流、注入检测/输出打码、平台密钥、审计检索；395 测试通过；跨实例启动保活与前端留后续（见 M5 报告） |
-| M6 生产化与可观测 | 未开始 | OTel/指标/CI/Dockerfile/容量基线未做 |
+| M6 生产化与可观测 | 后端已完成（2026-11-11） | 日志/OTel/指标/readyz/Dockerfile+Compose/清理/启动恢复/流式过滤/压测/CI；471 测试通过；Grafana 与真实 LB 滚动未实测 |
 
 > 注：M1.5 是追加的中间里程碑，排在 M1 之后、M2 之前，不改动原 M2–M6 的编号含义。
 
@@ -185,26 +185,38 @@
 - [x] 审计日志可按用户/动作/时间检索（`test_audit_api.py`：范围、过滤、游标）；
 - [x] 安全用例（SSRF、越权、注入）测试通过（`test_security_hardening.py` + 既有 SSRF/越权用例，全量 395 通过）。
 
-## M6 生产化与可观测（未开始）
+## M6 生产化与可观测（后端已完成，2026-11-11）
 
 **目标**：可部署、可观测、可运维。
 
+> 交付证据见 [M6 后端交付报告](feedback/2026-11-11-m6-backend-report.md)，设计/计划见
+> [M6 设计](superpowers/specs/2026-11-11-m6-production-observability-design.md) /
+> [M6 实施计划](superpowers/plans/2026-11-11-m6-production-observability.md)。
+> 本轮只做后端与运维产物；前端无 M6 契约变更。
+
 范围：
 
-- [ ] 结构化日志 + OpenTelemetry Trace
-- [ ] Prometheus 指标（HTTP、SSE、LLM、A2A、检索）
-- [ ] 健康检查 `/readyz`
-- [ ] Dockerfile + 生产 Compose/Helm
-- [ ] checkpoint/审计数据清理任务
-- [ ] 压测与容量基线
-- [ ] CI：lint + test + 迁移检查
+- [x] 结构化日志 + OpenTelemetry Trace（JSON 日志、OTLP/HTTP、未配置 no-op）
+- [x] Prometheus 指标（HTTP、SSE、LLM、工具、A2A、检索、审批、限流、清理）
+- [x] 健康检查 `/readyz`（DB/迁移/checkpoint/存储/排水；`/healthz` 纯存活）
+- [x] Dockerfile + 生产 Compose（非 root、健康检查、Prometheus/Grafana/Nginx profile；不含 Helm）
+- [x] checkpoint/审计/事件/附件/token 清理任务（CLI + 后台调度）
+- [x] 压测与容量基线（`scripts/load_test_sse.py`）
+- [x] CI：lint + test + 迁移检查 + OpenAPI diff + 镜像构建
+- [x] 承接 M5：启动恢复、流式输出实时过滤
 
 验收：
 
-- [ ] 单实例 50 并发 SSE 稳定，错误率 < 1%；
-- [ ] 关键链路有 trace，P95 可在 Grafana 查看；
-- [ ] 滚动发布不中断服务；
-- [ ] 故障演练：数据库短时不可用后自动恢复。
+- [x] 单实例 50 并发 SSE 稳定，错误率 < 1%：实测 50/50 成功、错误率 0、P95 首 token 2183ms
+  （本地 fake LLM、单实例；样本与脚本见交付报告）；
+- [x] 关键链路有 trace：`http.request → chat.run → llm.chat / tool.execute` 由
+  `test_observability_chat.py` 的 InMemorySpanExporter 断言；Grafana 看板与 PromQL 已交付，
+  **未实际启动 Grafana/Tempo 验收**（用户约定不新起容器）；
+- [ ] 滚动发布不中断服务：已实现优雅停机排水，`scripts/graceful_shutdown_drill.py` 双进程演练
+  通过（在跑 SSE 全部收到终态、另一实例 3/3 成功、重启就绪）；Compose 本身不做零停机滚动，
+  真实 LB 下的滚动发布**未演练**；
+- [x] 故障演练：数据库短时不可用后自动恢复：TCP 代理切断后 `/readyz` 503、业务请求 503
+  `database_unavailable`，恢复后 `/readyz` 200 且聊天成功，API 进程未重启。
 
 ## 待决策 / 开放问题
 

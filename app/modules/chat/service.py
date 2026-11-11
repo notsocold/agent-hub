@@ -193,7 +193,7 @@ async def _find_active_run(db: AsyncSession, conversation_id: uuid.UUID) -> Run 
 
 async def start_chat(db: AsyncSession, user: User, payload: ChatStreamRequest) -> ChatStartResult:
     settings = get_settings()
-    # 聊天限流：按用户滑动窗口，与登录/注册限流共用进程内实现（M6 换 Redis）。
+    # 聊天限流：按用户滑动窗口，与登录/注册限流共用进程内实现；多实例需共享限流（后续）。
     limiter.check(
         f"chat:{user.id}",
         settings.rate_limit_chat_max,

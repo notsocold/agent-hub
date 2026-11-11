@@ -4,12 +4,13 @@
 
 配套前端：[agent-hub-web](../../NodeJsProjects/agent-hub-web)（Vue 3 + TypeScript + Vite）。
 
-> **当前状态：M2 A2A 出站已实现（2026-11-10）。**
+> **当前状态：M6 生产化与可观测后端已完成（2026-11-11）。**
 > 已包含认证、会话/消息、聊天 SSE、运行与事件回放、审批、系统信息、个人能力层
-> （指令/记忆/技能/MCP/附件），以及 M2 的远程 Agent 注册表（Card 拉取/校验/健康检查）、
-> 统一 `send_message` 委派工具（含 HITL 等待与 SSE 事件）与任务查询/动作 API。
-> 测试 107 个全绿；迁移 `8a2f7c31e9d5` 已应用到 agent_hub。
-> M3 入站 Server 已按 2026-11-10 需求变更取消（本服务仅出站）；M4–M6 仍未实现，对应能力开关明确返回 `false`。
+> （指令/记忆/技能/MCP/附件）、A2A 出站、知识库 RAG、审批与安全加固，以及 M6 的
+> 结构化日志 / Prometheus 指标 / OTel Trace、`/readyz`、Dockerfile + 生产 Compose、
+> 优雅停机、启动恢复、数据清理、流式实时过滤、压测与故障演练脚本、CI。
+> 全量 **471 passed, 1 skipped**；ruff 全绿；迁移 head `c4e7a91b2f36`。
+> 前端 M4/M5 适配仍在 `agent-hub-web` 侧；M6 无前端契约变更。
 
 ## 1. 项目定位
 
@@ -144,29 +145,42 @@ curl http://localhost:8000/healthz
 curl http://localhost:8000/api/v1/system/info   # 需要先登录拿 Bearer token
 ```
 
-## 6. 当前状态（M2 · A2A 出站）
+## 6. 当前状态（M6 · 生产化与可观测）
 
-M1（2026-11-09）与 M1.5「个人能力层」（2026-11-09）已完成，M2「A2A 出站」已实现（2026-11-10）：
+后端里程碑 M0–M6 已完成（M3 入站按 2026-11-10 需求变更取消）：
 
-- [x] M1 全部：认证、会话、聊天 SSE、运行、审批数据层、系统信息
-- [x] M1.5 全部：附件/指令/记忆/技能/MCP/HITL 审批/工具轨迹与审计
-- [x] `remote_agents`/`a2a_tasks` 模型 + 可逆迁移（`8a2f7c31e9d5`，测试库 upgrade/downgrade/upgrade 通过）
-- [x] Agent Card 拉取/校验（SSRF 防护、同源校验、协议版本/技能校验，dev 可放行回环）
-- [x] `/agents` 全端点：preview/create（幂等）/list（stats）/detail/patch/delete（软删）/refresh/health
-- [x] A2A 客户端（已迁移到 `a2a-sdk` 1.3.0：JSON-RPC 传输 + 0.3/1.0 版本协商 + 超时与错误映射；对外 `A2aClient` 语义不变）
-- [x] 统一 `send_message` 工具：仅注入 enabled Agent，HITL 等待（input_required/auth_required）复用审批式进程内 waiter
-- [x] SSE 事件：`a2a.task` / `a2a.artifact` / `a2a.input_required` / `a2a.auth_required`
-- [x] `/tasks` 全端点：列表（多状态过滤 + stats）/详情/取消/补充输入/授权/拒绝 + 等待超时懒过期
-- [x] `system/info.capabilities.agents/tasks = true`；`GET /runs/{id}` 的 pending/agents 支持 A2A
-- [x] 101 个 pytest 用例（85 基线 + 16 新增）；ruff 通过；8000 实例真实联调通过（注册→预览→健康→对话委派→任务查询）
+| 里程碑 | 状态 |
+|---|---|
+| M1 对话最小闭环 | 已完成 |
+| M1.5 个人能力层 | 已完成 |
+| M2 A2A 出站 | 已完成 |
+| M3 A2A 入站 | 已取消（仅出站） |
+| M4 知识库 RAG | 后端已完成；前端引用展示待做 |
+| M5 审批与安全加固 | 后端已完成；前端事件适配待做 |
+| M6 生产化与可观测 | 后端已完成（2026-11-11） |
 
-明确未包含（按路线图后续交付）：
+M6 交付：
 
-- [ ] M1.5 管理端路由（`/api/v1/admin/…`，数据模型已就绪）
-- [-] M3：A2A 入站 Server —— 已按 2026-11-10 需求变更取消（本服务仅出站）
-- [ ] M4：知识库 + pgvector（记忆语义检索、`q` 升级为向量检索）
-- [ ] M5+：工作流、管理控制台、RBAC
-- [ ] CI、Dockerfile、生产可观测性
+- 结构化日志（`LOG_FORMAT=json`，含 request/run/conversation/trace 字段）；
+- `prometheus-client` 指标（HTTP/SSE/chat/LLM/tool/A2A/检索/审批/限流/清理）与 `/metrics`；
+- OpenTelemetry Trace（OTLP/HTTP，未配置 no-op；`http.request → chat.run → llm.chat/tool.execute`）；
+- `/readyz` 检查 DB/迁移/checkpoint/存储/排水；DB 不可用返回 503 `database_unavailable`；
+- Dockerfile（非 root、健康检查）+ `docker-compose.prod.yml` + Prometheus/Grafana/Nginx 配置；
+- 优雅停机排水、启动恢复（running→failed、interrupted 恢复/restart_lost 取消）、数据清理 CLI/调度；
+- 流式输出实时打码（密钥跨 chunk、危险 HTML）；
+- 50 并发 SSE 压测、数据库故障演练、优雅停机演练脚本与实测证据；
+- GitHub Actions：lint + test + 迁移检查 + OpenAPI diff + 镜像构建。
+
+详细证据见 [M6 后端交付报告](docs/feedback/2026-11-11-m6-backend-report.md)，
+设计与计划见 [M6 设计](docs/superpowers/specs/2026-11-11-m6-production-observability-design.md)、
+[M6 实施计划](docs/superpowers/plans/2026-11-11-m6-production-observability.md)。
+
+明确未包含：
+
+- [-] M3：A2A 入站 Server（需求变更取消）；
+- [ ] 前端 M4 知识库页与引用展示、M5 审批事件/审计页适配；
+- [ ] 多实例（Redis 事件总线/共享限流/跨实例 resume）、Helm；
+- [ ] 真实 Grafana/Tempo 可视化与滚动发布 LB 演练（配置已交付，受「不新起容器」约束未实测）。
 
 本地假 Agent 联调（详见 [M2 交付报告](docs/feedback/2026-11-09-m2-backend-report.md)）：
 
@@ -199,21 +213,24 @@ curl -X POST http://127.0.0.1:8000/api/v1/agents \
 | [API 契约](docs/api.md) | REST 端点、SSE 事件、错误码 |
 | [开发指南](docs/development.md) | 环境、命令、编码规范、联调、FAQ |
 | [路线图](docs/roadmap.md) | M0–M6 里程碑与验收标准（含 M1.5 个人能力层） |
+| [可观测性](docs/observability.md) | 日志字段、指标目录、PromQL、Trace 目录 |
+| [生产部署](docs/deployment.md) | 镜像、Compose、迁移、排水、滚动发布、清理 |
 | [初始化设计稿](docs/superpowers/specs/2026-11-04-agent-hub-init-design.md) | 本次初始化的决策记录 |
 | [个人能力层设计](docs/superpowers/specs/2026-11-05-agent-capabilities-design.md) | MCP / Skill / 长期记忆 / Instruction 的设计与决策 |
 | [M1 前端契约反馈](docs/feedback/2026-11-09-frontend-contract-feedback.md) | 与前端交接包的差异、待拍板决策、联调步骤 |
 | [前端联调反馈](docs/feedback/2026-11-09-frontend-integration-response.md) | 前端真实联调结果、12 个契约点逐项回复、后端待处理问题 |
 | [后端热修响应](docs/feedback/2026-11-09-backend-hotfix-response.md) | 分页 500 修复、OpenAPI/文档补齐、500 request_id、限流配置与复验结果 |
-| [OpenAPI](docs/openapi.json) | M1 实际接口契约（由 FastAPI 导出） |
+| [OpenAPI](docs/openapi.json) | 实际接口契约（由 FastAPI 导出） |
+| [M6 交付报告](docs/feedback/2026-11-11-m6-backend-report.md) | M6 实测证据、决策、未做项 |
 
 ## 9. 下一步
 
-M1 已完成，按 `docs/roadmap.md` 继续：
+后端 M0–M6 已完成，后续工作交给部署与前端：
 
-1. 与前端对齐 [M1 契约反馈](docs/feedback/2026-11-09-frontend-contract-feedback.md) 中的 12 个点；
-2. 进入 M1.5-A：指令、长期记忆、技能（`system_settings` / `user_settings` / `skills` / `skill_files` 已建基础表）；
-3. 再做 M1.5-B：MCP + 附件 + 完整审批链路；
-4. 每一步先更新设计文档与 `docs/openapi.json`，再写代码。
+1. 按 [生产部署](docs/deployment.md) 在目标环境执行 `alembic upgrade head`、配置 JWT/LLM/OTLP 与 Compose；
+2. 在部署环境验证 Grafana 看板、告警与真实 LB 滚动发布（本地只做了排水与故障演练）；
+3. 前端 `agent-hub-web` 适配 M4 知识库/引用、M5 审批事件与审计页；
+4. 需要多实例时再单独设计 Redis 事件总线/共享限流/跨实例 resume，不在 M6 范围。
 
 编码前建议阅读：
 

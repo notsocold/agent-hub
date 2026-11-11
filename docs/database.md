@@ -672,19 +672,24 @@ M5 新增迁移：
 
 ## 9. 数据生命周期
 
-| 数据 | 保留策略 | 清理方式 |
+M6 已实现运维类数据的自动清理；消息/运行正文属于用户数据，删除策略仍由产品决定，M6 不自动清理。
+
+| 数据 | 保留策略（默认） | 清理方式 |
 |---|---|---|
-| `messages` | 随会话保留；用户删除后 30 天物理清理 | 定时任务 |
-| `runs` / `tool_invocations` | 180 天 | 分区/批量删除 |
-| `a2a_tasks` | 90 天 | 批量删除 |
-| `audit_logs` | 365 天 | 按月分区/归档 |
+| checkpoint（`langgraph` schema） | 会话无活跃 run 且 30 天未更新 | `scripts/cleanup.py checkpoints`（后台每小时） |
+| `run_events` | 终态 run 90 天 | `scripts/cleanup.py run_events` |
+| `audit_logs` | 180 天 | `scripts/cleanup.py audit` |
+| 上传附件 | `expires_at`（30 天） | 删文件；被消息引用的软删（`status=deleted`） |
+| `refresh_tokens` | 过期/吊销后 30 天 | 批量删除 |
+| `messages` / `runs` / `tool_invocations` / `a2a_tasks` | 当前不自动清理 | 产品策略/后续里程碑 |
 | `knowledge_*` | 随文档 | 外键级联 |
 | `store`（长期记忆） | 随用户；删除/清空立即生效 | 管理接口 / 账号删除后台清理命名空间 |
 | `mcp_tools` | 随服务器；每次发现覆盖 | 级联 / 覆盖写 |
 | `skills` / `skill_files` | 随用户；系统技能随仓库版本 | 级联 / 启动同步 |
 | `user_settings` / `user_capability_overrides` | 随用户 | 级联 |
-| checkpoint | 会话最近活跃 30 天 | `scripts/prune_checkpoints.py` |
-| 上传附件 | 30 天或随消息删除 | 对象存储生命周期 |
+
+> 保留天数均由 `.env` 配置；checkpoint 清理用会话 `metadata_.checkpoint_cleaned_at` 打标，
+> 会话再次活跃后 `updated_at` 前移、标记自动失效。
 
 ## 10. 备份与恢复
 

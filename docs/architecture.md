@@ -286,12 +286,16 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
 | 密钥管理 | `.env` 不进仓库；MCP/A2A 凭据 AES-GCM 或 `env:` 引用；M5 新增 `platform_secrets`（管理员 CRUD，`secret:NAME` 引用，接口永不回显明文/密文）；日志脱敏 |
 | 数据 | 消息内容可能含隐私，按保留策略清理；审计只存摘要 |
 
-## 10. 可观测性
+## 10. 可观测性（M6）
 
-- **日志**：JSON 结构化（后续从标准 logging 切换），字段包含 `request_id`、`run_id`、`conversation_id`、`a2a_task_id`、`tool_call_id`。
-- **指标**：请求量/延迟/错误率、SSE 连接数、图执行时长、LLM token、A2A 调用成功率和 P95、向量检索延迟。
-- **Trace**：接入 OpenTelemetry（M6 规划；a2a-sdk 自带 telemetry extra），把一次用户请求串成 trace。
-- **审计**：`audit_logs` 记录登录、会话删除、Agent 注册、审批决定、远程调用等关键动作。
+- **日志**：`LOG_FORMAT=text|json`；JSON 字段含 `request_id`、`run_id`、`conversation_id`、`trace_id`、`span_id`、`a2a_task_id`、`tool_call_id`；不写用户正文、工具参数、密钥。
+- **指标**：独立 Prometheus registry，覆盖 HTTP/SSE/chat/LLM/tool/A2A/检索/审批/限流/清理；标签白名单防基数爆炸；`/metrics` 可关闭、可选 Bearer。
+- **Trace**：OpenTelemetry SDK + OTLP/HTTP；`http.request → chat.run → llm.chat / tool.execute → a2a / knowledge.search`；未配置时 no-op。
+- **健康**：`/healthz` 纯存活；`/readyz` 检查 DB、迁移版本、checkpoint、存储与排水状态。
+- **运行期**：启动恢复（孤儿 running→failed、interrupted 恢复/取消）、优雅停机排水、数据生命周期清理。
+- **审计**：`audit_logs` 记录登录、会话删除、Agent 注册、审批决定、远程调用、清理与恢复动作。
+
+细节见 [可观测性](observability.md) 与 [生产部署](deployment.md)。
 
 ## 11. 部署拓扑
 
@@ -303,33 +307,33 @@ uvicorn app.main:app :8000
 vite dev server :5173（/api 代理到 8000）
 ```
 
-### 生产（推荐起点）
+### 生产（M6 推荐起点：单实例）
 
 ```text
-                  ┌──────────────┐
-   HTTPS  ───────►│  反向代理/Nginx │
-                  └──────┬───────┘
-                         │
-              ┌──────────┴──────────┐
-              │                     │
-        agent-hub-web         agent-hub (N 实例)
-        (静态资源/CDN)         │
-                               ├─ PostgreSQL 主从 + pgvector
-                               ├─ 可选 Redis（限流/缓存/事件总线）
-                               └─ 对象存储（附件）
+                  ┌────────────────────┐
+   HTTPS  ───────►│ Nginx / LB（可选）  │
+                  └─────────┬──────────┘
+                            │
+                     agent-hub（单实例、单 worker）
+                            │
+              ┌─────────────┼─────────────┐
+              │             │             │
+        PostgreSQL      /app/data      OTLP Collector
+        (+pgvector)     (附件/原文)     Prometheus / Grafana
 ```
 
-- 服务无状态，图状态在 PostgreSQL，可水平扩展；
-- 多实例时 SSE 连接需要会话粘性或共享事件总线（后续）；
+- 单实例：进程内事件总线与 run 注册表；**不要开多 worker / 多副本**，否则审批恢复与 SSE 会跨实例失配；
+- 多实例需要 Redis Stream/共享限流/跨实例 resume，属于后续里程碑；
+- 滚动发布需 LB 先摘流量，再 SIGTERM 排水；Compose 本身不提供零停机滚动；
 - checkpoint 表与业务表同库，建议独立表空间/定期归档；
-- 数据库迁移在发布前以单实例 Job 执行。
+- 数据库迁移在发布前以单实例 Job 执行，`/readyz` 可校验迁移 head。
 
 ## 12. 演进方向
 
 1. **检索增强**：BM25 + 向量混合检索、RRF、reranker、按文档权限过滤。
 2. **多智能体编排**：从「主图 + 工具」演进到 planner/executor/reflection 子图，支持并行子任务与失败重规划。
 3. **A2A 生态**：Agent 市场式注册、能力自动发现、跨组织鉴权（OAuth2 client credentials）、计费。
-4. **可观测**：OpenTelemetry + Prometheus + Grafana，LLM trace 接入 LangSmith（可选）。
+4. **可观测增强**：多实例 trace 聚合、告警规则、LLM 平台（LangSmith/LangFuse）接入（可选）。
 5. **企业能力**：多租户、RBAC、审计导出、数据脱敏、私有化部署。
 
 ## 13. 个人能力层（M1.5，设计）
