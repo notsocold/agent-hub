@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import UTC, datetime
 
 import httpx
 
+from app.db.models.chat import RunEvent
 from app.db.models.user import User
 from app.db.session import get_session_factory
 from app.modules.chat.registry import registry
@@ -62,6 +64,69 @@ async def test_stream_event_sequence(client: httpx.AsyncClient) -> None:
 
     only_request = await client.get(f"/api/v1/runs/{run_id}/events?types=request", headers=headers)
     assert all(item["type"] == "request" for item in only_request.json()["items"])
+
+
+async def test_run_events_expose_original_sse_event_name(client: httpx.AsyncClient) -> None:
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+
+    run_id, sse_events = await collect_sse(
+        client, headers=headers, payload={"message": "事件回放契约测试"}
+    )
+    assert run_id
+    # 实时流包含不落库的 delta 事件；落库事件沿用同一 seq，可按 seq 对应回事件名。
+    sse_names_by_seq = {data["seq"]: name for name, data in sse_events}
+
+    events_api = await client.get(f"/api/v1/runs/{run_id}/events", headers=headers)
+    assert events_api.status_code == 200
+    items = events_api.json()["items"]
+    assert items
+
+    for item in items:
+        assert item["event"] == sse_names_by_seq[item["seq"]]
+        # payload 仍是 SSE data（run_id/seq 等原有键保留），但内部字段 _event 已被剔除。
+        assert "_event" not in item["payload"]
+        assert item["payload"]["run_id"] == run_id
+        assert item["payload"]["seq"] == item["seq"]
+
+    items_by_event = {item["event"]: item for item in items}
+    assert items_by_event["run.started"]["type"] == "request"
+    assert items_by_event["message.created"]["type"] == "message"
+    assert items_by_event["message.started"]["type"] == "message"
+    assert items_by_event["message.done"]["type"] == "message"
+
+
+async def test_run_events_unknown_event_name_defaults_to_empty_string(
+    client: httpx.AsyncClient,
+) -> None:
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    run_id, _ = await collect_sse(
+        client, headers=headers, payload={"message": "缺少事件名的历史回放"}
+    )
+    assert run_id
+
+    # 模拟历史/外部写入的落库事件：payload 里没有内部字段 _event。
+    async with get_session_factory()() as session:
+        session.add(
+            RunEvent(
+                run_id=uuid.UUID(run_id),
+                seq=999,
+                type="message",
+                status="ok",
+                title="历史事件",
+                subtitle="",
+                payload={"run_id": run_id, "seq": 999, "note": "no _event"},
+                ts=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+    events_api = await client.get(f"/api/v1/runs/{run_id}/events", headers=headers)
+    assert events_api.status_code == 200
+    unknown = next(item for item in events_api.json()["items"] if item["seq"] == 999)
+    assert unknown["event"] == ""
+    assert unknown["payload"] == {"run_id": run_id, "seq": 999, "note": "no _event"}
 
 
 async def test_idempotent_replay(client: httpx.AsyncClient) -> None:

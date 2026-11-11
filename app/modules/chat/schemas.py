@@ -110,6 +110,7 @@ class RunEventOut(BaseModel):
     seq: int = Field(description="运行内单调递增序号；事件回放时允许跳号")
     ts: datetime
     type: str
+    event: str = Field(description="原始 SSE 事件名；未知时为空字符串")
     status: str
     title: str
     subtitle: str

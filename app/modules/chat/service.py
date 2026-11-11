@@ -1549,6 +1549,7 @@ async def list_run_events(
     rows = rows[:limit]
     items: list[RunEventOut] = []
     for row in rows:
+        event_name = str((row.payload or {}).get("_event") or "")
         payload = {k: v for k, v in (row.payload or {}).items() if k != "_event"}
         error_message = None
         if isinstance(row.error, dict):
@@ -1559,6 +1560,7 @@ async def list_run_events(
                 seq=row.seq,
                 ts=row.ts,
                 type=row.type,
+                event=event_name,
                 status=row.status,
                 title=row.title,
                 subtitle=row.subtitle,
