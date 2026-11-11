@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit import write_audit
 from app.core.errors import ForbiddenError, UnauthorizedError
 from app.core.security import decode_token
 from app.db.models.user import User
-from app.db.session import get_db
+from app.db.session import get_db, get_session_factory
+
+logger = logging.getLogger(__name__)
 
 _bearer = HTTPBearer(auto_error=False, description="Bearer access token")
 
@@ -34,9 +38,39 @@ async def get_current_user(
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
 
-async def require_admin(user: CurrentUser) -> User:
+async def _record_rbac_denied(user: User, request: Request) -> None:
+    """用独立会话落管理员门禁拒绝审计；审计失败不能吞掉 403 响应。"""
+    path = request.url.path
+    try:
+        async with get_session_factory()() as session:
+            await write_audit(
+                session,
+                actor_type="user",
+                actor_id=str(user.id),
+                action="security.rbac_denied",
+                resource_type="endpoint",
+                resource_id=path[:64],
+                detail={
+                    "method": request.method,
+                    "path": path[:500],
+                    "required_role": "admin",
+                },
+                commit=True,
+            )
+    except Exception:
+        # 审计失败只记录日志：权限结果必须稳定返回，不能因写日志故障变成 500。
+        logger.warning(
+            "RBAC 拒绝审计写入失败 path=%s actor_id=%s",
+            path[:500],
+            user.id,
+            exc_info=True,
+        )
+
+
+async def require_admin(user: CurrentUser, request: Request) -> User:
     if user.role != "admin":
-        raise ForbiddenError("需要管理员权限")
+        await _record_rbac_denied(user, request)
+        raise ForbiddenError("需要管理员权限", details={"required_role": "admin"})
     return user
 
 

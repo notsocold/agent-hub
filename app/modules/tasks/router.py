@@ -8,7 +8,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query
 
-from app.core.deps import CurrentUser, DbSession
+from app.core.deps import AdminUser, CurrentUser, DbSession
 from app.modules.tasks import service
 from app.modules.tasks.schemas import (
     A2aTaskDetail,
@@ -58,26 +58,26 @@ async def get_task(task_id: uuid.UUID, db: DbSession, user: CurrentUser) -> A2aT
 
 
 @router.post("/{task_id}/cancel", response_model=A2aTaskDetail)
-async def cancel_task(task_id: uuid.UUID, db: DbSession, user: CurrentUser) -> A2aTaskDetail:
-    return await service.cancel_task_action(db, user, task_id)
+async def cancel_task(task_id: uuid.UUID, db: DbSession, admin: AdminUser) -> A2aTaskDetail:
+    return await service.cancel_task_action(db, admin, task_id)
 
 
 @router.post("/{task_id}/resume", response_model=TaskResumeResult)
 async def resume_task(
-    task_id: uuid.UUID, payload: TaskResumeRequest, db: DbSession, user: CurrentUser
+    task_id: uuid.UUID, payload: TaskResumeRequest, db: DbSession, admin: AdminUser
 ) -> TaskResumeResult:
-    return await service.resume_task_action(db, user, task_id, payload)
+    return await service.resume_task_action(db, admin, task_id, payload)
 
 
 @router.post("/{task_id}/authorize", response_model=A2aTaskDetail)
 async def authorize_task(
-    task_id: uuid.UUID, payload: TaskAuthorizeRequest, db: DbSession, user: CurrentUser
+    task_id: uuid.UUID, payload: TaskAuthorizeRequest, db: DbSession, admin: AdminUser
 ) -> A2aTaskDetail:
-    return await service.authorize_task_action(db, user, task_id, payload)
+    return await service.authorize_task_action(db, admin, task_id, payload)
 
 
 @router.post("/{task_id}/reject", response_model=A2aTaskDetail)
 async def reject_task(
-    task_id: uuid.UUID, payload: TaskRejectRequest, db: DbSession, user: CurrentUser
+    task_id: uuid.UUID, payload: TaskRejectRequest, db: DbSession, admin: AdminUser
 ) -> A2aTaskDetail:
-    return await service.reject_task_action(db, user, task_id, payload)
+    return await service.reject_task_action(db, admin, task_id, payload)

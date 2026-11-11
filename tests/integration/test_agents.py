@@ -101,10 +101,11 @@ async def test_preview_valid_and_reject_bad_urls(client: httpx.AsyncClient, monk
     assert bad_slug.status_code == 422
 
 
-async def test_create_list_detail_patch_delete(client: httpx.AsyncClient) -> None:
+async def test_create_list_detail_patch_delete(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
     fake = _register_fake(streaming=True)
-    registered = await register_user(client)
-    headers = auth_headers(registered["access_token"])
+    headers = admin_auth
 
     agent = await _create_agent(client, headers, slug="fake-agent", name="我的假 Agent")
     assert agent["slug"] == "fake-agent"
@@ -222,10 +223,11 @@ async def test_create_list_detail_patch_delete(client: httpx.AsyncClient) -> Non
     assert fake.call_count == 0  # 注册只拉 Card，不发消息。
 
 
-async def test_refresh_and_health(client: httpx.AsyncClient) -> None:
+async def test_refresh_and_health(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
     _register_fake()
-    registered = await register_user(client)
-    headers = auth_headers(registered["access_token"])
+    headers = admin_auth
     agent = await _create_agent(client, headers)
 
     refreshed = await client.post(f"/api/v1/agents/{agent['id']}/refresh", headers=headers)
@@ -247,10 +249,11 @@ async def test_refresh_and_health(client: httpx.AsyncClient) -> None:
     assert detail.json()["last_checked_at"] is not None
 
 
-async def test_refresh_failure_keeps_old_card(client: httpx.AsyncClient) -> None:
+async def test_refresh_failure_keeps_old_card(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
     _register_fake()
-    registered = await register_user(client)
-    headers = auth_headers(registered["access_token"])
+    headers = admin_auth
     agent = await _create_agent(client, headers)
 
     # 卡不可达：422 + 标记 unhealthy，旧 card 保留。
@@ -265,7 +268,9 @@ async def test_refresh_failure_keeps_old_card(client: httpx.AsyncClient) -> None
     assert body["card"]["name"] == "Fake Agent"
 
 
-async def test_delete_with_active_tasks_conflict(client: httpx.AsyncClient) -> None:
+async def test_delete_with_active_tasks_conflict(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
     """软删：有运行中任务时 409（active 任务由直接落库模拟）。"""
     import uuid as uuid_module
 
@@ -273,8 +278,7 @@ async def test_delete_with_active_tasks_conflict(client: httpx.AsyncClient) -> N
     from app.db.session import get_session_factory
 
     _register_fake()
-    registered = await register_user(client)
-    headers = auth_headers(registered["access_token"])
+    headers = admin_auth
     agent = await _create_agent(client, headers)
 
     async with get_session_factory()() as db:
@@ -306,11 +310,12 @@ async def test_delete_with_active_tasks_conflict(client: httpx.AsyncClient) -> N
     assert deleted.status_code == 204
 
 
-async def test_preview_and_create_with_auth(client: httpx.AsyncClient) -> None:
+async def test_preview_and_create_with_auth(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
     """api_key + secret_ref 注册：auth_hint 只回显引用。"""
     _register_fake()
-    registered = await register_user(client)
-    headers = auth_headers(registered["access_token"])
+    headers = admin_auth
 
     created = await client.post(
         "/api/v1/agents",

@@ -59,12 +59,15 @@ async def _start_chat(
     return str(result.run_id)
 
 
-async def test_send_message_success_flow(client: httpx.AsyncClient, monkeypatch) -> None:
+async def test_send_message_success_flow(
+    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
+) -> None:
     """成功场景：事件顺序、a2a_tasks 落库、任务列表与详情。"""
     fake = _register_fake()
     registered = await register_user(client)
     headers = auth_headers(registered["access_token"])
-    await _create_agent(client, headers, slug="fake")
+    admin_headers = admin_auth
+    await _create_agent(client, admin_headers, slug="fake")
 
     run_id = await _start_chat(
         client,
@@ -174,12 +177,15 @@ async def test_send_message_success_flow(client: httpx.AsyncClient, monkeypatch)
     assert agent_list.json()["items"][0]["recent_task"]["state"] == "completed"
 
 
-async def test_send_message_failure_and_timeout(client: httpx.AsyncClient, monkeypatch) -> None:
+async def test_send_message_failure_and_timeout(
+    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
+) -> None:
     """失败：整轮不崩，任务 failed + 可读错误；超时：a2a_timeout。"""
     fake = _register_fake()
     registered = await register_user(client)
     headers = auth_headers(registered["access_token"])
-    await _create_agent(client, headers, slug="fake")
+    admin_headers = admin_auth
+    await _create_agent(client, admin_headers, slug="fake")
 
     run_id = await _start_chat(
         client,
@@ -241,12 +247,15 @@ async def test_send_message_failure_and_timeout(client: httpx.AsyncClient, monke
     assert tool_result["status"] == "ok"  # 工具错误以 ToolMessage 返回
 
 
-async def test_input_required_resume_flow(client: httpx.AsyncClient, monkeypatch) -> None:
+async def test_input_required_resume_flow(
+    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
+) -> None:
     """input_required：事件 → resume → 同一 run 继续 → completed。"""
     fake = _register_fake()
     registered = await register_user(client)
     headers = auth_headers(registered["access_token"])
-    await _create_agent(client, headers, slug="fake")
+    admin_headers = admin_auth
+    await _create_agent(client, admin_headers, slug="fake")
 
     run_id = await _start_chat(
         client,
@@ -274,7 +283,7 @@ async def test_input_required_resume_flow(client: httpx.AsyncClient, monkeypatch
             resume = await client.post(
                 f"/api/v1/tasks/{task_id}/resume",
                 json={"input": "按创建时间统计"},
-                headers=headers,
+                headers=admin_headers,
             )
             assert resume.status_code == 200, resume.text
             body = resume.json()
@@ -300,18 +309,21 @@ async def test_input_required_resume_flow(client: httpx.AsyncClient, monkeypatch
 
     # 已终态任务 resume → 409 task_not_resumable。
     again = await client.post(
-        f"/api/v1/tasks/{task_id}/resume", json={"input": "x"}, headers=headers
+        f"/api/v1/tasks/{task_id}/resume", json={"input": "x"}, headers=admin_headers
     )
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "task_not_resumable"
 
 
-async def test_auth_required_authorize_and_reject(client: httpx.AsyncClient, monkeypatch) -> None:
+async def test_auth_required_authorize_and_reject(
+    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
+) -> None:
     """auth_required：authorize 继续完成；reject 置 rejected。"""
     _register_fake()
     registered = await register_user(client)
     headers = auth_headers(registered["access_token"])
-    await _create_agent(client, headers, slug="fake")
+    admin_headers = admin_auth
+    await _create_agent(client, admin_headers, slug="fake")
 
     run_id = await _start_chat(
         client,
@@ -338,7 +350,7 @@ async def test_auth_required_authorize_and_reject(client: httpx.AsyncClient, mon
             authorize = await client.post(
                 f"/api/v1/tasks/{task_id}/authorize",
                 json={"scopes": ["repo:read"], "note": "已授权"},
-                headers=headers,
+                headers=admin_headers,
             )
             assert authorize.status_code == 200, authorize.text
 
@@ -353,7 +365,7 @@ async def test_auth_required_authorize_and_reject(client: httpx.AsyncClient, mon
 
     # 终态 authorize → 409。
     again = await client.post(
-        f"/api/v1/tasks/{task_id}/authorize", json={}, headers=headers
+        f"/api/v1/tasks/{task_id}/authorize", json={}, headers=admin_headers
     )
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "task_not_authorizable"
@@ -384,7 +396,7 @@ async def test_auth_required_authorize_and_reject(client: httpx.AsyncClient, mon
             rejected = await client.post(
                 f"/api/v1/tasks/{reject_task_id}/reject",
                 json={"reason": "不授权"},
-                headers=headers,
+                headers=admin_headers,
             )
             assert rejected.status_code == 200
             assert rejected.json()["state"] == "rejected"
@@ -401,18 +413,21 @@ async def test_auth_required_authorize_and_reject(client: httpx.AsyncClient, mon
 
     # rejected 再 reject → 409 task_not_rejectable。
     again = await client.post(
-        f"/api/v1/tasks/{reject_task_id}/reject", json={}, headers=headers
+        f"/api/v1/tasks/{reject_task_id}/reject", json={}, headers=admin_headers
     )
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "task_not_rejectable"
 
 
-async def test_cancel_action_and_error_codes(client: httpx.AsyncClient, monkeypatch) -> None:
+async def test_cancel_action_and_error_codes(
+    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
+) -> None:
     """cancel 动作：working 任务尽力远程取消 + 错误码覆盖。"""
     _register_fake()
     registered = await register_user(client)
     headers = auth_headers(registered["access_token"])
-    await _create_agent(client, headers, slug="fake")
+    admin_headers = admin_auth
+    await _create_agent(client, admin_headers, slug="fake")
 
     run_id = await _start_chat(
         client,
@@ -429,7 +444,7 @@ async def test_cancel_action_and_error_codes(client: httpx.AsyncClient, monkeypa
     # 已 completed 的任务 cancel → 409 task_not_cancelable。
     listing = await client.get("/api/v1/tasks", headers=headers)
     task_id = listing.json()["items"][0]["id"]
-    denied = await client.post(f"/api/v1/tasks/{task_id}/cancel", headers=headers)
+    denied = await client.post(f"/api/v1/tasks/{task_id}/cancel", headers=admin_headers)
     assert denied.status_code == 409
     assert denied.json()["error"]["code"] == "task_not_cancelable"
 
@@ -440,7 +455,9 @@ async def test_cancel_action_and_error_codes(client: httpx.AsyncClient, monkeypa
     assert missing.status_code == 404
 
 
-async def test_waiting_expiry_lazy(client: httpx.AsyncClient, monkeypatch) -> None:
+async def test_waiting_expiry_lazy(
+    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
+) -> None:
     """等待态过期：懒过期置 canceled + timeline 追加。"""
     from datetime import UTC, datetime, timedelta
 
@@ -450,7 +467,8 @@ async def test_waiting_expiry_lazy(client: httpx.AsyncClient, monkeypatch) -> No
     fake = _register_fake()
     registered = await register_user(client)
     headers = auth_headers(registered["access_token"])
-    agent = await _create_agent(client, headers, slug="fake")
+    admin_headers = admin_auth
+    agent = await _create_agent(client, admin_headers, slug="fake")
 
     expired = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
     async with get_session_factory()() as db:
@@ -479,18 +497,20 @@ async def test_waiting_expiry_lazy(client: httpx.AsyncClient, monkeypatch) -> No
     assert body["timeline"][-1]["note"] == "等待超时"
     # 过期任务不可 resume。
     denied = await client.post(
-        f"/api/v1/tasks/{item['id']}/resume", json={"input": "x"}, headers=headers
+        f"/api/v1/tasks/{item['id']}/resume", json={"input": "x"}, headers=admin_headers
     )
     assert denied.status_code == 409
     assert fake.call_count == 0
 
 
-async def test_streaming_agent_uses_sse(client: httpx.AsyncClient, monkeypatch) -> None:
+async def test_streaming_agent_uses_sse(
+    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
+) -> None:
     """streaming 能力：走 message/stream，收到 artifact-update 事件。"""
     fake = _register_fake(streaming=True)
     registered = await register_user(client)
-    headers = auth_headers(registered["access_token"])
-    await _create_agent(client, headers, slug="fake")
+    admin_headers = admin_auth
+    await _create_agent(client, admin_headers, slug="fake")
 
     run_id = await _start_chat(
         client,
@@ -535,12 +555,15 @@ async def test_no_agent_no_tool_and_system_capabilities(client: httpx.AsyncClien
     assert names[-1] == "message.done"
 
 
-async def test_chat_approval_for_requires_approval(client: httpx.AsyncClient, monkeypatch) -> None:
+async def test_chat_approval_for_requires_approval(
+    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
+) -> None:
     """Agent 声明 requiresApproval：send_message 走 HITL 审批，拒绝不执行。"""
     _register_fake(requires_approval=True)
     registered = await register_user(client)
     headers = auth_headers(registered["access_token"])
-    await _create_agent(client, headers, slug="fake")
+    admin_headers = admin_auth
+    await _create_agent(client, admin_headers, slug="fake")
 
     run_id = await _start_chat(
         client,
@@ -577,7 +600,7 @@ async def test_chat_approval_for_requires_approval(client: httpx.AsyncClient, mo
 
 
 async def test_cancel_working_task_resolves_headers(
-    client: httpx.AsyncClient, monkeypatch
+    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
 ) -> None:
     """取消进行中的远程任务：headers 必须是已解析的 dict（回归 _resolved_headers async 化）。"""
     from sqlalchemy import select
@@ -589,8 +612,7 @@ async def test_cancel_working_task_resolves_headers(
 
     _register_fake()
     registered = await register_user(client)
-    headers = auth_headers(registered["access_token"])
-    await _create_agent(client, headers, slug="fake")
+    await _create_agent(client, admin_auth, slug="fake")
 
     captured: dict = {}
 

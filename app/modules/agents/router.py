@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Query, Response, status
 
-from app.core.deps import CurrentUser, DbSession
+from app.core.deps import AdminUser, CurrentUser, DbSession
 from app.modules.agents import service
 from app.modules.agents.schemas import (
     AgentCreateRequest,
@@ -31,10 +31,10 @@ async def preview_agent(payload: AgentPreviewRequest, user: CurrentUser) -> Agen
 
 @router.post("", response_model=AgentDetailOut, status_code=status.HTTP_201_CREATED)
 async def create_agent(
-    payload: AgentCreateRequest, db: DbSession, user: CurrentUser
+    payload: AgentCreateRequest, db: DbSession, admin: AdminUser
 ) -> AgentDetailOut:
-    """注册远程 Agent；同 url+slug 幂等返回已有记录。"""
-    return await service.create_agent(db, user, payload)
+    """注册远程 Agent（仅管理员）；同 url+slug 幂等返回已有记录。"""
+    return await service.create_agent(db, admin, payload)
 
 
 @router.get("", response_model=AgentPage)
@@ -64,26 +64,26 @@ async def update_agent(
     agent_id: uuid.UUID,
     payload: AgentUpdateRequest,
     db: DbSession,
-    user: CurrentUser,
+    admin: AdminUser,
 ) -> AgentDetailOut:
-    return await service.update_agent(db, user, agent_id, payload)
+    return await service.update_agent(db, admin, agent_id, payload)
 
 
 @router.delete("/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_agent(agent_id: uuid.UUID, db: DbSession, user: CurrentUser) -> Response:
-    await service.delete_agent(db, user, agent_id)
+async def delete_agent(agent_id: uuid.UUID, db: DbSession, admin: AdminUser) -> Response:
+    await service.delete_agent(db, admin, agent_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{agent_id}/refresh", response_model=AgentRefreshResult)
 async def refresh_agent(
-    agent_id: uuid.UUID, db: DbSession, user: CurrentUser
+    agent_id: uuid.UUID, db: DbSession, admin: AdminUser
 ) -> AgentRefreshResult:
-    return await service.refresh_agent(db, user, agent_id)
+    return await service.refresh_agent(db, admin, agent_id)
 
 
 @router.post("/{agent_id}/health", response_model=AgentHealthResult)
 async def health_check_agent(
-    agent_id: uuid.UUID, db: DbSession, user: CurrentUser
+    agent_id: uuid.UUID, db: DbSession, admin: AdminUser
 ) -> AgentHealthResult:
-    return await service.health_check_agent(db, user, agent_id)
+    return await service.health_check_agent(db, admin, agent_id)
