@@ -16,6 +16,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.metrics import setup_metrics
 from app.core.middleware import RequestContextMiddleware
 from app.core.telemetry import configure_tracing, shutdown_tracing
 from app.db.session import dispose_engine, get_session_factory
@@ -23,6 +24,7 @@ from app.modules.approvals.service import expire_pending
 from app.modules.chat.registry import registry
 from app.modules.skills.service import sync_builtin_skills
 from app.modules.system.health import router as health_router
+from app.modules.system.metrics_router import metrics_endpoint
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings)
     configure_tracing(settings)
+    setup_metrics(settings)
     settings.validate_runtime()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.attachment_dir.mkdir(parents=True, exist_ok=True)
@@ -88,6 +91,13 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)
     app.include_router(health_router)
+    if settings.metrics_enabled:
+        app.add_api_route(
+            settings.metrics_path,
+            metrics_endpoint,
+            methods=["GET"],
+            include_in_schema=False,
+        )
     app.include_router(api_router, prefix=settings.api_prefix)
     return app
 

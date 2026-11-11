@@ -16,6 +16,7 @@ from sqlalchemy import func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.callbacks import ObservabilityCallbackHandler
 from app.agents.checkpointer import open_checkpointer
 from app.agents.graph import build_graph
 from app.agents.models import build_chat_model
@@ -581,6 +582,8 @@ async def _stream_graph(
     publisher = context.publisher
     run_id = runtime.run_id
     started_at = runtime.started_at
+    # LLM 回调在模型节点内执行；span/指标由回调统一记录，避免请求层重复计时。
+    config.setdefault("callbacks", []).append(ObservabilityCallbackHandler(runtime.model_name))
     first_token_ms: int | None = runtime.first_token_ms
     content_parts = runtime.content_parts
     reasoning_parts = runtime.reasoning_parts
