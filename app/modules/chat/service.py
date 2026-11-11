@@ -36,6 +36,7 @@ from app.core.log_context import bind_run_context, run_id_ctx
 from app.core.metrics import record_approval, record_chat_run
 from app.core.prompt_guard import SUSPICIOUS_INPUT_NOTE, sanitize_output, scan_injection
 from app.core.rate_limit import limiter
+from app.core.stream_filter import StreamingOutputFilter
 from app.core.telemetry import start_span
 from app.core.timeutil import elapsed_ms
 from app.db.models.approval import Approval
@@ -704,6 +705,10 @@ async def _stream_graph_inner(
                     subtitle=notice.get("message") or "",
                 )
 
+        filters_enabled = get_settings().prompt_guard_redact_output
+        text_filter = StreamingOutputFilter(enabled=filters_enabled)
+        reasoning_filter = StreamingOutputFilter(enabled=filters_enabled)
+
         async for chunk, metadata in graph.astream(
             graph_input,
             config,
@@ -720,29 +725,70 @@ async def _stream_graph_inner(
             if isinstance(reasoning, str) and reasoning:
                 if reasoning_started is None:
                     reasoning_started = _now()
-                reasoning_parts.append(reasoning)
-                await publisher.emit(
-                    "reasoning.delta",
-                    {"message_id": str(runtime.run.assistant_message_id), "delta": reasoning},
-                    persist=False,
-                )
+                filtered_reasoning = reasoning_filter.feed(reasoning)
+                if filtered_reasoning:
+                    reasoning_parts.append(filtered_reasoning)
+                    await publisher.emit(
+                        "reasoning.delta",
+                        {
+                            "message_id": str(runtime.run.assistant_message_id),
+                            "delta": filtered_reasoning,
+                        },
+                        persist=False,
+                    )
 
             text = _content_text(chunk.content)
             if text:
                 if first_token_ms is None:
                     first_token_ms = elapsed_ms(started_at)
-                content_parts.append(text)
-                await publisher.emit(
-                    "message.delta",
-                    {"message_id": str(runtime.run.assistant_message_id), "delta": text},
-                    persist=False,
-                )
+                filtered_text = text_filter.feed(text)
+                if filtered_text:
+                    content_parts.append(filtered_text)
+                    await publisher.emit(
+                        "message.delta",
+                        {
+                            "message_id": str(runtime.run.assistant_message_id),
+                            "delta": filtered_text,
+                        },
+                        persist=False,
+                    )
             if chunk.usage_metadata:
                 usage = (
                     _add_usage(usage, dict(chunk.usage_metadata))
                     if resumed
                     else dict(chunk.usage_metadata)
                 )
+
+        tail = text_filter.flush()
+        if tail:
+            content_parts.append(tail)
+            await publisher.emit(
+                "message.delta",
+                {
+                    "message_id": str(runtime.run.assistant_message_id),
+                    "delta": tail,
+                },
+                persist=False,
+            )
+        reasoning_tail = reasoning_filter.flush()
+        if reasoning_tail:
+            reasoning_parts.append(reasoning_tail)
+            await publisher.emit(
+                "reasoning.delta",
+                {
+                    "message_id": str(runtime.run.assistant_message_id),
+                    "delta": reasoning_tail,
+                },
+                persist=False,
+            )
+        stream_rules = text_filter.rules | reasoning_filter.rules
+        if stream_rules:
+            await _write_security_audit(
+                actor_id=runtime.user_id,
+                action="security.output_redacted",
+                resource_id=str(run_id),
+                detail={"phase": "stream", "rules": sorted(stream_rules)},
+            )
 
         snapshot = await graph.aget_state(config)
         if snapshot.next:

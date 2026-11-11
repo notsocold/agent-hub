@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import uuid
+
 import httpx
+from langchain_core.language_models.chat_models import BaseChatModel
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -63,3 +66,52 @@ async def test_stream_events_do_not_leak_metrics_labels(client: httpx.AsyncClien
     text = metrics.render_metrics()[0].decode()
     # 用户 ID / run ID / 会话 ID 不得成为指标标签。
     assert registered["user"]["id"] not in text
+
+
+class _SplitSecretModel(BaseChatModel):
+    """把密钥拆成两个 chunk 的假流式模型，用于验证 SSE 实时打码。"""
+
+    model_name: str = "split-secret"
+
+    @property
+    def _llm_type(self) -> str:
+        return "split-secret"
+
+    def bind_tools(self, tools, **kwargs):
+        return self
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        raise NotImplementedError
+
+    async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+        from langchain_core.messages import AIMessageChunk
+        from langchain_core.outputs import ChatGenerationChunk
+
+        for piece in ("前缀 sk-abcdefghij", "klmnopqrstuvwxyz 后缀"):
+            yield ChatGenerationChunk(message=AIMessageChunk(content=piece))
+
+
+async def test_split_secret_redacted_in_sse_and_storage(
+    client: httpx.AsyncClient, monkeypatch
+) -> None:
+    from sqlalchemy import select
+
+    from app.db.models.conversation import Message
+    from app.db.session import get_session_factory
+
+    monkeypatch.setattr(chat_service, "build_chat_model", lambda settings: _SplitSecretModel())
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    run_id, events = await collect_sse(client, headers=headers, payload={"message": "输出密钥"})
+    deltas = "".join(
+        data.get("delta", "") for name, data in events if name == "message.delta"
+    )
+    assert "sk-abcdefghijklmnopqrstuvwxyz" not in deltas
+    assert "***" in deltas
+    async with get_session_factory()() as session:
+        assistant = await session.scalar(
+            select(Message).where(Message.run_id == uuid.UUID(run_id), Message.role == "assistant")
+        )
+        assert assistant is not None
+        assert "sk-abcdefghijklmnopqrstuvwxyz" not in assistant.content
+        assert "***" in assistant.content
