@@ -104,7 +104,9 @@ Authorization: Bearer <access_token>
 > 非本人或不存在统一 404 `not_found`（不泄露存在性），待回放事件 >1000 条 400 `replay_too_large`，
 > `after_seq` 非法 422 `validation_error`；**不支持 `Last-Event-ID`**，重连必须显式传 `after_seq`。
 > 回放只覆盖已落库事件：`message.delta`/`reasoning.delta` 不落 `run_events`，断线窗口内的增量
-> 不会补发；终态或 `interrupted` 后用 `GET /conversations/{id}/messages` 取终稿覆盖。详见 §7.8。
+> 不会补发；run **进入终态**（`succeeded`/`failed`/`canceled`）后用
+> `GET /conversations/{id}/messages` 取终稿覆盖。`run.interrupted` 期间助手消息仍为
+> `messages.status=streaming`，历史接口不会返回，需等审批恢复或超时取消。详见 §7.8。
 
 ### 2.4 远程智能体（M2 已实现）
 
@@ -716,8 +718,9 @@ GET /api/v1/instructions
 
 > **回放边界（M7）**：本接口只返回已写入 `run_events` 的事件。`message.delta` 与
 > `reasoning.delta` 以 `persist=False` 发送，**不落库、不可回放**；断线期间的增量文本永久缺失。
-> 需要完整回复时，以 `message.done`（或 `run.interrupted`）后 `GET /conversations/{id}/messages`
-> 返回的消息正文为准。
+> 需要完整回复时，以 run 进入终态（`message.done`/`error`，或 `interrupted` 后恢复/取消至终态）后
+> `GET /conversations/{id}/messages` 返回的消息正文为准。`run.interrupted` 期间该助手消息
+> `messages.status` 仍为 `streaming`，历史接口不会返回。
 
 ### 7.8 运行续流与恢复端点
 
@@ -733,7 +736,7 @@ GET /api/v1/instructions
 | `interrupted` | run 停在审批时保持连接等待 `run.resumed` 与后续事件；空闲超过 `HITL_STREAM_TIMEOUT_SECONDS`（默认 900s）后关闭，客户端按最后 `seq` 重连 |
 | 心跳 | 等待实时事件期间每 15s 发送注释帧 `: ping`，不占 `seq`，客户端忽略 |
 | `Last-Event-ID` | **不支持**；重连必须显式把最后收到事件的 `seq` 作为 `after_seq` 传入（`id:` 行的值可直接使用） |
-| 回放边界 | 只回放已写入 `run_events` 的事件；`message.delta`/`reasoning.delta` 不落库、**断线期间不补发**；终态或 `interrupted` 后用 `GET /conversations/{id}/messages` 取终稿覆盖 |
+| 回放边界 | 只回放已写入 `run_events` 的事件；`message.delta`/`reasoning.delta` 不落库、**断线期间不补发**；run 进入终态（`succeeded`/`failed`/`canceled`）后用 `GET /conversations/{id}/messages` 取终稿；`interrupted` 期间该消息 `status=streaming`，历史接口不返回 |
 | 部署 | 事件总线为进程内实现（单实例）；多实例部署时实时帧可能丢失，靠 `after_seq` 回放**已落库**事件补齐（增量 delta 不补） |
 | 响应头 | `X-Run-ID`、`X-Request-ID`、`Cache-Control: no-cache`、`X-Accel-Buffering: no` |
 
@@ -757,8 +760,9 @@ data: {"run_id":"9a8b...","seq":44,"message_id":"e5f6...","finish_reason":"stop"
 >
 > **重连终态判断**：EOF 且未收到 `message.done`/`error` 时，先查 `GET /runs/{id}`：
 > 若已 `succeeded`/`failed`/`canceled`（回放里没有终态事件）则**停止重连**并按终态刷新；
-> 若仍 `running`/`interrupted` 才按最后 `seq` 重连。`interrupted` 后消息正文已落库，
-> 可用 `GET /conversations/{id}/messages` 获取该条助手消息的完整正文并覆盖本地累积文本（`message.delta` 本身不回放）。
+> 若仍 `running`/`interrupted` 才按最后 `seq` 重连。`interrupted` 时消息正文虽已落库，但
+> `messages.status` 仍为 `streaming`，历史接口不会返回；需等审批恢复或超时取消、run 进入终态后
+> 再用 `GET /conversations/{id}/messages` 获取完整正文并覆盖本地累积文本（`message.delta` 本身不回放）。
 
 #### 7.8.2 运行恢复端点（占位）
 
@@ -886,7 +890,7 @@ A2A `auth_required` 的 `authorization_url` 来自远程 Agent，属不可信数
 - 审批由图的独立 `approval_gate` 节点创建并 `interrupt()` 挂起；一轮多个待审工具只挂起一次；
 - `POST /approvals/{id}/decision` 在「该 run 已无 pending 审批」时调度 `Command(resume=...)`，
   `resumed=true` 表示恢复任务已调度（不是同步完成）；
-- 图挂起时 run → `interrupted`，内容已落库但 `messages.status` 保持 `streaming`（未终态）；
+- 图挂起时 run → `interrupted`，内容已落库但 `messages.status` 保持 `streaming`（未终态），历史接口此时不返回该消息；
 - 审批超时：approval → `expired`，run → `canceled`，发
   `message.done(finish_reason="canceled", reason="approval_timeout")`；
 - 取消 interrupted run → 终态 canceled，并用专用 halt gate 清理 checkpoint，同一会话可继续发消息。
@@ -900,7 +904,8 @@ A2A `auth_required` 的 `authorization_url` 来自远程 Agent，属不可信数
   M7 起改用 `GET /runs/{id}/stream?after_seq=` 续流：先回放已落库事件再跟随实时事件，待回放 >1000 条
   返回 400 `replay_too_large`，收到 `message.done`/`error` 后关闭，`interrupted` 保持连接等审批恢复，
   空闲每 15s 发 `: ping`，**不支持 `Last-Event-ID`**（见 §7.8）；`message.delta` 不落库，
-  断线窗口内的增量不补发，终态/`interrupted` 后以消息历史终稿为准；事件回放每项新增 `event` 字段；
+  断线窗口内的增量不补发，run 进入终态后以消息历史终稿为准（`interrupted` 期间该消息
+  `status=streaming`，历史接口不返回）；事件回放每项新增 `event` 字段；
 - `POST /runs/{id}/resume` 仍为占位（409），审批恢复无需调用它。
 
 ### 10.3 安全能力
@@ -919,8 +924,8 @@ A2A `auth_required` 的 `authorization_url` 来自远程 Agent，属不可信数
    `message.done(finish_reason="interrupted")`；
 2. 审批决定后监听 `run.resumed` 与后续 `message.delta`/`message.done`；断线用
    `GET /runs/{id}/stream?after_seq=`（M7）续流已落库事件 + 后续实时事件（断线窗口的增量 delta 不补；
-   终态/`interrupted` 后用 `GET /conversations/{id}/messages` 取终稿覆盖）；只需历史查询时用
-   `GET /runs/{id}/events?after_seq=` 分页回放；
+   run 进入终态后用 `GET /conversations/{id}/messages` 取终稿覆盖，`interrupted` 期间历史接口
+   不返回该消息）；只需历史查询时用 `GET /runs/{id}/events?after_seq=` 分页回放；
 3. 审批超时：`message.done.finish_reason="canceled"`、`reason="approval_timeout"`；
 4. 新端点：`GET /audit-logs`、`GET /admin/audit-logs`、`/admin/secrets` CRUD；
 5. 聊天 429：`rate_limited`，`details.retry_after_seconds`；
@@ -944,7 +949,7 @@ A2A `auth_required` 的 `authorization_url` 来自远程 Agent，属不可信数
 | `GET /runs/{id}/stream?after_seq=` | 新 SSE 端点；Bearer 鉴权；先回放 `seq > after_seq` 再跟随实时；401/404/400/422 语义见 §7.8 |
 | 回放上限 | 1000 条（建流前返回 400 `replay_too_large`） |
 | 终态/中断 | `message.done`/`error` 关闭；已终态 run 回放完即关闭；`interrupted` 保持连接等恢复，空闲上限 `HITL_STREAM_TIMEOUT_SECONDS` |
-| 回放边界 | 只回放已落库事件；`message.delta`/`reasoning.delta` 不落库、断线不补；终稿以 `GET /conversations/{id}/messages` 为准 |
+| 回放边界 | 只回放已落库事件；`message.delta`/`reasoning.delta` 不落库、断线不补；run 进入终态后终稿以 `GET /conversations/{id}/messages` 为准（`interrupted` 期间历史接口不返回该消息） |
 | 心跳/部署 | 15s 注释帧 `: ping`；**不支持 `Last-Event-ID`**；进程内事件总线，单实例语义 |
 | `approval.required` | 新增 `tool_display_name`、`executor`、`target`、`side_effect`、`payload_preview`（旧字段不变） |
 

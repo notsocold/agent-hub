@@ -181,7 +181,8 @@ sequenceDiagram
   `interrupted` 的 run 保持连接等待审批恢复，空闲超过 `HITL_STREAM_TIMEOUT_SECONDS` 关闭；
 - 实时帧来自 `app/modules/chat/bus.py` 的**进程内单实例总线**；多实例部署时实时帧可能丢失，
   断线/多实例场景靠 `after_seq` 回放**已落库**事件补齐；`message.delta`/`reasoning.delta`
-  不落库、不补发，终态/`interrupted` 后以消息历史终稿为准；服务端**不支持 `Last-Event-ID`**；
+  不落库、不补发，run 进入终态后以消息历史终稿为准（`interrupted` 期间助手消息
+  `messages.status=streaming`，历史接口不返回）；服务端**不支持 `Last-Event-ID`**；
 - 旧 `POST /chat/stream` 复用同一生成器但保持旧语义（不设回放上限、不因 run 已终态提前关闭）；
 - 回放接口 `GET /runs/{id}/events` 每项新增 `event`（原始事件名，`payload._event` 的对外映射），
   `payload` 仍剔除内部 `_event`。
@@ -284,7 +285,7 @@ modules/*/router.py  →  modules/*/service.py  →  modules/*/repo.py  →  db/
   `GET /api/v1/runs/{run_id}/events?after_seq=` 分页回放（已实现）；
 - M7 起用 `GET /runs/{id}/stream?after_seq=` 做续流（回放已落库事件 + 实时跟随），
   前端必须显式传最后 `seq`（服务端不支持 `Last-Event-ID`）；断线窗口内的增量 delta 不补，
-  终态/`interrupted` 后用消息历史终稿覆盖；
+  run 进入终态后用消息历史终稿覆盖（`interrupted` 期间历史接口不返回该消息）；
 - 图执行状态由 checkpointer 保证；M5 的审批恢复不依赖进程内 waiter，决定接口即可触发
   `Command(resume=...)`（同进程/同线程 checkpoint 均可恢复）；
 - 进程启动恢复已在 M6 实现：孤儿 `running` 一律 `failed`，`interrupted` 走 resume / `restart_lost` 取消。

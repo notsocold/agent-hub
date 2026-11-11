@@ -40,9 +40,13 @@ Accept: text/event-stream
 - 帧格式与 `/chat/stream` 相同：`id: <seq>`、`event: <事件名>`、`data: <单行 JSON>`；
   心跳是注释帧 `: ping`（每 15s，不占 `seq`）。
 - **回放只覆盖已写入 `run_events` 的事件**：`message.delta` / `reasoning.delta` 以
-  `persist=False` 发出，不落库，断线窗口内的增量文本**不会补发**。重连后只从服务端当前实时点继续；
-  收到 `message.done`/`error`（或 `run.interrupted`）后，必须用
+  `persist=False` 发出，不落库，断线窗口内的增量文本**不会补发**。重连后只从服务端当前实时点继续。
+- **只有 run 进入终态后才拉消息终稿**：收到 `message.done`/`error`（run 为
+  `succeeded`/`failed`/`canceled`）后，用
   `GET /api/v1/conversations/{conversation_id}/messages` 拉取该条助手消息的终稿覆盖本地累积文本。
+- **`run.interrupted` 期间不要拉消息终稿**：此时助手消息内容虽已落库，但 `messages.status` 仍为
+  `streaming`，历史接口会过滤掉它、**不会返回该消息**；需等审批恢复（`run.resumed` → 后续终态）
+  或审批超时取消、run 进入终态后再拉取。
 
 ### 2.2 推荐接入方式（`@microsoft/fetch-event-source`）
 
@@ -192,7 +196,8 @@ export function connectRunStream(params: {
   2. **run 仍运行 / `interrupted`**（或状态查询失败）：按最后 `seq` 退避重连；`interrupted` 连上后
      继续等审批恢复。
 - 单实例部署：后端事件总线是进程内实现。多实例/重部署时实时帧可能丢失，重连后的回放只能补齐
-  **已落库**事件；`message.delta`/`reasoning.delta` 不落库，断线窗口的增量文本不补，需靠终稿覆盖。
+  **已落库**事件；`message.delta`/`reasoning.delta` 不落库，断线窗口的增量文本不补，需在 run
+  进入终态后靠消息历史终稿覆盖（`interrupted` 期间历史接口不返回该消息）。
 
 ### 2.3 用原生 `fetch` 接入（无第三方依赖）
 
@@ -249,7 +254,7 @@ while (true) {
 
 （生产建议直接用 `@microsoft/fetch-event-source`，它已处理分块、注释帧与字段拼接。
 原始 `fetch` 版本同样需要按 §2.2 的规则去重、终态后停止、EOF 时先查 `GET /runs/{id}`，
-并在终态/`interrupted` 后拉消息历史终稿。）
+并在 run 进入终态后拉消息历史终稿（`interrupted` 期间历史接口不返回该消息）。）
 
 ### 2.4 续流生命周期
 
@@ -258,15 +263,14 @@ while (true) {
 | 正常回放 + 运行中 | 回放**已落库**事件后持续推实时帧 | 正常渲染；无帧时等待心跳；断线窗口的 delta 不补 |
 | 回放/实时收到 `message.done` 或 `error` | 立即关闭流 | 视为终态，**不重连**；用 `GET /runs/{id}` 刷新终态 |
 | run 已终态且回放里有终态事件 | 回放完立即关闭 | 收到终态事件后停止 |
-| run 已终态但回放里没有终态事件 | 回放完关闭（避免空挂） | 收到 EOF 后查一次 `GET /runs/{id}`，不要无限重连 |
-| `interrupted`（等待审批） | 保持连接，最多空闲 `HITL_STREAM_TIMEOUT_SECONDS`（默认 900s），期间 15s 一次 `: ping` | 展示待审批卡片；收到 `run.resumed` 后继续渲染增量；服务端超时关闭后再按 `after_seq` 重连 |
+| run 已终态（`succeeded`/`failed`/`canceled`）但回放里没有终态事件 | 回放完直接关闭（避免空挂） | 收到 EOF 后查一次 `GET /runs/{id}`；确认终态则停止重连、不要无限重连，并在终态后拉消息终稿 |
+| `interrupted`（等待审批） | 保持连接，最多空闲 `HITL_STREAM_TIMEOUT_SECONDS`（默认 900s），期间 15s 一次 `: ping` | 展示待审批卡片；收到 `run.resumed` 后继续渲染增量；**此阶段不要拉消息终稿**（消息 `status=streaming`，历史接口不返回），等恢复/取消至终态后再拉；服务端超时关闭后再按 `after_seq` 重连 |
 | 回放超过 1000 条 | 建流前返回 400 `replay_too_large`（不会开始 SSE） | 改用分页回放补历史，再以最新 `seq` 重连续流；不要把同一个 `after_seq` 原样重试 |
 | `after_seq` 非法（负数/超 int32/非整数） | 422 `validation_error` | 修正参数；不要自动重试 |
 | 未登录/令牌过期 | 401 `unauthorized` | 刷新令牌后从原 `lastSeq` 重试；刷新失败则登出 |
 | 非本人 run / 不存在 | 404 `not_found` | 停止重连，提示「运行不存在或无权访问」 |
 | 403 | 403 `forbidden`（通用；续流不要求管理员，当前正常路径不返回） | 停止重连，按通用无权限提示 |
-| run 已终态但回放无终态事件 | 回放完直接关闭 | 先 `GET /runs/{id}` 确认终态，停止重连并拉消息终稿 |
-| 断线期间产生的 `message.delta` | **不落库、不回放** | 无法补齐增量文本；终态/`interrupted` 后拉消息历史终稿覆盖 |
+| 断线期间产生的 `message.delta` | **不落库、不回放** | 无法补齐增量文本；run 进入终态后拉消息历史终稿覆盖（`interrupted` 期间历史接口不返回该消息） |
 
 > 心跳 `: ping` **不是事件**，不要写进消息列表，也不要因为 15s 没数据就主动断开。
 > 浏览器/网关的空闲超时要大于 15s（Nginx 已由 `X-Accel-Buffering: no` 关闭缓冲，仍建议
@@ -307,7 +311,7 @@ while (true) {
 - `payload` 仍会剔除内部字段 `_event`，其余与 SSE 帧 `data` 一致；`type` 仍是原分类字段，语义不变。
 - 用 `event`（而不是 `type`）判断事件种类；`type` 继续用于分组/筛选。
 - **注意**：回放里不会出现 `message.delta` / `reasoning.delta`（二者不落库）；不要用回放示例假设
-  能恢复断线期间的增量文本，完整回复请以消息历史终稿为准。
+  能恢复断线期间的增量文本；完整回复请在 run 进入终态后以消息历史终稿为准（`interrupted` 期间历史接口不返回该消息）。
 
 ---
 
