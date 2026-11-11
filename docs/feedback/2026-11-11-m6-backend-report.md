@@ -33,7 +33,7 @@
 
 ```text
 TEST_DATABASE_URL=... .venv/bin/python -m pytest -q
-→ 578 passed, 1 skipped in 92.27s
+→ 582 passed, 1 skipped in 95.14s
 
 .venv/bin/python -m ruff check .
 → All checks passed!
@@ -42,7 +42,7 @@ docker compose -f docker-compose.prod.yml config
 → exit 0
 ```
 
-- 基线 M5 395 项 → M6 **578 项**（+183；含流式过滤切分点参数化与审查回归用例）；
+- 基线 M5 395 项 → M6 **582 项**（+187；含流式过滤切分点参数化与审查回归用例）；
 - 唯一 skip 仍是知识库语义评测组（需真实 Embedding key，与 M4 一致）；
 - 迁移基线：临时库空库 `alembic upgrade head` 成功，`alembic check` 输出
   `No new upgrade operations detected.`；M6 未新增迁移，head 仍为 `c4e7a91b2f36`；
@@ -75,9 +75,9 @@ docker compose -f docker-compose.prod.yml config
 | 成功 | 50 |
 | 错误率 | 0% |
 | 状态码 | 200×50 |
-| 首 token P50 / P95 / P99 | 2223ms / 2403ms / 2445ms |
-| 总时长 P50 / P95 / P99 | 3307ms / 3421ms / 3429ms |
-| 总耗时 | 7.36s |
+| 首 token P50 / P95 / P99 | 2151ms / 2270ms / 2294ms |
+| 总时长 P50 / P95 / P99 | 3283ms / 3428ms / 3431ms |
+| 总耗时 | 8.36s |
 
 > 口径：本机单实例 + 假模型，样本为 1 轮 50 并发；不代表真实模型/多实例容量。
 > 结果满足 roadmap 「错误率 < 1%」，首 token P95 也低于 M1 的 3s 目标。
@@ -118,9 +118,9 @@ round 1: 在跑 SSE done=1，另一实例成功=3/3，被停实例 exit=-15
 - Important：`/readyz` 超时组件名导致 200、checkpoint 清理 select/delete 竞态、附件 JSONB
   引用查询错误、启动不校验迁移、孤儿 run 覆盖终态、停机预算不匹配、Trace 父子关系/缺失 span、
   `registry.shutdown()` 无上限、无引号事件属性未过滤；
-- 复跑：**578 passed, 1 skipped**；ruff 全绿。
+- 复跑：**582 passed, 1 skipped**；ruff 全绿。
 
-### 2.5 Trace
+### 2.6 Trace
 
 `test_observability_chat.py` 用 `InMemorySpanExporter` 断言：
 

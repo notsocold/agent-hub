@@ -328,7 +328,7 @@ flowchart LR
 | 服务 | 说明 |
 |---|---|
 | `postgres` | `pgvector/pgvector:pg16`，健康检查，持久卷，挂载 `docker/initdb` |
-| `api` | 构建本仓库；`env_file: .env`；依赖 postgres healthy；`stop_grace_period: 130s`；数据卷 |
+| `api` | 构建本仓库；`env_file: .env`；依赖 postgres healthy；`stop_grace_period: 160s`；数据卷 |
 | `prometheus` | profile `observability`；抓取 `api:8000/metrics` |
 | `grafana` | profile `observability`；provisioning datasource + 预置 dashboard |
 | `nginx`（可选） | profile `proxy`；SSE 关闭缓冲、长读超时；不默认启动 |
@@ -356,7 +356,7 @@ checkpoint `setup()` 失败，都会让 lifespan 抛错、进程退出；由 Com
 - 在跑 SSE 的终态主要由 uvicorn 的连接排水保证；`registry.drain()` 负责后台 run/审批恢复任务
   与 DB 一致性，不单独承担 SSE 终态；
 - 预算：uvicorn 90s + `SHUTDOWN_GRACE_SECONDS` 30s + `SHUTDOWN_FINALIZE_TIMEOUT_SECONDS` 10s
-  < Compose `stop_grace_period: 130s`；超过窗口的 run 会被取消并写终态（客户端可能已断开，靠事件回放）；
+  < Compose `stop_grace_period: 160s`；超过窗口的 run 会被取消并写终态（客户端可能已断开，靠事件回放）；
 - `/readyz` 的 `draining` 在 SIGTERM 阶段通常不可观测（监听已关闭），生产必须由 LB 先摘流量；
 - `registry.shutdown()` 对取消后的收尾也设上限，避免 DB 故障时进程退不出去。
 

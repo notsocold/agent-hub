@@ -9,7 +9,7 @@
 > （指令/记忆/技能/MCP/附件）、A2A 出站、知识库 RAG、审批与安全加固，以及 M6 的
 > 结构化日志 / Prometheus 指标 / OTel Trace、`/readyz`、Dockerfile + 生产 Compose、
 > 优雅停机、启动恢复、数据清理、流式实时过滤、压测与故障演练脚本、CI。
-> 全量 **578 passed, 1 skipped**；ruff 全绿；迁移 head `c4e7a91b2f36`。
+> 全量 **582 passed, 1 skipped**；ruff 全绿；迁移 head `c4e7a91b2f36`。
 > 前端 M4/M5 适配仍在 `agent-hub-web` 侧；M6 无前端契约变更。
 
 ## 1. 项目定位

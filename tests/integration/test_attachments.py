@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import uuid
 
 import httpx
 
@@ -113,6 +114,16 @@ async def test_delete_soft_when_referenced(client: httpx.AsyncClient) -> None:
     deleted = await client.delete(f"/api/v1/attachments/{attachment_id}", headers=headers)
     assert deleted.status_code == 204
     assert (await client.get(f"/api/v1/attachments/{attachment_id}", headers=headers)).status_code == 404
+
+    # 被引用的附件必须软删：DB 行保留、文件路径清空（与清理任务口径一致）。
+    from app.db.models.attachment import Attachment
+    from app.db.session import get_session_factory
+
+    async with get_session_factory()() as session:
+        row = await session.get(Attachment, uuid.UUID(attachment_id))
+        assert row is not None
+        assert row.status == "deleted"
+        assert row.storage_path == ""
 
     # 消息历史中的快照仍保留附件元数据。
     conversation_id = events[0][1]["conversation_id"]

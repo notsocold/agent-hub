@@ -1691,7 +1691,7 @@ async def fail_orphaned_run(
         claimed = await db.execute(
             update(Run)
             .where(Run.id == run_id, Run.status.in_(("queued", "running")))
-            .values(status="failed")
+            .values(status="failed", error_code=code, finished_at=_now())
         )
         await db.commit()
         if not claimed.rowcount:

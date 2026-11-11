@@ -8,7 +8,7 @@ docker build -t agent-hub:0.1.0 .
 
 - 多阶段构建；运行用户 `app`（UID 1000），非 root；
 - 单容器单 worker：进程内事件总线与 run 注册表决定不能开多 worker；
-- `HEALTHCHECK` 请求 `/healthz`；SIGTERM 后按 `SHUTDOWN_GRACE_SECONDS` 排水。
+- `HEALTHCHECK` 请求 `/readyz`；SIGTERM 后由 uvicorn 等待连接（90s），再按 `SHUTDOWN_GRACE_SECONDS` 排水。
 
 ## Compose
 

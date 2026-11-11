@@ -43,7 +43,7 @@ services:
       - "8000:8000"
     volumes:
       - app_data:/app/data
-    stop_grace_period: 130s
+    stop_grace_period: 160s
     healthcheck:
       test:
         - CMD

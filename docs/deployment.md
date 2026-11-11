@@ -11,7 +11,7 @@ docker build -t agent-hub:0.1.0 .
 
 - 多阶段构建；运行用户 `app`（UID 1000），非 root；
 - 单容器单 worker：进程内事件总线与 run 注册表决定不能开多 worker；
-- `HEALTHCHECK` 请求 `/healthz`；SIGTERM 后由 uvicorn 等待现有连接（90s），再进入 lifespan 排水（默认 30s，收尾上限 10s）；
+- `HEALTHCHECK` 请求 `/readyz`；SIGTERM 后由 uvicorn 等待现有连接（90s），再进入 lifespan 排水（默认 30s，收尾上限 10s）；
 - 数据目录 `/app/data` 挂卷（附件、知识库原文）。
 
 ## 2. 首次部署
@@ -61,7 +61,7 @@ docker compose -f docker-compose.prod.yml --profile observability up -d
 
 停机顺序（uvicorn 0.54）：停止监听 → 等待现有连接（90s）→ lifespan `draining=true` → 停巡检 →
 `registry.drain(30s)` → 取消剩余任务（收尾上限 10s）→ 关闭 tracing/DB。
-在跑 SSE 的终态主要靠 uvicorn 连接排水；总预算 90+30+10 < Compose `stop_grace_period: 130s`。
+在跑 SSE 的终态主要靠 uvicorn 连接排水；总预算 90+30+10+5 < Compose `stop_grace_period: 160s`。
 `/readyz` 的 `draining` 在 SIGTERM 阶段通常不可观测，发布前必须由 LB 先摘流量。
 
 ## 5. 滚动发布
@@ -69,7 +69,7 @@ docker compose -f docker-compose.prod.yml --profile observability up -d
 Compose 本身不能零停机滚动。生产需要 Nginx/LB：
 
 1. LB 先摘流量（或 `max_fails` 标记 down），确认 `/readyz` 不再被路由；
-2. 向旧容器发 SIGTERM，等待现有连接与在跑 run 完成（`stop_grace_period: 130s`）；
+2. 向旧容器发 SIGTERM，等待现有连接与在跑 run 完成（`stop_grace_period: 160s`）；
 3. 启动新容器，`/readyz` 通过后加回流量；
 4. 本地演练：`.venv/bin/python scripts/graceful_shutdown_drill.py`。
 

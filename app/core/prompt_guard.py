@@ -110,7 +110,7 @@ _HTML_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
     ("html_script", re.compile(r"<script\b[\s\S]*?</script\s*>", re.IGNORECASE), ""),
     ("html_iframe", re.compile(r"<iframe\b[\s\S]*?</iframe\s*>", re.IGNORECASE), ""),
     ("html_style", re.compile(r"<style\b[\s\S]*?</style\s*>", re.IGNORECASE), ""),
-    ("html_event", re.compile(r"\son\w+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE), ""),
+    ("html_event", re.compile(r"(?<=[\s/\"'])\bon\w+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", re.IGNORECASE), ""),
     ("javascript_url", re.compile(r"javascript\s*:", re.IGNORECASE), ""),
 )
 

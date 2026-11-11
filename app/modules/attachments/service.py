@@ -232,7 +232,7 @@ async def delete_attachment(db: AsyncSession, user: User, attachment_id: uuid.UU
     referenced = bool(
         await db.scalar(
             select(func.count(Message.id)).where(
-                Message.attachments.contains([str(attachment_id)])
+                Message.attachments.contains([{"id": str(attachment_id)}])
             )
         )
     )

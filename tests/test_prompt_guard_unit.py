@@ -76,3 +76,10 @@ def test_sanitize_output_strips_unquoted_event_handler() -> None:
     text, rules = sanitize_output("<img src=x onerror=alert(1)>")
     assert "onerror" not in text
     assert "html_event" in rules
+
+
+def test_sanitize_output_strips_slash_and_quote_prefixed_handlers() -> None:
+    for payload in ('<svg/onload=alert(1)>', '<img src="x"onerror=alert(1)>'):
+        text, rules = sanitize_output(payload)
+        assert "onload" not in text and "onerror" not in text
+        assert "html_event" in rules

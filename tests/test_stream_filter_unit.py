@@ -91,3 +91,32 @@ def test_unclosed_html_block_dropped_on_flush(tag: str) -> None:
     out = output_filter.feed(f"hello <{tag}>alert(1)") + output_filter.flush()
     assert f"<{tag}>" not in out
     assert "alert(1)" not in out
+
+
+PEM_B = (
+    "-----BEGIN OPENSSH PRIVATE KEY-----\n"
+    "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ==\n"
+    "-----END OPENSSH PRIVATE KEY-----"
+)
+
+
+def test_two_pem_blocks_in_single_feed_never_leak() -> None:
+    output_filter = StreamingOutputFilter()
+    out = output_filter.feed(f"前文\n{PEM}\n中间\n{PEM_B}") + output_filter.flush()
+    assert "MIIEowIBAAKCAQEA1234567890abcdef" not in out
+    assert "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ==" not in out
+    assert "BEGIN RSA PRIVATE KEY" not in out
+    assert "BEGIN OPENSSH PRIVATE KEY" not in out
+
+
+def test_three_pem_blocks_in_single_feed_never_leak() -> None:
+    output_filter = StreamingOutputFilter()
+    out = output_filter.feed(f"{PEM}\n{PEM_B}\n{PEM}") + output_filter.flush()
+    assert "MIIEowIBAAKCAQEA1234567890abcdef" not in out
+    assert "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQ==" not in out
+
+
+def test_less_than_in_normal_text_not_dropped() -> None:
+    output_filter = StreamingOutputFilter()
+    out = output_filter.feed("价格 5 < 10") + output_filter.flush()
+    assert out == "价格 5 < 10"

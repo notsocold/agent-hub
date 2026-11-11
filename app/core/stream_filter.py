@@ -5,7 +5,7 @@
 - 密钥：持有「正在形成的锚点/匹配」的尾部，完整后再交给 ``sanitize_output`` 打码；
 - PEM 私钥：从 ``-----BEGIN`` 起扣留，直到完整 ``-----END ... PRIVATE KEY-----``；
 - HTML：``<script>`` / ``<iframe>`` / ``<style>`` 整段丢弃，未闭合块在 ``flush()`` 也丢弃；
-- 正常文本只扣留锚点前缀（≤ 11 字符）或未闭合标签，不影响流式体验。
+- 正常文本只扣留锚点前缀/正在形成的 token 或未闭合标签，不影响流式体验。
 
 落库前仍会跑一次完整 ``sanitize_output``，本模块是流式层的额外防线，不是唯一防线。
 """
@@ -72,13 +72,17 @@ def _private_key_hold(buffer: str) -> int:
         hold = min(hold, last_begin)
 
     # 末尾是 BEGIN 前缀（例如 "-----BEG"）：只有它不属于已完整私钥时才扣留。
+    # 必须看最后一个完整块，否则「两块 PEM、最后一块以 END 结尾」时会把
+    # END 的末 5 个破折号误当成新 BEGIN 的前缀，导致最后一块漏打码。
+    complete_blocks = list(_PRIVATE_BLOCK.finditer(buffer))
+    last_complete_end = complete_blocks[-1].end() if complete_blocks else -1
     for length in range(min(len(_PRIVATE_BEGIN) - 1, len(buffer)), 0, -1):
         if not buffer.endswith(_PRIVATE_BEGIN[:length]):
             continue
         start = len(buffer) - length
-        match = _PRIVATE_BLOCK.search(buffer)
-        if match is None or start >= match.end():
-            hold = min(hold, start)
+        if complete_blocks and start < last_complete_end:
+            break
+        hold = min(hold, start)
         break
     return hold
 
@@ -123,10 +127,14 @@ def _incomplete_tag_start(buffer: str) -> int | None:
     index = buffer.rfind("<")
     if index < 0:
         return None
-    if ">" not in buffer[index:]:
-        if len(buffer) - index <= _MAX_TAG:
-            return index
+    if ">" in buffer[index:]:
         return None
+    # 只把「看起来像标签开头」的 < 当作未闭合标签；"5 < 10" 这类正常文本不扣留。
+    next_char = buffer[index + 1] if index + 1 < len(buffer) else ""
+    if next_char and not (next_char.isalpha() or next_char in "/!?"):
+        return None
+    if len(buffer) - index <= _MAX_TAG:
+        return index
     return None
 
 
