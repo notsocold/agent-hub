@@ -110,6 +110,8 @@ _RUN_STREAM_DESCRIPTION = (
     "**关闭**：收到终态事件（`message.done`/`error`）后立即关闭；run 已结束"
     "（`succeeded`/`failed`/`canceled`）且回放里没有终态事件时，回放完即关闭。"
     "`interrupted` 的 run 保持连接等待审批恢复，空闲超过 `HITL_STREAM_TIMEOUT_SECONDS` 后关闭。\n\n"
+    "**重连**：若流以 EOF 结束且尚未收到终态事件，请携带最后收到事件的 `seq` 作为 "
+    "`after_seq` 重连，补齐可能仍在落库的终态事件。\n\n"
     "**心跳**：等待实时事件期间每 15 秒发送注释帧 `: ping`（不占 `seq`）。\n\n"
     "**部署**：事件总线为进程内实现（单实例）；多实例部署时实时帧可能丢失，"
     "重连时请携带 `after_seq` 通过回放补齐。"
@@ -171,18 +173,25 @@ async def stream_run(
     run_id: uuid.UUID,
     user: CurrentUser,
     db: DbSession,
-    after_seq: int = Query(default=0, ge=0),
+    after_seq: int = Query(default=0, ge=0, le=2**31 - 1),
 ) -> StreamingResponse:
-    # 所有权校验先于建流：非本人/不存在统一 404，不泄露存在性。
+    # 所有权校验先于建流与回放上限：非本人/不存在统一 404，不泄露存在性。
     await service.get_run(db, user, run_id)
-    await service.ensure_replay_size(db, run_id, after_seq, max_replay=1000)
+    await service.ensure_replay_size(
+        db, run_id, after_seq, max_replay=service.SSE_MAX_REPLAY
+    )
     headers: dict[str, str] = {
         **_SSE_HEADERS,
         "X-Run-ID": str(run_id),
         "X-Request-ID": current_request_id(),
     }
     return StreamingResponse(
-        service.stream_run_events(run_id, after_seq=after_seq, max_replay=1000),
+        service.stream_run_events(
+            run_id,
+            after_seq=after_seq,
+            max_replay=service.SSE_MAX_REPLAY,
+            close_terminal_when_replayed=True,
+        ),
         media_type="text/event-stream",
         headers=headers,
     )

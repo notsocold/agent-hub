@@ -86,6 +86,10 @@ from app.modules.conversations.schemas import (
 logger = logging.getLogger(__name__)
 
 _ACTIVE_STATUSES = ("queued", "running", "interrupted")
+# SSE 续流端点单次回放上限；旧 POST /chat/stream 不传 max_replay，保持不截断。
+SSE_MAX_REPLAY = 1000
+# run 已终态后不会再产生终态事件，续流端点回放完可直接关闭。
+TERMINAL_RUN_STATUSES = frozenset({"succeeded", "failed", "canceled"})
 # SSE 空闲心跳周期：等待实时事件超过该周期就发一条注释帧（不占 seq）。
 _SSE_HEARTBEAT_SECONDS = 15
 _DEFAULT_CAPABILITIES: dict[str, Any] = {
@@ -1803,7 +1807,7 @@ async def ensure_replay_size(
     run_id: uuid.UUID,
     after_seq: int,
     *,
-    max_replay: int = 1000,
+    max_replay: int = SSE_MAX_REPLAY,
 ) -> None:
     """SSE 续流前的回放上限检查：超限时提示改用分页接口或更接近的 after_seq。"""
     count = await db.scalar(
@@ -1821,21 +1825,31 @@ async def ensure_replay_size(
 
 
 async def stream_run_events(
-    run_id: uuid.UUID, *, after_seq: int = 0, max_replay: int = 1000
+    run_id: uuid.UUID,
+    *,
+    after_seq: int = 0,
+    max_replay: int | None = None,
+    close_terminal_when_replayed: bool = False,
 ) -> AsyncIterator[str]:
-    """SSE 生成器：包一层 ``sse.stream`` span，内部回放 + 实时跟随。"""
-    span = get_tracer().start_span(
-        "sse.stream",
-        attributes={
-            "app.run_id": str(run_id),
-            "app.sse.after_seq": after_seq,
-            "app.sse.max_replay": max_replay,
-        },
-    )
+    """SSE 生成器：包一层 ``sse.stream`` span，内部回放 + 实时跟随。
+
+    ``max_replay`` 与 ``close_terminal_when_replayed`` 默认关闭，保持旧
+    ``POST /chat/stream`` 的语义；续流端点显式开启回放上限与终态早关。
+    """
+    attributes: dict[str, Any] = {
+        "app.run_id": str(run_id),
+        "app.sse.after_seq": after_seq,
+    }
+    if max_replay is not None:
+        attributes["app.sse.max_replay"] = max_replay
+    span = get_tracer().start_span("sse.stream", attributes=attributes)
     events = 0
     try:
         async for frame in _stream_run_events_inner(
-            run_id, after_seq=after_seq, max_replay=max_replay
+            run_id,
+            after_seq=after_seq,
+            max_replay=max_replay,
+            close_terminal_when_replayed=close_terminal_when_replayed,
         ):
             events += 1
             yield frame
@@ -1845,7 +1859,11 @@ async def stream_run_events(
 
 
 async def _stream_run_events_inner(
-    run_id: uuid.UUID, *, after_seq: int = 0, max_replay: int = 1000
+    run_id: uuid.UUID,
+    *,
+    after_seq: int = 0,
+    max_replay: int | None = None,
+    close_terminal_when_replayed: bool = False,
 ) -> AsyncIterator[str]:
     """SSE 生成器：先回放已落库事件，再跟随实时事件。"""
     settings = get_settings()
@@ -1855,25 +1873,24 @@ async def _stream_run_events_inner(
     run_token = run_id_ctx.set(str(run_id))
     try:
         async with get_session_factory()() as db:
-            # 先读 run 状态再读事件：缩小「状态已终态、终态事件刚提交」的漏帧窗口。
-            run = await db.get(Run, run_id)
-            run_status = run.status if run is not None else None
-            rows = list(
-                (
-                    await db.execute(
-                        select(RunEvent)
-                        .where(RunEvent.run_id == run_id, RunEvent.seq > last_seq)
-                        .order_by(RunEvent.seq.asc())
-                        # 多取一条用于判断是否超限；生成器启动后无法再改状态码，
-                        # 超限时只发前 max_replay 条并关闭（路由层已提前返回 400）。
-                        .limit(max_replay + 1)
-                    )
-                )
-                .scalars()
-                .all()
+            run_status: str | None = None
+            if close_terminal_when_replayed:
+                # 先读 run 状态再读事件：缩小「状态已终态、终态事件刚提交」的漏帧窗口。
+                run = await db.get(Run, run_id)
+                run_status = run.status if run is not None else None
+            stmt = (
+                select(RunEvent)
+                .where(RunEvent.run_id == run_id, RunEvent.seq > last_seq)
+                .order_by(RunEvent.seq.asc())
             )
-        truncated = len(rows) > max_replay
-        for row in rows[:max_replay]:
+            if max_replay is not None:
+                # 多取一条用于判断是否超限；生成器启动后无法再改状态码，
+                # 超限时只发前 max_replay 条并关闭（路由层已提前返回 400）。
+                stmt = stmt.limit(max_replay + 1)
+            rows = list((await db.execute(stmt)).scalars().all())
+        truncated = max_replay is not None and len(rows) > max_replay
+        replay_rows = rows if max_replay is None else rows[:max_replay]
+        for row in replay_rows:
             if row.seq <= last_seq:
                 continue
             event_name = str((row.payload or {}).get("_event") or "")
@@ -1886,12 +1903,11 @@ async def _stream_run_events_inner(
                 return
         if truncated:
             return
-        # 所有权校验之后 run 被删除：事件已级联删除，不会再有实时帧。
-        if run is None:
-            return
-        # 已结束的 run 不会再有终态事件：回放完立即关闭，避免空流挂到空闲超时。
-        # interrupted 不在终态集合内，仍需保持连接等待审批恢复。
-        if run_status in {"succeeded", "failed", "canceled"}:
+        if close_terminal_when_replayed and (
+            run_status is None or run_status in TERMINAL_RUN_STATUSES
+        ):
+            # 已结束（或已被删除）的 run 不会再有终态事件：回放完立即关闭，
+            # 避免空流挂到空闲超时；interrupted 不在终态集合内，仍需保持连接等审批恢复。
             return
 
         idle_seconds = 0

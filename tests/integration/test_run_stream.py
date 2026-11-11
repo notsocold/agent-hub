@@ -99,9 +99,8 @@ async def test_stream_replays_persisted_events_then_closes(client: httpx.AsyncCl
     names = ["run.started", "message.created", "message.delta", "message.done"]
     run_id, seqs = await _seed_run(registered["user"]["id"], events=names)
 
-    response = await client.get(
-        _RUN_STREAM.format(run_id=run_id), params={"after_seq": 0}, headers=headers
-    )
+    # 不传 after_seq：默认 0，从第一条已落库事件开始回放。
+    response = await client.get(_RUN_STREAM.format(run_id=run_id), headers=headers)
 
     assert response.status_code == 200, response.text
     assert response.headers["content-type"].startswith("text/event-stream")
@@ -158,6 +157,16 @@ async def test_stream_requires_authentication(client: httpx.AsyncClient) -> None
     assert response.json()["error"]["code"] == "unauthorized"
 
 
+async def test_stream_rejects_invalid_token(client: httpx.AsyncClient) -> None:
+    response = await client.get(
+        _RUN_STREAM.format(run_id=uuid.uuid4()),
+        headers={"Authorization": "Bearer not-a-valid-token"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "unauthorized"
+
+
 async def test_stream_hides_missing_and_foreign_runs(client: httpx.AsyncClient) -> None:
     owner = await register_user(client)
     owner_headers = auth_headers(owner["access_token"])
@@ -177,12 +186,44 @@ async def test_stream_hides_missing_and_foreign_runs(client: httpx.AsyncClient) 
     assert missing.json()["error"]["message"] == "运行不存在"
 
 
+async def test_stream_hides_foreign_run_before_replay_cap(client: httpx.AsyncClient) -> None:
+    """所有权校验先于回放上限：他人 run 即使回放 >1000 条也必须是 404，不是 400。"""
+    owner = await register_user(client)
+    names = [*(["message.delta"] * 1000), "message.done"]
+    run_id, _ = await _seed_run(owner["user"]["id"], events=names)
+    other = await register_user(client)
+
+    response = await client.get(
+        _RUN_STREAM.format(run_id=run_id),
+        params={"after_seq": 0},
+        headers=auth_headers(other["access_token"]),
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+    assert response.json()["error"]["message"] == "运行不存在"
+
+
 async def test_stream_rejects_negative_after_seq(client: httpx.AsyncClient) -> None:
     registered = await register_user(client)
     headers = auth_headers(registered["access_token"])
 
     response = await client.get(
         _RUN_STREAM.format(run_id=uuid.uuid4()), params={"after_seq": -1}, headers=headers
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
+async def test_stream_rejects_after_seq_beyond_int32(client: httpx.AsyncClient) -> None:
+    """run_events.seq 是 int4：超出 2**31-1 的 after_seq 在参数层就 422，不落到 SQL。"""
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    run_id, _ = await _seed_run(registered["user"]["id"], events=["run.started", "message.done"])
+
+    response = await client.get(
+        _RUN_STREAM.format(run_id=run_id), params={"after_seq": 2**31}, headers=headers
     )
 
     assert response.status_code == 422
@@ -233,6 +274,42 @@ async def test_generator_caps_replay_defensively(user: User) -> None:
 
     assert [frame["id"] for frame in frames] == seqs[:2]
     assert [frame["event"] for frame in frames] == names[:2]
+
+
+async def test_legacy_stream_default_replays_without_truncation(user: User) -> None:
+    """旧 ``POST /chat/stream`` 语义：不传新参数时 1001 条事件全部回放，不截断。"""
+    names = [*(["message.delta"] * 1000), "message.done"]
+    run_id, seqs = await _seed_run(user.id, events=names)
+
+    frames: list[dict] = []
+    async with asyncio.timeout(10):
+        async for frame in chat_service.stream_run_events(run_id, after_seq=0):
+            frames.extend(_parse_sse(frame))
+
+    assert len(frames) == 1001
+    assert [frame["id"] for frame in frames] == seqs
+    assert frames[-1]["event"] == "message.done"
+
+
+async def test_legacy_stream_terminal_run_keeps_connection(user: User) -> None:
+    """旧语义：已终态 run 且回放为空时保持连接，不做终态早关。"""
+    names = ["run.started", "message.done"]
+    run_id, seqs = await _seed_run(user.id, events=names)
+    frames: list[dict] = []
+
+    async def consume() -> None:
+        async for frame in chat_service.stream_run_events(run_id, after_seq=seqs[-1]):
+            frames.extend(_parse_sse(frame))
+
+    task = asyncio.create_task(consume())
+    try:
+        await asyncio.sleep(0.2)
+        assert not task.done(), "旧语义下已终态 run 不应回放后立即关流"
+        assert frames == []
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 async def test_interrupted_stream_stays_open_then_follows_live_events(
