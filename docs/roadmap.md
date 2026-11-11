@@ -17,7 +17,7 @@
 | M4 知识库 RAG | 后端已完成（2026-11-10）；前端已联调 | 模型/pgvector 迁移/解析/切分/双通道 Embedding/7 个 API/`search_knowledge`/引用落库/`build_kb.py`/离线评测；323 测试通过、修复时钟抖动后全量 10 连跑 0 失败；语义召回率因无真实 Embedding key **未取得证据**；前端知识库页与引用展示已联调（2026-11-10） |
 | M5 审批与安全加固 | 后端已完成（2026-11-10） | HITL 迁移到 `interrupt()`/`Command(resume=...)`；超时取消、聊天限流、注入检测/输出打码、平台密钥、审计检索；395 测试通过；跨实例启动保活已并入 M6；前端 M5 已联调（2026-11-11） |
 | M6 生产化与可观测 | 后端已完成（2026-11-11） | 日志/OTel/指标/readyz/Dockerfile+Compose/清理/启动恢复/流式过滤/压测/CI；582 测试通过；Grafana 与真实 LB 滚动未实测 |
-| M7 契约补齐与安全收口 | 实施中（2026-11-11；Task 1–6 已交付，待 Task 7 回归） | 事件回放 `event` + SSE 续流端点、agents/tasks 写操作 RBAC、审批事件字段、A2A 授权 URL 白名单、契约/OpenAPI/前端 handoff；无迁移 |
+| M7 契约补齐与安全收口 | 已完成（2026-11-11；后端契约与全量回归完成，前端待接入） | 事件回放 `event` + SSE 续流端点、agents/tasks 写操作 RBAC、审批事件字段、A2A 授权 URL 白名单、契约/OpenAPI/前端 handoff；无迁移；733 passed / 1 skipped、ruff 全绿、`alembic check` 无漂移、OpenAPI 无 diff |
 | M8 管理台后端（原 X2） | 已立项（2026-11-11），未开始 | 用户/角色、系统指令/技能/MCP/Agent、只读概览；依赖 M7 的 RBAC |
 | M9 工作流后端（原 X1） | 已立项（2026-11-11），未开始 | 轻量步骤模板 MVP（检索/工具/A2A/审批/回答）；先 spike，不引入外部引擎 |
 
@@ -221,14 +221,16 @@
 - [x] 故障演练：数据库短时不可用后自动恢复：TCP 代理切断后 `/readyz` 503、业务请求 503
   `database_unavailable`，恢复后 `/readyz` 200 且聊天成功，API 进程未重启。
 
-## M7 契约补齐与安全收口（实施中，2026-11-11；待 Task 7 回归）
+## M7 契约补齐与安全收口（已完成，2026-11-11）
 
 **目标**：补齐前端已提出的契约缺口，给写操作真正的权限边界。
 
 > 立项设计见 [M7–M9 立项](superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md) §3，
 > 实施计划见 [M7 实施计划](superpowers/plans/2026-11-11-m7-contract-security.md)，
-> 前端接入见 [M7 前端交接](feedback/2026-11-11-m7-frontend-handoff.md)。
-> 状态口径：Task 1–6 已交付；Task 7（全量回归 + 独立审查）完成后本里程碑改为「已完成」。
+> 前端接入见 [M7 前端交接](feedback/2026-11-11-m7-frontend-handoff.md)，
+> 回归证据与已知缺口见 [M7 后端交付报告](feedback/2026-11-11-m7-backend-report.md)。
+> 状态口径：Task 1–6 已交付，Task 7 全量回归已完成（2026-11-11）；Task 7 的独立审查由
+> 独立 reviewer 并行执行，审查发现由后续修复轮处理；前端「逐字续流」等 M7 前端接入尚未验收。
 
 范围：
 
@@ -245,11 +247,19 @@
 - [ ] 前端断线后可从 `lastSeq` 续流已落库事件；非本人 run 404、未登录 401
       （后端契约已交付并有 `tests/integration/test_run_stream.py`；前端待按 handoff 接入；
       断线窗口内的 delta 不补发，终态后需拉消息终稿）
+- [x] `GET /runs/{id}/events` 每条带 `event` 且旧字段不变（`tests/integration/test_chat.py`）
 - [x] 普通用户写 agents/tasks 返回 403；管理员成功且写审计
       （`tests/integration/test_rbac.py`；拒绝审计 `security.rbac_denied`）
-- [x] `openapi.json` 与代码一致（Task 6 导出后 `git diff --exit-code` 干净）；全量测试 ≥ 582 passed；无迁移
-      （Task 6 修复轮全量 733 passed, 1 skipped；迁移 head `2d8f6a1c3e70` 不变）
-- [ ] Task 7：全量回归 + 独立审查（完成后里程碑状态改为「已完成」）
+- [x] `approval.required` 含 5 个新字段，值与 `GET /approvals/{id}` 一致
+      （`tests/integration/test_hitl_interrupt.py`）
+- [x] `authorization_url` 恶意协议/内网地址被拒并留审计，历史脏数据展示被过滤
+      （`tests/test_auth_url_unit.py`、`tests/integration/test_tasks.py`）
+- [x] `openapi.json` 与代码一致；全量测试 ≥ 582 passed；ruff 全绿；无迁移
+      （Task 7 回归：733 passed, 1 skipped；ruff 全绿；`alembic check` 无漂移，head `2d8f6a1c3e70`；
+      OpenAPI `git diff --exit-code` 干净）
+- [x] Task 7 全量回归完成（2026-11-11，证据见 [M7 后端交付报告](feedback/2026-11-11-m7-backend-report.md)）
+- [ ] Task 7 独立审查：由独立 reviewer 并行执行，发现项由后续修复轮处理
+      （本里程碑状态收口不等待该结论；审查完成后另行勾选）
 
 ## M8 管理台后端（原 X2，已立项 2026-11-11；未开始）
 
