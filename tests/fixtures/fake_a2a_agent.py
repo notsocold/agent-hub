@@ -38,6 +38,7 @@ class FakeA2aAgent:
         requires_approval: bool = False,
         base_path: str = "",
         protocol_version: str = "0.3.0",
+        authorization_url: str = "https://example.com/authorize",
     ) -> None:
         self.name = name
         self.slug = slug
@@ -48,6 +49,8 @@ class FakeA2aAgent:
         self.requires_approval = requires_approval
         self.base_path = base_path.rstrip("/")
         self.protocol_version = protocol_version
+        # auth_required 场景返回的授权链接；可注入恶意值测试后端白名单。
+        self.authorization_url = authorization_url
         self.tasks: dict[str, dict[str, Any]] = {}
         self.calls: list[dict[str, Any]] = []
         self.app = self._build_app()
@@ -212,7 +215,7 @@ class FakeA2aAgent:
                     "需要你授权访问代码仓库",
                     {
                         "scopes": ["repo:read"],
-                        "authorization_url": "https://example.com/authorize",
+                        "authorization_url": self.authorization_url,
                         "expires_at": self._expires_at(),
                     },
                 )

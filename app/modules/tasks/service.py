@@ -15,8 +15,10 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
+from app.core.config import get_settings
 from app.core.cursor import decode_cursor, encode_cursor
 from app.core.errors import ConflictError, NotFoundError, ValidationFailedError
+from app.core.urls import validate_authorization_url
 from app.db.models.chat import Run
 from app.db.models.conversation import Conversation
 from app.db.models.remote import A2A_ACTIVE_STATES, A2aTask, RemoteAgent
@@ -123,9 +125,16 @@ def _waiting_out(task: A2aTask, kind: str) -> dict | None:
             "expires_at": expires_at,
         }
     scopes = payload.get("scopes")
+    settings = get_settings()
+    # 展示层兜底：历史脏数据可能已落库，返回前按当前配置重新校验（不写审计）。
+    authorization_url = validate_authorization_url(
+        payload.get("authorization_url"),
+        env=settings.env,
+        allowed_hosts=settings.a2a_auth_url_allowed_host_list,
+    )
     return {
         "scopes": [str(item)[:64] for item in scopes] if isinstance(scopes, list) else [],
-        "authorization_url": str(payload.get("authorization_url") or "")[:2000] or None,
+        "authorization_url": authorization_url,
         "expires_at": expires_at,
     }
 

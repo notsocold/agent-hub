@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 
 import httpx
@@ -417,6 +418,186 @@ async def test_auth_required_authorize_and_reject(
     )
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "task_not_rejectable"
+
+
+async def test_auth_required_rejects_malicious_authorization_url(
+    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
+) -> None:
+    """恶意 authorization_url 落库为 None：SSE/详情不返回，独立审计留痕且不含凭据。"""
+    malicious = "https://user:supersecret@169.254.169.254/latest/meta-data"
+    _register_fake(authorization_url=malicious)
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    await _create_agent(client, admin_auth, slug="fake")
+
+    run_id = await _start_chat(
+        client,
+        registered,
+        monkeypatch,
+        [
+            {
+                "tool_calls": [
+                    {
+                        "name": "send_message",
+                        "args": {"agent": "fake", "task": "auth_required 场景"},
+                    }
+                ]
+            },
+            {"text": "拒绝后结束"},
+        ],
+    )
+    task_id: str | None = None
+    seen_url: object = "unset"
+
+    async def on_event(name: str, data: dict) -> None:
+        nonlocal task_id, seen_url
+        if name == "a2a.auth_required":
+            task_id = data["task_id"]
+            seen_url = data["authorization_url"]
+            rejected = await client.post(
+                f"/api/v1/tasks/{task_id}/reject",
+                json={"reason": "来源可疑"},
+                headers=admin_auth,
+            )
+            assert rejected.status_code == 200, rejected.text
+
+    collected = await collect_run_events_live(
+        run_id, on_event=on_event, stop_on={"message.done"}, timeout=30
+    )
+    assert "a2a.auth_required" in [name for name, _ in collected]
+    # SSE 事件里不能出现恶意链接。
+    assert seen_url is None
+    assert task_id
+
+    detail = await client.get(f"/api/v1/tasks/{task_id}", headers=headers)
+    body = detail.json()
+    assert body["state"] == "rejected"
+    assert body["auth_request"]["authorization_url"] is None
+    assert body["auth_request"]["scopes"] == ["repo:read"]
+    assert malicious not in detail.text
+
+    # 独立 session 写入的安全审计：定位到任务，且不泄漏完整 URL / 凭据。
+    audit = await client.get(
+        "/api/v1/admin/audit-logs?action=security.auth_url_rejected",
+        headers=admin_auth,
+    )
+    assert audit.status_code == 200
+    items = audit.json()["items"]
+    assert len(items) == 1
+    item = items[0]
+    assert item["actor_type"] == "system"
+    assert item["actor_id"] == "a2a"
+    assert item["resource_type"] == "a2a_task"
+    assert item["resource_id"] == task_id
+    assert item["detail"]["reason"] == "credentials_in_url"
+    assert item["detail"]["url_prefix"].startswith("https://169.254.169.254")
+    assert "supersecret" not in json.dumps(item["detail"], ensure_ascii=False)
+
+
+async def test_auth_url_audit_failure_does_not_break_task(
+    client: httpx.AsyncClient, monkeypatch, admin_auth: dict[str, str]
+) -> None:
+    """审计写入失败只告警：恶意 URL 仍收敛为 None，A2A 任务照常进入 auth_required。"""
+    from app.modules.a2a import tool as a2a_tool
+
+    async def _broken_write_audit(*args, **kwargs) -> None:
+        raise RuntimeError("audit 数据库不可用（模拟）")
+
+    monkeypatch.setattr(a2a_tool, "write_audit", _broken_write_audit)
+    _register_fake(authorization_url="javascript:alert(1)")
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    await _create_agent(client, admin_auth, slug="fake")
+
+    run_id = await _start_chat(
+        client,
+        registered,
+        monkeypatch,
+        [
+            {
+                "tool_calls": [
+                    {
+                        "name": "send_message",
+                        "args": {"agent": "fake", "task": "auth_required 场景"},
+                    }
+                ]
+            },
+            {"text": "仍可拒绝"},
+        ],
+    )
+    task_id: str | None = None
+    seen_url: object = "unset"
+
+    async def on_event(name: str, data: dict) -> None:
+        nonlocal task_id, seen_url
+        if name == "a2a.auth_required":
+            task_id = data["task_id"]
+            seen_url = data["authorization_url"]
+            rejected = await client.post(
+                f"/api/v1/tasks/{task_id}/reject",
+                json={"reason": "来源可疑"},
+                headers=admin_auth,
+            )
+            assert rejected.status_code == 200, rejected.text
+
+    collected = await collect_run_events_live(
+        run_id, on_event=on_event, stop_on={"message.done"}, timeout=30
+    )
+    assert "a2a.auth_required" in [name for name, _ in collected]
+    assert seen_url is None
+    assert task_id
+    detail = await client.get(f"/api/v1/tasks/{task_id}", headers=headers)
+    assert detail.json()["auth_request"]["authorization_url"] is None
+
+
+async def test_task_detail_filters_historical_dirty_auth_url(
+    client: httpx.AsyncClient, admin_auth: dict[str, str]
+) -> None:
+    """展示层对历史脏数据再校验：detail 不返回恶意 URL，且不写审计。"""
+    from datetime import UTC, datetime, timedelta
+
+    from app.db.models.remote import A2aTask
+    from app.db.session import get_session_factory
+
+    _register_fake()
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    agent = await _create_agent(client, admin_auth, slug="fake")
+    expires = (datetime.now(UTC) + timedelta(minutes=5)).isoformat()
+    dirty_url = "javascript:alert(document.cookie)"
+    async with get_session_factory()() as session:
+        task = A2aTask(
+            a2a_task_id="remote-dirty",
+            remote_agent_id=uuid.UUID(agent["id"]),
+            state="auth_required",
+            request={"tool": "send_message", "args": {}, "summary": "历史脏数据"},
+            auth_request={
+                "scopes": ["repo:read"],
+                "authorization_url": dirty_url,
+                "expires_at": expires,
+            },
+            timeline=[
+                {"state": "auth_required", "at": expires, "duration_ms": None, "note": ""}
+            ],
+        )
+        session.add(task)
+        await session.commit()
+        await session.refresh(task)
+        task_id = task.id
+
+    detail = await client.get(f"/api/v1/tasks/{task_id}", headers=headers)
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["state"] == "auth_required"
+    assert body["auth_request"]["authorization_url"] is None
+    assert body["auth_request"]["scopes"] == ["repo:read"]
+    assert dirty_url not in detail.text
+
+    audit = await client.get(
+        "/api/v1/admin/audit-logs?action=security.auth_url_rejected",
+        headers=admin_auth,
+    )
+    assert audit.json()["items"] == []
 
 
 async def test_cancel_action_and_error_codes(

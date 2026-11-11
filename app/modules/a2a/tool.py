@@ -17,9 +17,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.core.audit import write_audit
 from app.core.config import get_settings
 from app.core.metrics import record_a2a_task
 from app.core.telemetry import get_tracer
+from app.core.urls import evaluate_authorization_url, redact_url_for_audit
 from app.db.models.remote import A2aTask, RemoteAgent
 from app.db.session import get_session_factory
 from app.modules.a2a import A2aClient, A2aError
@@ -253,6 +255,38 @@ class SendMessageRunner:
             return
         append_timeline(task, state, note=note)
         await _persist_task(task)
+
+    async def _audit_auth_url_rejected(self, raw: str, reason: str) -> None:
+        """违规 authorization_url：warning + 独立事务审计；审计失败不影响 A2A 任务。
+
+        ``detail`` 只保存脱敏后的截断前缀，绝不落完整 URL 或 userinfo 里的凭据。
+        """
+        task = self.task
+        if task is None:
+            return
+        prefix = redact_url_for_audit(raw)
+        logger.warning(
+            "A2A authorization_url 未通过白名单（task=%s, reason=%s）：%s",
+            task.id,
+            reason,
+            prefix,
+        )
+        try:
+            async with get_session_factory()() as db:
+                await write_audit(
+                    db,
+                    actor_type="system",
+                    actor_id="a2a",
+                    action="security.auth_url_rejected",
+                    resource_type="a2a_task",
+                    resource_id=str(task.id),
+                    detail={"url_prefix": prefix, "reason": reason},
+                    commit=True,
+                )
+        except Exception:
+            logger.warning(
+                "写入 authorization_url 拒绝审计失败（已忽略）task=%s", task.id, exc_info=True
+            )
 
     # ------------------------------------------------------------------ 远程调用
 
@@ -545,12 +579,24 @@ class SendMessageRunner:
         if state == "auth_required":
             metadata = _metadata_of(update, None)
             scopes = metadata.get("scopes")
+            settings = get_settings()
             expires = metadata.get("expires_at") or (
-                _now() + timedelta(seconds=get_settings().a2a_input_timeout_seconds)
+                _now() + timedelta(seconds=settings.a2a_input_timeout_seconds)
             ).isoformat()
+            raw_auth_url = metadata.get("authorization_url")
+            if raw_auth_url is not None and not isinstance(raw_auth_url, str):
+                raw_auth_url = str(raw_auth_url)
+            auth_url, reject_reason = evaluate_authorization_url(
+                raw_auth_url,
+                env=settings.env,
+                allowed_hosts=settings.a2a_auth_url_allowed_host_list,
+            )
+            if auth_url is None and reject_reason not in {"", "blank"}:
+                # 恶意/不可信链接只收敛为 None，不影响 A2A 任务本身的状态流转。
+                await self._audit_auth_url_rejected(raw_auth_url or "", reject_reason)
             task.auth_request = {
                 "scopes": [str(item) for item in scopes] if isinstance(scopes, list) else [],
-                "authorization_url": str(metadata.get("authorization_url") or "")[:2000] or None,
+                "authorization_url": auth_url,
                 "expires_at": str(expires),
             }
             append_timeline(task, "auth_required")

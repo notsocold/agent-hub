@@ -110,6 +110,8 @@ class Settings(BaseSettings):
     a2a_agent_path: str = "/a2a"
     a2a_client_timeout_seconds: int = 60
     a2a_allowed_hosts: str = ""
+    # authorization_url 主机白名单（逗号分隔，精确匹配）；为空表示不额外限制。
+    a2a_auth_url_allowed_hosts: str = ""
     # None 表示跟随环境：dev/test 允许回环（本地假 Agent 联调），prod 默认拒绝。
     a2a_allow_loopback: bool | None = None
     a2a_card_timeout_seconds: int = 10
@@ -378,6 +380,15 @@ class Settings(BaseSettings):
     def a2a_host_allowlist(self) -> list[str]:
         """A2A SSRF 主机白名单：主机名、IP 或 CIDR。"""
         return [item.strip().lower() for item in self.a2a_allowed_hosts.split(",") if item.strip()]
+
+    @property
+    def a2a_auth_url_allowed_host_list(self) -> list[str]:
+        """A2A authorization_url 主机白名单：逗号分隔，仅精确匹配主机名。"""
+        return [
+            item.strip().lower()
+            for item in self.a2a_auth_url_allowed_hosts.split(",")
+            if item.strip()
+        ]
 
 
 @lru_cache
