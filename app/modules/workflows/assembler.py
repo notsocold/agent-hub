@@ -48,14 +48,30 @@ def _provided_tools(step: dict[str, Any]) -> tuple[str, ...]:
     return TYPE_DEFAULT_TOOLS.get(step_type, ())
 
 
+def _is_tool_provider(step: Any) -> bool:
+    """该步骤是否计入「提供工具的步骤」（M9 终审裁决）。
+
+    knowledge_search / a2a（类型默认工具）、tool（显式 config.tools）计入；
+    approval 的 ``config.tools`` 是审批标记而非白名单来源，但带非空清单同样
+    计入（终审裁决原文），否则纯审批模板无法成立。
+    """
+    if not isinstance(step, dict):
+        return False
+    if _provided_tools(step):
+        return True
+    config = step.get("config")
+    return step.get("type") == "approval" and isinstance(config, dict) and bool(config.get("tools"))
+
+
 def validate_steps(steps: Any) -> list[str]:
     """校验 steps 形状与全部约束，返回错误列表（空列表 = 合法）。
 
-    约束（Global Constraints + 8000 总预算）：非空数组、≤12 步、
-    ``type ∈ STEP_TYPES``、id 唯一非空、``instruction`` ≤500 字符、
+    约束（Global Constraints + 8000 总预算 + 终审模板级约束）：非空数组、
+    ≤12 步、``type ∈ STEP_TYPES``、id 唯一非空、``instruction`` ≤500 字符、
     单工具名 ≤200 字符、tool 步骤必须显式非空 ``config.tools``、
-    全部文本（拼接所有 id/title/instruction/config 工具名）总长 ≤8000 字符。
-    收集全部错误不短路，便于上层一次报全。
+    全部文本（拼接所有 id/title/instruction/config 工具名）总长 ≤8000 字符、
+    模板必须至少含一个提供工具的步骤（knowledge_search/a2a/tool/approval
+    带非空 ``config.tools``）。收集全部错误不短路，便于上层一次报全。
     """
     if not isinstance(steps, list):
         return ["steps 必须是数组"]
@@ -132,6 +148,11 @@ def validate_steps(steps: Any) -> list[str]:
         errors.append(
             f"steps 全部文本总长度 {total_text} 超过上限 {_MAX_TOTAL_TEXT_LENGTH}"
         )
+    # 模板级检查（不挂步骤前缀）：必须至少含一个提供工具的步骤。
+    # 纯指令编排模板会走空白名单而静默放行全部工具（filter_tools 对空白名单
+    # 的防御性透传），违背严格白名单契约，故在模板入口拒绝。
+    if not any(_is_tool_provider(step) for step in steps):
+        errors.append("模板必须至少包含一个提供工具的步骤（检索/工具/委派/审批）")
     return errors
 
 

@@ -88,10 +88,18 @@ def test_validate_steps_tool_step_missing_tools() -> None:
 
 
 def test_validate_steps_instruction_too_long() -> None:
-    """instruction ≤500 字符，501 报错、500 合法。"""
-    base = {"id": "s1", "type": "answer"}
-    assert validate_steps([{**base, "instruction": "x" * 501}]) != []
-    assert validate_steps([{**base, "instruction": "x" * 500}]) == []
+    """instruction ≤500 字符，501 报错、500 合法（对照样例含提供工具的步骤）。"""
+    # 合法对照：knowledge_search + answer（instruction 恰 500）
+    assert validate_steps([
+        {"id": "s1", "type": "knowledge_search"},
+        {"id": "s2", "type": "answer", "instruction": "x" * 500},
+    ]) == []
+    # 超长：instruction 501 报错
+    steps = [
+        {"id": "s1", "type": "knowledge_search"},
+        {"id": "s2", "type": "answer", "instruction": "x" * 501},
+    ]
+    assert validate_steps(steps) != []
 
 
 def test_validate_steps_tool_name_too_long() -> None:
@@ -105,26 +113,64 @@ def test_validate_steps_tool_name_too_long() -> None:
 
 
 def test_validate_steps_step_count_over_limit() -> None:
-    """steps 超过 12 步报错，13 步触发上限。"""
-    steps = [{"id": f"s{i}", "type": "answer"} for i in range(1, 14)]
+    """steps 超过 12 步报错；13 步触发上限（对照样例含提供工具的步骤）。"""
+    steps = [{"id": f"s{i}", "type": "answer"} for i in range(1, 13)]
+    steps.append({"id": "s13", "type": "knowledge_search"})
     assert validate_steps(steps) != []
-    ok = [{"id": f"s{i}", "type": "answer"} for i in range(1, 13)]
+    ok = [{"id": f"s{i}", "type": "answer"} for i in range(1, 12)]
+    ok.append({"id": "s12", "type": "knowledge_search"})
     assert validate_steps(ok) == []
 
 
 def test_validate_steps_length_budget() -> None:
     """steps 全部文本（id/title/instruction/config 工具名）总长 >8000 报错，8000 恰好合法。
 
-    边界构造：单步 answer，仅 id + title，无 instruction/config——总长 = len(id) + len(title)。
+    边界构造：s1 answer（仅 id + title）+ s2 knowledge_search（提供工具步骤），
+    总长 = len("s1") + len(title) + len("s2")。
     """
-    # 8000 恰好合法："s1"(2) + title(7998) = 8000
-    at_limit = [{"id": "s1", "type": "answer", "title": "t" * 7998}]
+    # 8000 恰好合法：2 + 7996 + 2 = 8000
+    at_limit = [
+        {"id": "s1", "type": "answer", "title": "t" * 7996},
+        {"id": "s2", "type": "knowledge_search"},
+    ]
     assert validate_steps(at_limit) == []
-    # 8001 超预算："s1"(2) + title(7999) = 8001，且其余约束均合法，错误应恰为预算一条
-    over_limit = [{"id": "s1", "type": "answer", "title": "t" * 7999}]
+    # 8001 超预算：2 + 7997 + 2 = 8001，且其余约束均合法，错误应恰为预算一条
+    over_limit = [
+        {"id": "s1", "type": "answer", "title": "t" * 7997},
+        {"id": "s2", "type": "knowledge_search"},
+    ]
     errors = validate_steps(over_limit)
     assert len(errors) == 1
     assert "8000" in errors[0]
+
+
+def test_validate_steps_requires_tool_provider() -> None:
+    """终审裁决：合法模板必须至少含一个提供工具的步骤（防空白名单静默放行）。
+
+    提供工具的步骤：knowledge_search / a2a（类型默认工具）、tool（显式
+    config.tools）、approval 带非空 config.tools（终审裁决计入）。
+    """
+    # 纯 answer 模板：其余约束全合法 → 恰一条模板级错误，且不挂步骤前缀
+    errors = validate_steps([{"id": "s1", "type": "answer"}])
+    assert len(errors) == 1
+    assert "提供工具的步骤" in errors[0]
+    assert not errors[0].startswith("第")
+    # 纯 approval（无 config.tools）报错
+    assert validate_steps([{"id": "s1", "type": "approval"}]) != []
+    # answer + knowledge_search 合法
+    assert validate_steps([
+        {"id": "s1", "type": "knowledge_search"},
+        {"id": "s2", "type": "answer"},
+    ]) == []
+    # approval 带非空 config.tools 计入提供工具的步骤，合法
+    assert validate_steps([
+        {"id": "s1", "type": "approval", "config": {"tools": ["send_message"]}},
+        {"id": "s2", "type": "answer"},
+    ]) == []
+    # tool 步骤（显式清单）计入，合法
+    assert validate_steps([
+        {"id": "s1", "type": "tool", "config": {"tools": ["mcp__srv__tool"]}},
+    ]) == []
 
 
 def test_validate_steps_legal_three_steps() -> None:

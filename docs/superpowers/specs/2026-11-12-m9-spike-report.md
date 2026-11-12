@@ -87,6 +87,7 @@ spike 曾把新迁移接在 `c4e7a91b2f36` 上造成双 head（`alembic upgrade 
 ```
 
 约束：steps 非空数组、≤12 步、id 唯一、instruction ≤500 字符、tool 步骤必须显式列工具。
+（M9 终审修复追加：模板必须至少含一个提供工具的步骤，见 `app/modules/workflows/assembler.py`。）
 装配器纯函数（spike 命名）：`validate_steps` / `tool_allowlist` / `force_approval` /
 `step_for_tool` / `prompt_section` / `filter_tools`。
 

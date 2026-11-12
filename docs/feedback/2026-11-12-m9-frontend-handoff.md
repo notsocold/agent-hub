@@ -117,7 +117,10 @@
 - `id` 非空字符串且全表唯一；`type` ∈ 上表五类；
 - `title`/`instruction` 可选字符串（`instruction` ≤500 字符）；`config` 可选对象；
 - `tool` 步骤必须显式提供非空 `config.tools`（非空字符串列表，单个工具名 ≤200 字符）；
-- 全部文本（所有 `id`/`title`/`instruction`/`config.tools` 工具名拼接）总长 ≤8000 字符。
+- 全部文本（所有 `id`/`title`/`instruction`/`config.tools` 工具名拼接）总长 ≤8000 字符；
+- 模板必须**至少含一个提供工具的步骤**（`knowledge_search`/`a2a`、`tool` 显式清单、
+  `approval` 带非空 `config.tools` 均计入）；纯指令编排模板 422——否则会走空白名单
+  而静默放行全部工具。
 
 ## 4. 错误语义表
 
