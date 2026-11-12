@@ -11,7 +11,7 @@
 > `approval.required` 5 个展示字段、A2A `authorization_url` 后端白名单；
 > M8 新增：用户/角色管理、只读概览、平台指令、系统技能、系统 MCP、全局 Agent 共 15 个
 > `/admin/*` 端点；管理端配置面不受能力总开关影响（R1）；全局 Agent 采用「全部未软删」
-> 注册表口径（R8）；无迁移、无新配置项。
+> 注册表口径（R8）；M8 无迁移、无新配置项。
 > M9 新增：步骤模板 CRUD/启停/运行历史（7 个 `/workflows` 端点）、`POST /chat/stream`
 > 的 `workflow_id`/`workflow_version` 快照执行、`workflow.step` 事件、
 > `WORKFLOWS_ENABLED` 能力开关；迁移 `e8b4f2a6c9d3`。

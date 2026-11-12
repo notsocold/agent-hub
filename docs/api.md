@@ -1407,17 +1407,20 @@ CRUD 侧（`/workflows*`）：
 | `GET /workflows/{id}/runs` 且模板是 system | 403 | `forbidden` | message「系统模板的运行数据属各用户，不可查看」 |
 | `GET /workflows/{id}/runs` 且模板是他人/不存在 | 404 | `not_found` | 不泄露存在性 |
 
-`POST /chat/stream` 带 `workflow_id` 的校验（按代码检查顺序）：
+`POST /chat/stream` 带 `workflow_id` 的校验（**按代码检查顺序**；工作流校验分两段——
+互斥与脱离检查位于 `start_chat` 主体，其余位于 `_validate_workflow`——多错误并存时
+按表序最先命中者返回。同请求中还有更早的全局校验：限流 429、`model_not_allowed`、
+`reasoning_effort_invalid`、`capability_disabled`，均先于工作流校验）：
 
 | 场景 | HTTP | code | 说明 |
 |---|---|---|---|
-| `WORKFLOWS_ENABLED=false` 且带 `workflow_id` | 409 | `workflow_disabled` | message「工作流能力未启用」；**检查最前**，关闭时不做可见性/版本/steps 校验 |
+| `workflow_id` 与 `skills`/`mcp_servers`/`mcp_tools`/`knowledge_categories` 同用 | 422 | `workflow_context_conflict` | message「工作流与手动能力上下文不能同时使用」；M1 既有互斥语义（`start_chat` 主体，先于 `_validate_workflow`） |
+| `workflow_version` 脱离 `workflow_id` 单独携带 | 422 | `validation_error` | message「workflow_version 不能脱离 workflow_id 使用」（`start_chat` 主体） |
+| `WORKFLOWS_ENABLED=false` 且带 `workflow_id` | 409 | `workflow_disabled` | message「工作流能力未启用」；`_validate_workflow` 检查最前，关闭时不做可见性/版本/steps 校验 |
 | 模板不存在或不可见 | 404 | `not_found` | message「工作流不存在」 |
 | 模板已停用（`enabled=false`） | 409 | `workflow_disabled` | message「工作流已停用，无法在此轮使用」 |
 | `workflow_version` 与模板当前 `version` 不匹配 | 409 | `workflow_version_conflict` | message「工作流版本已更新，请刷新模板后重试」 |
 | 模板 steps 不合法（存量坏模板） | 422 | `workflow_steps_invalid` | message 拼接前 3 条 |
-| `workflow_id` 与 `skills`/`mcp_servers`/`mcp_tools`/`knowledge_categories` 同用 | 422 | `workflow_context_conflict` | M1 既有互斥语义 |
-| `workflow_version` 脱离 `workflow_id` 单独携带 | 422 | `validation_error` | message「workflow_version 不能脱离 workflow_id 使用」 |
 
 > **`workflow_disabled` 二义消歧**：全局开关关闭与单个模板停用共用此 code。前端可从
 > `GET /system/info` 的 `capabilities.workflows` 区分——该键为 `false` 时任何
@@ -1463,9 +1466,9 @@ data: {"run_id":"6f1c2b3a-4d5e-4f60-8a9b-0c1d2e3f4a5b","ts":"2026-11-12T12:00:05
 - 发起时（与 run 同一事务）把 `workflow_id`/`workflow_version`/`workflow_steps`/`workflow_name`
   冻结进 `run.capabilities`，并写入 `runs.workflow_id`/`runs.workflow_version` 列（无外键）；
   同时插入 `workflow_runs` 映射行（创建即 `running`，`run_id` 唯一索引）；
-- 恢复轮（审批 resume）从快照读 steps 注入 system prompt 与工具白名单，**不回读模板表**：
-  模板在挂起期间被 PATCH/停用/删除都不影响恢复行为（实测覆盖：挂起期间 PATCH steps，
-  恢复后仍按旧步骤执行）；
+- 恢复轮（审批 resume）从快照读 steps 注入 system prompt 与工具白名单，**不回读模板表**
+  （仅快照缺失的异常数据会回退查表，正常路径恒用快照）：模板在挂起期间被 PATCH/停用/
+  删除都不影响恢复行为（实测覆盖：挂起期间 PATCH steps，恢复后仍按旧步骤执行）；
 - `GET /runs/{id}` 的 `workflow` 字段 `{id, name, version}` 由发起时快照构造（不回查
   workflows 表）：**模板删除后仍返回快照 name/version**；
 - `workflow_version` 请求参数是发起入口的乐观锁（对当前模板版本校验），不是恢复轮的
