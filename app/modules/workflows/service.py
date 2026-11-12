@@ -1,4 +1,4 @@
-"""M9 工作流 CRUD 业务：创建/列表/详情可见性/更新/启停/硬删（运行历史由 T4 追加）。
+"""M9 工作流业务：模板 CRUD/可见性/装配校验 + 运行历史查询与终态同步。
 
 - 可见性：``get_visible_workflow`` 返回「系统模板或本人模板」的行，否则 None；
   404 由调用方抛（T5 chat 校验复用同一语义，不泄露他人模板存在性）。
@@ -11,6 +11,9 @@
   ``PUT enabled`` 不改 version；DELETE 硬删（``workflow_runs`` 随 FK CASCADE）。
 - 游标分页：系统模板 + 本人按 ``created_at DESC, id DESC``，limit+1 探测，
   复用 ``encode_cursor({"created_at": …, "id": …})`` 模式。
+- 运行历史（T4）：仅模板 owner 可查 runs（系统模板 403 ``forbidden``——运行数据
+  属各用户；他人模板 404）；``sync_workflow_run_status`` 供 chat 终态回调在
+  既有事务内追平 ``workflow_runs`` 行状态，无对应行 no-op。
 """
 
 from __future__ import annotations
@@ -19,16 +22,22 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.audit import write_audit
 from app.core.cursor import decode_cursor, encode_cursor
-from app.core.errors import NotFoundError, ValidationFailedError
+from app.core.errors import ForbiddenError, NotFoundError, ValidationFailedError
+from app.db.models.chat import Run
 from app.db.models.user import User
-from app.db.models.workflow import Workflow
+from app.db.models.workflow import Workflow, WorkflowRun
 from app.modules.workflows.assembler import validate_steps
-from app.modules.workflows.schemas import WorkflowListOut, WorkflowOut
+from app.modules.workflows.schemas import (
+    WorkflowListOut,
+    WorkflowOut,
+    WorkflowRunListOut,
+    WorkflowRunOut,
+)
 
 # 422 消息最多拼接的装配器错误条数（避免超长响应）。
 _MAX_ERROR_MESSAGES = 3
@@ -250,12 +259,116 @@ async def delete_workflow(db: AsyncSession, user: User, workflow_id: uuid.UUID) 
     await db.commit()
 
 
+def _run_cursor_filter(cursor: str | None) -> Any | None:
+    """解码运行历史游标 ``{created_at, id}``；非法/缺字段统一 422。
+
+    键序与 ``list_workflows`` 一致，但排序键是映射行 ``workflow_runs`` 的列，
+    因此单独实现过滤（不改动既有 ``_cursor_filter``）。
+    """
+    if not cursor:
+        return None
+    decoded = decode_cursor(cursor)
+    raw_created_at = decoded.get("created_at")
+    raw_id = decoded.get("id")
+    if raw_created_at is None or raw_id is None:
+        raise ValidationFailedError("分页游标无效")
+    try:
+        last_created_at = datetime.fromisoformat(str(raw_created_at))
+        last_id = uuid.UUID(str(raw_id))
+    except (ValueError, TypeError) as exc:
+        raise ValidationFailedError("分页游标无效") from exc
+    return or_(
+        WorkflowRun.created_at < last_created_at,
+        and_(WorkflowRun.created_at == last_created_at, WorkflowRun.id < last_id),
+    )
+
+
+def _to_run_out(row: WorkflowRun, run: Run | None) -> WorkflowRunOut:
+    """映射行 + join 的 run 行组装视图；run 无对应列时 None 兜底。"""
+    return WorkflowRunOut(
+        id=row.id,
+        run_id=row.run_id,
+        status=row.status,
+        created_at=row.created_at,
+        run_status=run.status if run is not None else None,
+        run_finished_at=run.finished_at if run is not None else None,
+        run_duration_ms=run.duration_ms if run is not None else None,
+        run_error_code=run.error_code if run is not None else None,
+    )
+
+
+async def list_workflow_runs(
+    db: AsyncSession, user: User, workflow_id: uuid.UUID, *, limit: int, cursor: str | None
+) -> WorkflowRunListOut:
+    """运行历史：仅模板 owner 可查，按映射行 ``created_at DESC, id DESC`` 游标分页。
+
+    权限裁决：他人 user 模板与不存在同样 404（复用 ``get_visible_workflow``，
+    不泄露存在性）；系统模板 403 ``forbidden``——运行数据属各用户，模板本身
+    可读不代表可看别人的运行记录。join ``runs`` 带出终态快照（外连接，run 行
+    缺失时 ``run_*`` 字段 None 兜底）。
+    """
+    workflow = await get_visible_workflow(db, user, workflow_id)
+    if workflow is None:
+        raise NotFoundError("工作流不存在")
+    if workflow.scope == "system":
+        raise ForbiddenError("系统模板的运行数据属各用户，不可查看")
+
+    cursor_condition = _run_cursor_filter(cursor)
+    filters = [WorkflowRun.workflow_id == workflow_id]
+    if cursor_condition is not None:
+        filters.append(cursor_condition)
+    stmt = (
+        select(WorkflowRun, Run)
+        .outerjoin(Run, WorkflowRun.run_id == Run.id)
+        .where(*filters)
+        .order_by(WorkflowRun.created_at.desc(), WorkflowRun.id.desc())
+        .limit(limit + 1)
+    )
+    rows = list((await db.execute(stmt)).all())
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+
+    next_cursor = None
+    if has_more and rows:
+        last_workflow_run, _ = rows[-1]
+        next_cursor = encode_cursor(
+            {"created_at": last_workflow_run.created_at, "id": last_workflow_run.id}
+        )
+    return WorkflowRunListOut(
+        items=[_to_run_out(workflow_run, run) for workflow_run, run in rows],
+        next_cursor=next_cursor,
+        has_more=has_more,
+    )
+
+
+# 可同步进映射行的 chat 终态（与 runs 状态机同名）；interrupted/running 不追平。
+_RUN_TERMINAL_STATUSES = frozenset({"succeeded", "failed", "canceled"})
+
+
+async def sync_workflow_run_status(db: AsyncSession, run_id: uuid.UUID, status: str) -> None:
+    """把 chat run 终态同步进 ``workflow_runs`` 映射行（调用方既有事务内执行）。
+
+    - 终态映射：succeeded/failed/canceled 与 runs 同名直写；同值重复 UPDATE 幂等。
+    - 无对应行（非工作流 run）是正常情况：no-op，不计入受影响行数。
+    - 非终态值（如 ``interrupted``）不落库：挂起审批期间映射行保持 ``running``，
+      恢复后由后续终态回调追平；非法值同理跳过，避免触发 CheckConstraint。
+    仅 ``execute`` 不 ``commit``：与调用方的消息/运行落库同一事务原子提交。
+    """
+    if status not in _RUN_TERMINAL_STATUSES:
+        return
+    await db.execute(
+        update(WorkflowRun).where(WorkflowRun.run_id == run_id).values(status=status)
+    )
+
+
 __all__ = [
     "create_workflow",
     "delete_workflow",
     "get_visible_workflow",
     "get_workflow",
+    "list_workflow_runs",
     "list_workflows",
     "set_enabled",
+    "sync_workflow_run_status",
     "update_workflow",
 ]

@@ -1,7 +1,7 @@
-"""M9 工作流路由：步骤模板 CRUD 与启停（运行历史端点由 T4 追加）。
+"""M9 工作流路由：步骤模板 CRUD/启停与运行历史查询。
 
 越权口径与 service 对齐：他人 user 模板与不存在同样 404（不泄露存在性）；
-系统模板人人可读、任何人不可改删。
+系统模板人人可读、任何人不可改删；runs 仅模板 owner 可查（系统模板 403）。
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from app.modules.workflows.schemas import (
     WorkflowEnabledRequest,
     WorkflowListOut,
     WorkflowOut,
+    WorkflowRunListOut,
     WorkflowUpdate,
 )
 
@@ -87,3 +88,15 @@ async def delete_workflow(
 ) -> None:
     """硬删本人模板（``workflow_runs`` 随 FK CASCADE）。"""
     await service.delete_workflow(db, user, workflow_id)
+
+
+@router.get("/{workflow_id}/runs", response_model=WorkflowRunListOut)
+async def list_workflow_runs(
+    workflow_id: uuid.UUID,
+    user: CurrentUser,
+    db: DbSession,
+    limit: int = Query(default=20, ge=1, le=100),
+    cursor: str | None = Query(default=None, max_length=500),
+) -> WorkflowRunListOut:
+    """运行历史：仅模板 owner 可查；系统模板 403，他人/不存在 404。"""
+    return await service.list_workflow_runs(db, user, workflow_id, limit=limit, cursor=cursor)

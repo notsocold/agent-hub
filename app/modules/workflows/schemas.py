@@ -101,3 +101,28 @@ class WorkflowListOut(BaseModel):
     items: list[WorkflowOut]
     next_cursor: str | None
     has_more: bool
+
+
+class WorkflowRunOut(BaseModel):
+    """工作流运行记录视图：``run_*`` 字段来自 join 的 ``runs`` 行，无对应行时为 None。
+
+    ``status`` 是映射行自身状态（创建即 ``running``，由 chat 终态同步追平）；
+    ``run_*`` 是 chat run 的终态快照（status/finished_at/duration_ms/error_code）。
+    """
+
+    id: uuid.UUID
+    run_id: uuid.UUID
+    status: str
+    created_at: datetime
+    run_status: str | None
+    run_finished_at: datetime | None
+    run_duration_ms: int | None
+    run_error_code: str | None
+
+
+class WorkflowRunListOut(BaseModel):
+    """运行历史游标分页列表：按映射行 ``created_at DESC`` 排序。"""
+
+    items: list[WorkflowRunOut]
+    next_cursor: str | None
+    has_more: bool

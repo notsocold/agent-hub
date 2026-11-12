@@ -83,6 +83,7 @@ from app.modules.conversations.schemas import (
     MessageErrorOut,
     UsageOut,
 )
+from app.modules.workflows.service import sync_workflow_run_status
 
 logger = logging.getLogger(__name__)
 
@@ -1258,6 +1259,8 @@ async def _finalize_success(
                 conversation.last_message_at = finished_at
                 conversation.last_message_preview = content[:80]
                 conversation.message_count += 1
+            # T4：同一事务内追平工作流映射行（无对应行 no-op，非工作流 run 不受影响）。
+            await sync_workflow_run_status(db, run_id, "succeeded")
         model_name = run.model if run is not None else ""
         await db.commit()
     trace.get_current_span().set_attribute("app.run.status", "succeeded")
@@ -1316,6 +1319,8 @@ async def _finalize_canceled(
             conversation.last_message_at = now
             conversation.last_message_preview = content[:80] or "（已取消）"
             conversation.message_count += 1
+        # T4：同一事务内追平工作流映射行（无对应行 no-op）。
+        await sync_workflow_run_status(db, run_id, "canceled")
         await db.commit()
         message_id = run.assistant_message_id
         model_name = run.model
@@ -1398,6 +1403,8 @@ async def _finalize_failed(
             conversation.last_message_preview = content[:80] or "（失败）"
             conversation.message_count += 1
         model_name = run.model
+        # T4：同一事务内追平工作流映射行（无对应行 no-op）。
+        await sync_workflow_run_status(db, run_id, "failed")
         await db.commit()
 
     await publisher.emit(
