@@ -1776,6 +1776,10 @@ async def cancel_interrupted_run(
         duration_ms = elapsed_ms(run.started_at or run.created_at, now)
         run.duration_ms = duration_ms
         run.active_duration_ms = duration_ms
+        # M9：审批超时/恢复轮取消与 cancel 接口同语义，映射行同事务追平（T9）。
+        # 该链路（expire_pending 巡检 / 恢复轮 user_canceled）不经过 _finalize_canceled，
+        # 不补同步会让 workflow_runs 行停留 running，污染 T4 的 runs 查询对外契约。
+        await sync_workflow_run_status(db, run_id, "canceled")
         await db.commit()
         message_id = run.assistant_message_id
         model_name = run.model

@@ -566,17 +566,28 @@ async def test_get_run_keeps_snapshot_after_workflow_delete(
     }
 
 
+@pytest.mark.parametrize(
+    ("corrupted_steps",),
+    [
+        ([1, 2, 3],),
+        # 混合形态：合法 dict 项后混入非 dict 项，逐项校验必须同样拦下。
+        ([{"id": "s1", "type": "a2a", "title": "委派远程", "instruction": "委派远程核对"}, 1],),
+    ],
+    ids=["all_non_dict_items", "mixed_dict_and_non_dict"],
+)
 async def test_corrupted_workflow_snapshot_fails_run(
     client: httpx.AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
     admin_auth: dict[str, str],
+    corrupted_steps: list[Any],
 ) -> None:
     """T5 审查交接：快照非空 list 但含非 dict 项时必须转失败，不得空白名单放行。
 
     服务层直启一轮带原生审批的对话；挂起期间直接改库把
-    ``run.capabilities.workflow_steps`` 篡改为 ``[1, 2, 3]``，approve 恢复轮读到
-    损坏快照 → 与回退查表路径对齐转运行数据缺失 → 事件 error、run 失败，且
-    第二轮脚本回复永远不会被消费（没有静默按无工作流执行）。
+    ``run.capabilities.workflow_steps`` 篡改为损坏形态（参数化：纯非 dict 项/
+    dict 与非 dict 混合），approve 恢复轮读到损坏快照 → 与回退查表路径对齐转
+    运行数据缺失 → 事件 error、run 失败，且第二轮脚本回复永远不会被消费
+    （没有静默按无工作流执行）。
     """
     await _register_fake_agent(client, admin_auth, requires_approval=True)
     registered = await register_user(client)
@@ -602,12 +613,12 @@ async def test_corrupted_workflow_snapshot_fails_run(
     async def on_event(name: str, data: dict) -> None:
         if name != "run.interrupted":
             return
-        # 挂起期间直接改库损坏快照：非空 list 但含非 dict 项。
+        # 挂起期间直接改库损坏快照：非空 list 但混入非 dict 项。
         async with get_session_factory()() as session:
             run = await session.get(Run, uuid.UUID(run_id))
             assert run is not None
             caps = dict(run.capabilities or {})
-            caps["workflow_steps"] = [1, 2, 3]
+            caps["workflow_steps"] = corrupted_steps
             run.capabilities = caps
             await session.commit()
         decided = await client.post(

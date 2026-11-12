@@ -2,8 +2,9 @@
 
 覆盖任务书测试清单：两次 start_chat（成功/失败模型异常）后 GET runs 返回 2 行
 且终态与 run 一致、排序 created_at DESC、cursor 翻页不重不漏、系统模板 403
-forbidden、他人 user 模板 404、无 runs 空列表、cancel 接口驱动 canceled 同步；
-另含 ``sync_workflow_run_status`` 服务层规则直测（终态同名/幂等/非终态不落库/
+forbidden、他人 user 模板 404、无 runs 空列表、cancel 接口驱动 canceled 同步、
+审批超时巡检取消 run 后映射行同步追平（T9 验收补测）；另含
+``sync_workflow_run_status`` 服务层规则直测（终态同名/幂等/非终态不落库/
 无对应行 no-op）。
 
 ``workflow_runs`` 的插行属于 T5 的 chat 链路：测试用服务层直启 + 手动插行模拟
@@ -13,21 +14,26 @@ T5 的映射行（run 已提交后插入 running 行），T4 的同步逻辑负�
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 import pytest
 from sqlalchemy import select
 
+from app.db.models.approval import Approval
 from app.db.models.chat import Run
 from app.db.models.conversation import Conversation
 from app.db.models.user import User
 from app.db.models.workflow import Workflow, WorkflowRun
 from app.db.session import get_session_factory
+from app.modules.a2a.client import register_test_transport
 from tests.conftest import auth_headers, collect_run_events_live, register_user
-from tests.helpers import ScriptedToolModel
+from tests.fixtures.fake_a2a_agent import FakeA2aAgent
+from tests.helpers import ScriptedToolModel, make_scripted_model
 
 # 合法单步模板：创建 API 会走装配器校验。
 SIMPLE_STEPS: list[dict[str, Any]] = [{"id": "s1", "type": "knowledge_search"}]
@@ -327,3 +333,117 @@ async def test_sync_workflow_run_status_rules(db: Any) -> None:
     # 无对应映射行（非工作流 run）：no-op，不抛异常。
     await sync_workflow_run_status(db, uuid.uuid4(), "failed")
     await db.commit()
+
+
+async def test_workflow_run_approval_timeout_syncs_status(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    admin_auth: dict[str, str],
+) -> None:
+    """T9 验收补测：审批超时取消 run 后 workflow_runs 映射行同步追平。
+
+    模式照抄 ``test_hitl_interrupt.py`` 的审批超时用例：FakeA2aAgent 原生审批
+    挂起 run（start_chat 带 ``workflow_id`` 自动生成 ``workflow_runs`` 映射行），
+    挂起期间把审批 ``expires_at`` 改为已过期并触发 ``expire_pending()`` 巡检，
+    断言 run 与映射行都被置 ``canceled``、审批置 ``expired``——与 cancel 接口
+    （``test_cancel_syncs_workflow_run``）的终态语义一致。
+    """
+    from app.modules.approvals.service import expire_pending
+    from app.modules.chat import service as chat_service
+    from app.modules.chat.schemas import ChatStreamRequest
+    from app.modules.chat.service import start_chat
+
+    # 注册强制审批的 FakeA2aAgent（原生审批链路，同 test_workflow_chat.py）。
+    agent_url = "http://a2a.test"
+    fake = FakeA2aAgent(url=agent_url, requires_approval=True)
+    register_test_transport(agent_url, httpx.ASGITransport(app=fake.app))
+    created = await client.post(
+        "/api/v1/agents", json={"url": agent_url, "slug": "fake"}, headers=admin_auth
+    )
+    assert created.status_code == 201, created.text
+
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    # a2a 单步模板走原生审批闸门（本文件的 _create_workflow 只建 SIMPLE_STEPS，不适用）。
+    workflow_resp = await client.post(
+        "/api/v1/workflows",
+        json={
+            "name": "审批超时模板",
+            "steps": [
+                {"id": "s1", "type": "a2a", "title": "委派远程", "instruction": "委派远程核对"}
+            ],
+        },
+        headers=headers,
+    )
+    assert workflow_resp.status_code == 201, workflow_resp.text
+    workflow = workflow_resp.json()
+    model = make_scripted_model(
+        [
+            {
+                "tool_calls": [
+                    {"name": "send_message", "args": {"agent": "fake", "task": "核对工单"}}
+                ]
+            },
+            {"text": "不该被消费的恢复回复"},
+        ]
+    )
+    # 服务层直启带模板的对话：start_chat 自动生成 running 的 workflow_runs 行。
+    monkeypatch.setattr(chat_service, "build_chat_model", lambda settings: model)
+    async with get_session_factory()() as session:
+        user = await session.scalar(
+            select(User).where(User.id == uuid.UUID(registered["user"]["id"]))
+        )
+        assert user is not None
+        result = await start_chat(
+            session,
+            user,
+            ChatStreamRequest(
+                message="跑一次审批流程", workflow_id=uuid.UUID(workflow["id"])
+            ),
+        )
+    run_id = str(result.run_id)
+
+    events = await collect_run_events_live(run_id, stop_on={"run.interrupted"}, timeout=30)
+    names = [name for name, _ in events]
+    assert "run.interrupted" in names
+    approval_id = next(data["approvals"][0] for name, data in events if name == "run.interrupted")
+
+    # 把审批改为已过期，再触发巡检（避免等待真实 30 分钟）。
+    async with get_session_factory()() as session:
+        approval = await session.get(Approval, uuid.UUID(approval_id))
+        assert approval is not None
+        approval.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+        await session.commit()
+
+    canceled = await expire_pending()
+    assert uuid.UUID(run_id) in {uuid.UUID(str(item)) for item in canceled}
+
+    replay = await collect_run_events_live(run_id, stop_on={"message.done"}, timeout=30)
+    assert replay[-1][0] == "message.done"
+    assert replay[-1][1]["finish_reason"] == "canceled"
+    assert replay[-1][1]["reason"] == "approval_timeout"
+
+    # _finalize_canceled 在后台任务被 halt 后异步收尾：轮询等待映射行追平。
+    run_uuid = uuid.UUID(run_id)
+    row: WorkflowRun | None = None
+    run: Run | None = None
+    final_approval: Approval | None = None
+    deadline = asyncio.get_running_loop().time() + 10
+    while asyncio.get_running_loop().time() < deadline:
+        async with get_session_factory()() as session:
+            row = await session.scalar(select(WorkflowRun).where(WorkflowRun.run_id == run_uuid))
+            run = await session.get(Run, run_uuid)
+            final_approval = await session.get(Approval, uuid.UUID(approval_id))
+        if (
+            row is not None
+            and row.status == "canceled"
+            and run is not None
+            and run.status == "canceled"
+        ):
+            break
+        await asyncio.sleep(0.2)
+
+    assert row is not None, "workflow_runs 映射行不存在"
+    assert row.status == "canceled"
+    assert run is not None and run.status == "canceled"
+    assert final_approval is not None and final_approval.status == "expired"

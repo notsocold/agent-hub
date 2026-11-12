@@ -94,7 +94,7 @@ _SSE_RESPONSES: dict[int | str, dict] = {
     },
     409: {
         "model": ErrorEnvelopeOut,
-        "description": "`run_in_progress`（同会话已有未结束运行，`details.run_id` 指向占锁运行）或 `workflow_disabled`（M1 未实现工作流）",
+        "description": "`run_in_progress`（同会话已有未结束运行，`details.run_id` 指向占锁运行）或 `workflow_disabled`（全局工作流开关关闭，或模板已停用；用 `GET /system/info` 的 `capabilities.workflows` 与 message 可区分两者）",
     },
     422: {
         "model": ErrorEnvelopeOut,
