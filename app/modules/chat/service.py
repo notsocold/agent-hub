@@ -71,6 +71,7 @@ from app.modules.chat.schemas import (
     RunOut,
     RunPendingOut,
     RunResumeResult,
+    RunWorkflowOut,
 )
 from app.modules.chat.tools import (
     ToolRunner,
@@ -194,14 +195,19 @@ async def _validate_workflow(
 ) -> Workflow | None:
     """按模板语义校验请求携带的 workflow_id，返回可见模板行；未携带返回 None。
 
-    错误语义（spike 报告 §3.1）：不存在/不可见 → 404（不泄露他人模板存在性）；
-    已停用 → 409 ``workflow_disabled``；请求版本与当前 version 不匹配 → 409
+    错误语义（spike 报告 §3.1）：``workflows_enabled`` 开关关闭 → 409
+    ``workflow_disabled``（恢复 M1 占位语义；检查点在最前，关闭时不做后续校验）；
+    不存在/不可见 → 404（不泄露他人模板存在性）；已停用 → 409
+    ``workflow_disabled``；请求版本与当前 version 不匹配 → 409
     ``workflow_version_conflict``；steps 未过装配器校验 → 422
-    ``workflow_steps_invalid``（消息拼前 3 条）。``workflows_enabled`` 开关门禁
-    属于 T7，本任务不接入。
+    ``workflow_steps_invalid``（消息拼前 3 条）。
     """
     if payload.workflow_id is None:
         return None
+    # T7 能力开关门禁：关闭时直接拒绝，不做可见性/版本/steps 校验；
+    # 模板 CRUD 配置面不受此开关影响（同 M8 R1 惯例，workflows router 不读它）。
+    if not get_settings().workflows_enabled:
+        raise ConflictError("工作流能力未启用", code="workflow_disabled")
     workflow = await get_visible_workflow(db, user, payload.workflow_id)
     if workflow is None:
         raise NotFoundError("工作流不存在")
@@ -527,7 +533,11 @@ async def prepare_runtime(
     if raw_workflow_id:
         snapshot_steps = run_capabilities.get("workflow_steps")
         if isinstance(snapshot_steps, list) and snapshot_steps:
-            workflow_steps = [dict(item) for item in snapshot_steps if isinstance(item, dict)]
+            # T5 审查交接：非空快照混入非 dict 项属于损坏快照——若静默过滤掉会
+            # 退化成空白名单放行全部工具，必须与回退查表路径对齐转运行数据缺失。
+            if not all(isinstance(item, dict) for item in snapshot_steps):
+                _raise_missing_run_data()
+            workflow_steps = [dict(item) for item in snapshot_steps]
             workflow_name = str(run_capabilities.get("workflow_name") or "")
         else:
             try:
@@ -1596,6 +1606,17 @@ async def get_run(db: AsyncSession, user: User, run_id: uuid.UUID) -> RunOut:
         if run.error_code
         else None
     )
+    # M9/T7：workflow 概要从 run.capabilities 快照构造（id/name/version）；
+    # 模板删除后快照仍在，这里不回查 workflows 表；无 workflow_id → None。
+    run_caps = run.capabilities or {}
+    raw_workflow_id = run_caps.get("workflow_id")
+    workflow_out = None
+    if raw_workflow_id:
+        workflow_out = RunWorkflowOut(
+            id=uuid.UUID(str(raw_workflow_id)),
+            name=str(run_caps.get("workflow_name") or ""),
+            version=int(run_caps.get("workflow_version") or 1),
+        )
     return RunOut(
         id=run.id,
         conversation_id=run.conversation_id,
@@ -1603,7 +1624,7 @@ async def get_run(db: AsyncSession, user: User, run_id: uuid.UUID) -> RunOut:
         source=run.source,
         model=run.model or None,
         reasoning_effort=run.reasoning_effort,
-        workflow=None,
+        workflow=workflow_out,
         capabilities=_normalize_capabilities(run.capabilities),
         usage=usage,
         started_at=run.started_at,

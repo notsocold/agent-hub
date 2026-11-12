@@ -128,6 +128,8 @@ class Settings(BaseSettings):
     mcp_enabled: bool = True
     attachments_enabled: bool = True
     approvals_enabled: bool = True
+    # M9：工作流能力开关；只门禁 chat 执行面，模板 CRUD 配置面不受影响。
+    workflows_enabled: bool = True
 
     # ------------------------------------------------------------------ MCP（M1.5）
     mcp_user_stdio_enabled: bool = False

@@ -28,6 +28,7 @@ import httpx
 import pytest
 from sqlalchemy import select
 
+from app.core.config import reset_settings_cache
 from app.core.prompt_guard import SUSPICIOUS_INPUT_NOTE
 from app.core.security import hash_password
 from app.db.models.chat import Run
@@ -451,3 +452,180 @@ async def test_execute_run_early_exit_syncs_workflow_run(client: httpx.AsyncClie
     events = await collect_run_events_live(str(run_id), timeout=30)
     assert events[-1][0] == "message.done"
     assert events[-1][1]["finish_reason"] == "canceled"
+
+
+# ------------------------------------------------- T7：能力开关与 run.workflow 输出
+
+
+@pytest.fixture
+def workflows_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """关闭 ``WORKFLOWS_ENABLED`` 并清配置缓存；用例结束恢复默认（模式同知识库开关测试）。"""
+    monkeypatch.setenv("WORKFLOWS_ENABLED", "false")
+    reset_settings_cache()
+    yield
+    reset_settings_cache()
+
+
+async def test_workflows_disabled_rejects_chat_with_409(
+    client: httpx.AsyncClient, workflows_disabled: None
+) -> None:
+    """开关关闭：chat 带 workflow_id → 409 workflow_disabled；模板 CRUD 不受开关影响。"""
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    # 配置面不受开关影响：关闭状态下创建模板仍应成功（201）。
+    workflow = await _create_workflow(client, headers)
+
+    response = await client.post(
+        "/api/v1/chat/stream",
+        json={"message": "按流程处理", "workflow_id": workflow["id"]},
+        headers=headers,
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "workflow_disabled"
+
+
+async def test_system_info_reports_workflows_false_when_disabled(
+    client: httpx.AsyncClient, workflows_disabled: None
+) -> None:
+    """开关关闭：GET /system/info 的 capabilities.workflows 为 False。"""
+    registered = await register_user(client)
+    response = await client.get(
+        "/api/v1/system/info", headers=auth_headers(registered["access_token"])
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["capabilities"]["workflows"] is False
+
+
+async def test_system_info_reports_workflows_true_by_default(
+    client: httpx.AsyncClient,
+) -> None:
+    """开关默认开：capabilities.workflows 为 True。"""
+    registered = await register_user(client)
+    response = await client.get(
+        "/api/v1/system/info", headers=auth_headers(registered["access_token"])
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["capabilities"]["workflows"] is True
+
+
+async def test_get_run_returns_workflow_from_snapshot(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GET /runs/{id} 的 workflow 字段与发起一致（从 run.capabilities 快照构造）。"""
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    workflow = await _create_workflow(client, headers, name="快照输出模板")
+    model = make_scripted_model([{"text": "快照输出回复"}])
+    run_id = await _start_workflow_chat(monkeypatch, registered, model, workflow_id=workflow["id"])
+    await collect_run_events_live(run_id, stop_on={"message.done"}, timeout=30)
+
+    response = await client.get(f"/api/v1/runs/{run_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["workflow"] == {
+        "id": workflow["id"],
+        "name": "快照输出模板",
+        "version": 1,
+    }
+
+
+async def test_get_run_workflow_is_none_without_workflow(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """未携带 workflow_id 的 run：workflow 字段为 None（M1 占位语义保持）。"""
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    model = make_scripted_model([{"text": "普通回复"}])
+    run_id = await _start_workflow_chat(monkeypatch, registered, model)
+    await collect_run_events_live(run_id, stop_on={"message.done"}, timeout=30)
+
+    response = await client.get(f"/api/v1/runs/{run_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["workflow"] is None
+
+
+async def test_get_run_keeps_snapshot_after_workflow_delete(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """DELETE 模板后 run 查询仍返回快照 name（不回查 workflows 表）。"""
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    workflow = await _create_workflow(client, headers, name="删除后快照模板")
+    model = make_scripted_model([{"text": "删除后回复"}])
+    run_id = await _start_workflow_chat(monkeypatch, registered, model, workflow_id=workflow["id"])
+    await collect_run_events_live(run_id, stop_on={"message.done"}, timeout=30)
+
+    deleted = await client.delete(f"/api/v1/workflows/{workflow['id']}", headers=headers)
+    assert deleted.status_code == 204, deleted.text
+
+    response = await client.get(f"/api/v1/runs/{run_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["workflow"] == {
+        "id": workflow["id"],
+        "name": "删除后快照模板",
+        "version": 1,
+    }
+
+
+async def test_corrupted_workflow_snapshot_fails_run(
+    client: httpx.AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    admin_auth: dict[str, str],
+) -> None:
+    """T5 审查交接：快照非空 list 但含非 dict 项时必须转失败，不得空白名单放行。
+
+    服务层直启一轮带原生审批的对话；挂起期间直接改库把
+    ``run.capabilities.workflow_steps`` 篡改为 ``[1, 2, 3]``，approve 恢复轮读到
+    损坏快照 → 与回退查表路径对齐转运行数据缺失 → 事件 error、run 失败，且
+    第二轮脚本回复永远不会被消费（没有静默按无工作流执行）。
+    """
+    await _register_fake_agent(client, admin_auth, requires_approval=True)
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+    workflow = await _create_workflow(
+        client,
+        headers,
+        name="损坏快照模板",
+        steps=[{"id": "s1", "type": "a2a", "title": "委派远程", "instruction": "委派远程核对"}],
+    )
+    model = make_scripted_model(
+        [
+            {
+                "tool_calls": [
+                    {"name": "send_message", "args": {"agent": "fake", "task": "核对工单"}}
+                ]
+            },
+            {"text": "不该被消费的恢复回复"},
+        ]
+    )
+    run_id = await _start_workflow_chat(monkeypatch, registered, model, workflow_id=workflow["id"])
+
+    async def on_event(name: str, data: dict) -> None:
+        if name != "run.interrupted":
+            return
+        # 挂起期间直接改库损坏快照：非空 list 但含非 dict 项。
+        async with get_session_factory()() as session:
+            run = await session.get(Run, uuid.UUID(run_id))
+            assert run is not None
+            caps = dict(run.capabilities or {})
+            caps["workflow_steps"] = [1, 2, 3]
+            run.capabilities = caps
+            await session.commit()
+        decided = await client.post(
+            f"/api/v1/approvals/{data['approvals'][0]}/decision",
+            json={"decision": "approve"},
+            headers=headers,
+        )
+        assert decided.status_code == 200, decided.text
+
+    events = await collect_run_events_live(run_id, on_event=on_event, timeout=30)
+    names = [name for name, _ in events]
+    assert "run.interrupted" in names
+    assert names[-1] == "error"
+
+    async with get_session_factory()() as session:
+        run = await session.get(Run, uuid.UUID(run_id))
+        assert run is not None
+        assert run.status == "failed"
+
+    # 恢复轮没有调用模型：prepare_runtime 在快照校验处即失败。
+    assert len(model.captured) == 1

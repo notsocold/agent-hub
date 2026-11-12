@@ -68,7 +68,7 @@ def build_system_info(settings: Settings | None = None) -> SystemInfoOut:
             mcp=settings.mcp_enabled,
             knowledge=settings.knowledge_enabled,
             attachments=settings.attachments_enabled,
-            workflows=False,
+            workflows=settings.workflows_enabled,
             approvals=settings.approvals_enabled,
             # M2 出站已实现：与入站 A2A_ENABLED 无关，始终为 true。
             agents=True,
