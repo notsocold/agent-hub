@@ -317,6 +317,23 @@ M5 起审批恢复走 LangGraph `Command(resume=...)`，决定接口的 `resumed
 `secret:NAME` 引用只允许管理员写入（普通用户 → 422 `secret_ref_not_allowed`），运行时无条件解析；
 接口与审计永不回显明文或密文。
 
+### 2.16 工作流（M9 已实现）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/v1/workflows` | 创建本人步骤模板（201；`scope=user`、`version=1`、`enabled=true`） |
+| GET | `/api/v1/workflows` | 系统模板 + 本人模板（`created_at DESC` 游标分页，`limit` 1–100 默认 20） |
+| GET | `/api/v1/workflows/{id}` | 详情（系统或本人 → 200；他人/不存在统一 404，不泄露存在性） |
+| PATCH | `/api/v1/workflows/{id}` | 修改本人模板（全字段可选，只提交变更字段；成功必 `version += 1`） |
+| PUT | `/api/v1/workflows/{id}/enabled` | 启停本人模板（`{"enabled": bool}`；只改 `enabled` 位，不改 `version`） |
+| DELETE | `/api/v1/workflows/{id}` | 硬删本人模板（204；`workflow_runs` 随外键级联删除） |
+| GET | `/api/v1/workflows/{id}/runs` | 运行历史（仅模板 owner；系统模板 403 `forbidden`，他人/不存在 404） |
+
+- 系统模板**人人可读**（含在列表与详情中），但**任何人不可改删**（写操作统一按不存在 404）；
+  无 `/admin/workflows` 管理端点（system 模板由运维/种子数据写入）。
+- 模板 CRUD 配置面不受 `WORKFLOWS_ENABLED` 开关影响（同 M8 R1 惯例）；开关只门禁
+  `POST /chat/stream` 带 `workflow_id` 的运行入口。形状与语义详见 §13。
+
 ## 3. 聊天 SSE 契约
 
 ### 3.1 请求
@@ -349,8 +366,11 @@ Accept: text/event-stream
 | `mcp_servers` | 否 | 本轮强制纳入的 MCP 服务器，≤ 5 个 |
 | `mcp_tools` | 否 | 本轮强制纳入的 MCP 工具，≤ 10 个 |
 | `knowledge_categories` | 否 | 本轮检索的知识库分类（≤ `KNOWLEDGE_CATEGORIES_PER_MESSAGE`，默认 5）；作为 `search_knowledge` 工具的默认分类过滤 |
+| `workflow_id` | 否 | 本轮使用的步骤模板 ID（M9）；与 `skills`/`mcp_servers`/`mcp_tools`/`knowledge_categories` 互斥（同用 422 `workflow_context_conflict`） |
+| `workflow_version` | 否 | 期望的模板版本（≥1）；与 `workflow_id` 搭配，不匹配当前 `version` 时 409 `workflow_version_conflict`；不能脱离 `workflow_id` 单独携带（422）。省略时按模板当前版本发起 |
 
-> 显式选择只影响本次请求，不写回账号配置；MCP 写工具仍需审批。
+> 显式选择只影响本次请求，不写回账号配置；MCP 写工具仍需审批。工作流的 steps/tools
+> 以发起时快照冻结进 run（§13.6），不随本轮后续模板修改变化。
 
 ### 3.2 响应
 
@@ -1240,3 +1260,239 @@ A2A `auth_required` 的 `authorization_url` 来自远程 Agent，属不可信数
   M8 的 15 个操作 403 描述统一为「需要管理员权限（`forbidden`，
   `details.required_role="admin"`）」，公共 409/422/503 与 `ErrorBodyOut.code` 描述补充管理台错误码；
 - **M8 无迁移**：未新增/修改表、列或索引；未新增配置项或环境变量；迁移 head 仍为 `2d8f6a1c3e70`。
+
+## 13. M9 工作流实现状态（2026-11-12）
+
+> 机器可读契约以 [`openapi.json`](openapi.json) 为准（由 `scripts/export_openapi.py` 导出，
+> 应与代码一致）。M9 状态：**后端已交付（2026-11-12，Task 1–7）；前端尚未接入**。前端接入清单见
+> [M9 前端交接](feedback/2026-11-12-m9-frontend-handoff.md)。M9 **新增数据库迁移**
+> `e8b4f2a6c9d3`（`down_revision=2d8f6a1c3e70`，两表 + 两索引 + CHECK，可逆），部署前需
+> `alembic upgrade head`；新增配置项 `WORKFLOWS_ENABLED`（默认 `true`）。
+> 权限基调：系统模板人人可读、任何人不可改删；写操作仅限本人 `user` 模板；无管理端点。
+
+### 13.1 端点总表
+
+| 方法 | 路径 | 成功 | 响应模型 | 说明 |
+|---|---|---|---|---|
+| POST | `/api/v1/workflows` | 201 | `WorkflowOut` | 创建本人模板；`scope=user`、`version=1`、`enabled=true` |
+| GET | `/api/v1/workflows` | 200 | `WorkflowListOut` | 系统模板 + 本人模板；`created_at DESC, id DESC` 游标分页 |
+| GET | `/api/v1/workflows/{workflow_id}` | 200 | `WorkflowOut` | 详情；系统或本人可读，他人/不存在统一 404 |
+| PATCH | `/api/v1/workflows/{workflow_id}` | 200 | `WorkflowOut` | 修改本人模板；成功必 `version += 1`（见 §13.6） |
+| PUT | `/api/v1/workflows/{workflow_id}/enabled` | 200 | `WorkflowOut` | 启停本人模板；只改 `enabled` 位，不改 `version` |
+| DELETE | `/api/v1/workflows/{workflow_id}` | 204 | — | 硬删本人模板；`workflow_runs` 随外键级联删除 |
+| GET | `/api/v1/workflows/{workflow_id}/runs` | 200 | `WorkflowRunListOut` | 运行历史；仅模板 owner 可查（系统模板 403） |
+
+- 未登录 401 `unauthorized`；模板 CRUD 不读 `WORKFLOWS_ENABLED` 开关（配置面不受能力
+  总开关影响，同 M8 R1 惯例）。
+- 分页参数同既有惯例：`limit`（1–100，默认 20）、`cursor`（不透明，非法 422
+  `validation_error`）；`next_cursor` 为空表示没有更多页。
+- 模板可见性与越权口径：他人 user 模板与不存在统一 404 `not_found`（不泄露存在性）；
+  系统模板（`owner_user_id` 为空）对写操作同样按不存在 404。
+
+### 13.2 请求与响应形状
+
+`WorkflowOut`（列表与详情同形，恰好 9 个字段）：
+
+```json
+{
+  "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "scope": "user",
+  "name": "退货处理流程",
+  "description": "检索政策后委派远程助手复核",
+  "steps": [
+    {"id": "s1", "type": "knowledge_search", "title": "检索政策", "instruction": "查退货政策要点"},
+    {"id": "s2", "type": "a2a", "title": "委派复核", "instruction": "让远程助手复核结论"}
+  ],
+  "enabled": true,
+  "version": 3,
+  "created_at": "2026-11-12T12:00:00Z",
+  "updated_at": "2026-11-12T12:30:00Z"
+}
+```
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | uuid | 模板 ID |
+| `scope` | `"system" \| "user"` | 系统模板 / 本人模板 |
+| `name` | str | strip 后 1–100 字符；**不得包含双引号或换行符**（`<workflow name="…">` prompt 锚点依赖，违规 422） |
+| `description` | str | strip 后 ≤500 字符（允许空串；缺省 `""`） |
+| `steps` | array | 步骤数组；形状约束唯一口径是装配器校验（§13.3），schema 层只保证「是数组」 |
+| `enabled` | bool | 停用后 `POST /chat/stream` 带 `workflow_id` 返回 409 `workflow_disabled` |
+| `version` | int | 从 1 起；PATCH 成功必 +1，`PUT enabled` 不变（§13.6） |
+| `created_at` / `updated_at` | datetime | UTC ISO-8601 |
+
+请求体：
+
+| 端点 | 请求体 | 说明 |
+|---|---|---|
+| `POST /workflows` | `{"name": str, "description": str = "", "steps": array}` | `name`/`steps` 必填，`description` 缺省空串 |
+| `PATCH /workflows/{id}` | `{"name"?, "description"?, "steps"?}` | 全字段可选，`null`/缺省 = 不修改该字段；**只提交变更字段**（§13.6） |
+| `PUT /workflows/{id}/enabled` | `{"enabled": bool}` | 必填布尔 |
+
+`WorkflowRunOut`（`GET /workflows/{id}/runs` 的列表项）：
+
+```json
+{
+  "id": "0d5c2f6a-8b3e-4c1d-9a7f-1e2d3c4b5a6f",
+  "run_id": "6f1c2b3a-4d5e-4f60-8a9b-0c1d2e3f4a5b",
+  "status": "succeeded",
+  "created_at": "2026-11-12T12:00:00Z",
+  "run_status": "succeeded",
+  "run_finished_at": "2026-11-12T12:00:08.500000Z",
+  "run_duration_ms": 8500,
+  "run_error_code": null
+}
+```
+
+- `status` 是映射行自身状态（创建即 `running`，由 chat 终态回调追平为
+  `succeeded`/`failed`/`canceled`；审批挂起期间保持 `running`，`interrupted` 不落映射行）；
+- `run_status` / `run_finished_at` / `run_duration_ms` / `run_error_code` 是 join 的
+  chat run 终态快照（外连接，run 行缺失时为 `null`）；
+- 列表按映射行 `created_at DESC, id DESC` 游标分页，响应 `{items, next_cursor, has_more}`。
+
+### 13.3 steps schema 与五类步骤语义
+
+步骤示例（五类齐全）：
+
+```json
+[
+  {"id": "s1", "type": "knowledge_search", "title": "检索政策", "instruction": "查退货政策要点"},
+  {"id": "s2", "type": "tool",             "title": "调内部工具", "config": {"tools": ["mcp__srv__tool"]}},
+  {"id": "s3", "type": "a2a",              "title": "委派远程", "instruction": "让远程助手复核"},
+  {"id": "s4", "type": "approval",         "title": "外发审批", "config": {"tools": ["send_message"]}},
+  {"id": "s5", "type": "answer",           "title": "汇总回答"}
+]
+```
+
+形状约束（装配器一次性收集全部错误，不短路；违规 422 `workflow_steps_invalid`，
+message 拼接前 3 条）：
+
+- `steps` 必须是非空数组，且 **≤12 步**；
+- 每步必须是对象：`id` 非空字符串且全表唯一；`type` ∈ 下列五类；`title`/`instruction`
+  可选字符串（`instruction` ≤500 字符）；`config` 可选对象；
+- `tool` 步骤必须显式提供非空 `config.tools`（非空字符串列表，单个工具名 ≤200 字符）；
+- 全部文本（所有 `id`/`title`/`instruction`/`config.tools` 工具名拼接）总长 ≤8000 字符；
+- `config` 键由后端原样透传，CRUD 层不自造结构校验。
+
+五类步骤语义：
+
+| type | 提供的工具 | 语义 |
+|---|---|---|
+| `knowledge_search` | `search_knowledge` | 检索知识库（固定工具） |
+| `tool` | `config.tools` 显式清单 | 通用工具步骤（如 MCP 工具） |
+| `a2a` | `send_message` | 委派远程 Agent |
+| `approval` | 无（不进白名单） | `config.tools` 里的工具**无论原生策略一律强制审批**（在原生判定之后兜底）；不是独立调度点，本身不产生事件 |
+| `answer` | 无 | 汇总回答；不提供工具 |
+
+执行语义：
+
+- 运行入口是 `POST /chat/stream` 带 `workflow_id`（§3.1）：模板名与步骤注入 system prompt
+  （`<workflow name="…">` 段落，含「严格按序推进、禁止步骤外工具调用」约束句），
+  实际可用工具 = 各步骤允许工具的**严格并集**（`save_memory` 等基础工具不默认放行；
+  白名单为空不过滤，防御坏模板）；
+- `workflow.step` 事件按「工具名 → 模板顺序首个提供该工具的步骤」映射发出（§13.5）；
+  不做强制调度，模型按 prompt 自行推进；`approval`/`answer` 步骤不提供工具，不会命中事件；
+- 模板与手动能力上下文互斥（§3.1 的 `workflow_context_conflict`）。
+
+### 13.4 错误码表
+
+CRUD 侧（`/workflows*`）：
+
+| 场景 | HTTP | code | 说明 |
+|---|---|---|---|
+| 未登录 / token 失效 | 401 | `unauthorized` | 全站一致 |
+| 他人模板或不存在（GET/PATCH/PUT/DELETE） | 404 | `not_found` | message「工作流不存在」；不泄露存在性 |
+| `name` 空/超 100 字符/含双引号或换行；`description` 超 500；`steps` 不是数组；游标非法 | 422 | `validation_error` | pydantic/DTO 层校验 |
+| steps 未过装配器校验（§13.3 约束） | 422 | `workflow_steps_invalid` | message 拼接前 3 条装配器错误 |
+| `GET /workflows/{id}/runs` 且模板是 system | 403 | `forbidden` | message「系统模板的运行数据属各用户，不可查看」 |
+| `GET /workflows/{id}/runs` 且模板是他人/不存在 | 404 | `not_found` | 不泄露存在性 |
+
+`POST /chat/stream` 带 `workflow_id` 的校验（按代码检查顺序）：
+
+| 场景 | HTTP | code | 说明 |
+|---|---|---|---|
+| `WORKFLOWS_ENABLED=false` 且带 `workflow_id` | 409 | `workflow_disabled` | message「工作流能力未启用」；**检查最前**，关闭时不做可见性/版本/steps 校验 |
+| 模板不存在或不可见 | 404 | `not_found` | message「工作流不存在」 |
+| 模板已停用（`enabled=false`） | 409 | `workflow_disabled` | message「工作流已停用，无法在此轮使用」 |
+| `workflow_version` 与模板当前 `version` 不匹配 | 409 | `workflow_version_conflict` | message「工作流版本已更新，请刷新模板后重试」 |
+| 模板 steps 不合法（存量坏模板） | 422 | `workflow_steps_invalid` | message 拼接前 3 条 |
+| `workflow_id` 与 `skills`/`mcp_servers`/`mcp_tools`/`knowledge_categories` 同用 | 422 | `workflow_context_conflict` | M1 既有互斥语义 |
+| `workflow_version` 脱离 `workflow_id` 单独携带 | 422 | `validation_error` | message「workflow_version 不能脱离 workflow_id 使用」 |
+
+> **`workflow_disabled` 二义消歧**：全局开关关闭与单个模板停用共用此 code。前端可从
+> `GET /system/info` 的 `capabilities.workflows` 区分——该键为 `false` 时任何
+> `workflow_disabled` 都来自全局开关；两者 message 也不同（「工作流能力未启用」vs
+> 「工作流已停用，无法在此轮使用」）。
+
+### 13.5 `workflow.step` 事件帧
+
+每个工具执行完成后、紧跟对应 `tool.result` 发出；SSE 帧格式与全站一致（§3.2）：
+
+```text
+id: 7
+event: workflow.step
+data: {"run_id":"6f1c2b3a-4d5e-4f60-8a9b-0c1d2e3f4a5b","ts":"2026-11-12T12:00:05.123456Z","seq":7,"step_id":"s1","step_type":"knowledge_search","step_title":"检索政策","tool":"search_knowledge","status":"ok"}
+```
+
+- `data` 是单行 JSON，恰好 8 个键：公共 3 键（`run_id`/`ts`/`seq`，与其他事件一致）+
+  payload 5 键（`step_id`/`step_type`/`step_title`/`tool`/`status`）；
+- `step_id`/`step_type`/`step_title` 取步骤对象的对应键值（模板里缺失时为空串 `""`）；
+  `tool` 是实际执行的工具名；`status` 复用工具执行状态（`ok`/`error`/`rejected`）；
+- 仅当本轮 run 携带模板且该工具命中某步骤（工具名 → 模板顺序首个提供该工具的步骤）
+  时发出；未携带模板的 run 不产生该事件；`approval`/`answer` 步骤不提供工具，不会命中；
+- 事件落库（`GET /runs/{id}/events` 回放中 `type="workflow"`、`event="workflow.step"`），
+  `title` 为「工作流步骤 <step_title 或 step_id>」，`subtitle` 为工具结果摘要（≤200 字符）；
+- `seq` 是 run 内单调递增序号（SSE `id` 同值）；`message.delta`/`reasoning.delta` 不落库，
+  事件回放时允许跳号，`workflow.step` 与 `tool.result` 落库可回放；
+- 审批挂起（`interrupt`）期间工具不执行；恢复后才依次产生 `tool.result` 与
+  `workflow.step`，事件顺序天然正确。
+
+### 13.6 快照与版本规则
+
+**版本规则（PATCH 面）**：
+
+- PATCH 成功**必 `version += 1`**：含仅改 `name`/`description`；**空 body（或全字段为
+  `null`）也会递增** `version` 并写审计 `workflow.updated`（`detail.fields=[]`）——
+  前端 PATCH 应只提交变更字段，避免「读-改-全量 PATCH」的习惯在无实际修改时意外抬版本；
+  版本一旦上抬，前端缓存的 `workflow_version` 发起时会撞 409 `workflow_version_conflict`；
+- `PUT enabled` 只改 `enabled` 位，**不改 `version`**——启停不影响已持有的版本号；
+- PATCH 时若提交 `steps`，整个数组整体替换（不做步骤级 diff/合并）。
+
+**快照规则（run 面）**：
+
+- 发起时（与 run 同一事务）把 `workflow_id`/`workflow_version`/`workflow_steps`/`workflow_name`
+  冻结进 `run.capabilities`，并写入 `runs.workflow_id`/`runs.workflow_version` 列（无外键）；
+  同时插入 `workflow_runs` 映射行（创建即 `running`，`run_id` 唯一索引）；
+- 恢复轮（审批 resume）从快照读 steps 注入 system prompt 与工具白名单，**不回读模板表**：
+  模板在挂起期间被 PATCH/停用/删除都不影响恢复行为（实测覆盖：挂起期间 PATCH steps，
+  恢复后仍按旧步骤执行）；
+- `GET /runs/{id}` 的 `workflow` 字段 `{id, name, version}` 由发起时快照构造（不回查
+  workflows 表）：**模板删除后仍返回快照 name/version**；
+- `workflow_version` 请求参数是发起入口的乐观锁（对当前模板版本校验），不是恢复轮的
+  版本依据——恢复永远用快照。
+
+### 13.7 权限、可见性与审计
+
+- 读：系统模板 + 本人模板出现在列表与详情；他人 user 模板 404（不泄露存在性）；
+- 写：仅本人 `scope='user'` 模板；系统模板 `owner_user_id` 为空，写操作（PATCH/PUT/DELETE）
+  一律按不存在 404；**无 `/admin/workflows` 管理端点**（v1 系统模板由运维/种子数据写入）；
+- 运行历史：仅模板 owner 可查；系统模板 403 `forbidden`（运行数据属各用户）；
+  他人模板/不存在 404；
+- 审计动作：`workflow.created` / `workflow.updated` / `workflow.enabled` / `workflow.deleted`
+  （`actor_type=user`、`resource_type=workflow`；`detail` 只含字段名与状态值，
+  不含 steps 内容）。
+
+### 13.8 验证与迁移
+
+- 迁移 `e8b4f2a6c9d3`（`down_revision=2d8f6a1c3e70`，down 到位即回到 M8 收口）：
+  新增 `workflows` 与 `workflow_runs` 两表——`workflows`（`scope` CHECK `system|user`、
+  `owner_user_id` 外键 CASCADE、`steps` JSONB 默认 `'[]'`、`enabled` 默认 true、
+  `version` 默认 1）与 `workflow_runs`（`status` CHECK
+  `running|succeeded|failed|canceled|interrupted` 默认 `running`、`run_id` 唯一索引
+  `uq_workflow_runs_run`、`(workflow_id, created_at DESC)` 索引）。两表结构以迁移
+  `e8b4f2a6c9d3` 为准；**部署前执行 `alembic upgrade head`**；
+- 测试环境：CI / 本地跑集成测试需 `TEST_DATABASE_URL` 指向带 pgvector 扩展的 PostgreSQL；
+  未设置或库不可用时相关用例**静默 skip**（不要把大量 skip 误判为全绿）；
+- 能力开关：`WORKFLOWS_ENABLED`（默认 `true`）只门禁 `POST /chat/stream` 带 `workflow_id`
+  的运行入口；关闭时 409 `workflow_disabled`；`GET /system/info` 的
+  `capabilities.workflows` 反映开关；模板 CRUD 配置面不受开关影响（R1 惯例）。

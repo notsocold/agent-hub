@@ -55,6 +55,7 @@ flowchart TB
 | `modules/memories` | 长期记忆的写入策略、检索、管理接口 | 单次会话上下文（由 checkpoint 负责） |
 | `modules/instructions` | 指令解析、覆盖合并、审计 | 基础系统提示词（代码内置） |
 | `modules/admin`（M8） | 管理台配置面：`/admin/*` 薄路由、用户管理/概览 SQL 与视图装配 | 系统项领域规则（保留在 instructions/skills/mcp/agents） |
+| `modules/workflows`（M9） | 步骤模板 CRUD/可见性、装配器纯函数（校验/白名单/强制审批/事件映射/prompt 渲染）、运行历史视图 | 步骤调度推进（模型按注入的 prompt 自行推进，无独立引擎） |
 | `db/` | ORM 模型、会话、迁移、向量检索 SQL（`db/vector`，M4 已实现） | 业务规则 |
 | `core/` | 配置、日志、中间件、异常、鉴权原语 | 业务模块依赖 |
 

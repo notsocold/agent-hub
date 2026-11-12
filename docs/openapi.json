@@ -14753,6 +14753,1032 @@
         }
       }
     },
+    "/api/v1/workflows": {
+      "post": {
+        "tags": [
+          "工作流"
+        ],
+        "summary": "Create Workflow",
+        "description": "创建本人步骤模板（scope=user、version=1、enabled=True）。",
+        "operationId": "create_workflow_api_v1_workflows_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "工作流"
+        ],
+        "summary": "List Workflows",
+        "description": "系统模板 + 本人模板，按 ``created_at DESC`` 游标分页。",
+        "operationId": "list_workflows_api_v1_workflows_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowListOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/{workflow_id}": {
+      "get": {
+        "tags": [
+          "工作流"
+        ],
+        "summary": "Get Workflow",
+        "description": "详情：系统或本人 → 200；他人/不存在 → 404。",
+        "operationId": "get_workflow_api_v1_workflows__workflow_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "工作流"
+        ],
+        "summary": "Update Workflow",
+        "description": "PATCH 本人模板（系统/他人一律 404）：成功 ``version += 1``。",
+        "operationId": "update_workflow_api_v1_workflows__workflow_id__patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "工作流"
+        ],
+        "summary": "Delete Workflow",
+        "description": "硬删本人模板（``workflow_runs`` 随 FK CASCADE）。",
+        "operationId": "delete_workflow_api_v1_workflows__workflow_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/{workflow_id}/enabled": {
+      "put": {
+        "tags": [
+          "工作流"
+        ],
+        "summary": "Set Workflow Enabled",
+        "description": "启停本人模板：只改 ``enabled`` 位，不改 version。",
+        "operationId": "set_workflow_enabled_api_v1_workflows__workflow_id__enabled_put",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkflowEnabledRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workflows/{workflow_id}/runs": {
+      "get": {
+        "tags": [
+          "工作流"
+        ],
+        "summary": "List Workflow Runs",
+        "description": "运行历史：仅模板 owner 可查；系统模板 403，他人/不存在 404。",
+        "operationId": "list_workflow_runs_api_v1_workflows__workflow_id__runs_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workflow_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workflow Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 500
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowRunListOut"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求不合法（bad_request）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未认证、access token 过期或刷新令牌失效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限、账号停用，或能力未启用（capability_disabled / auth_flow_unavailable）；管理端需要管理员权限（forbidden，details.required_role=\"admin\"）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在（也用于隐藏他人资源）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突：run_in_progress（details.run_id）、run_not_cancelable（details.status）、run_not_resumable、workflow_disabled、approval_already_decided、approval_expired；管理台另有last_admin_protected（details.active_admins=1）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大（payload_too_large）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "参数校验失败（validation_error）、模型不在白名单（model_not_allowed），或管理台业务校验码（cannot_change_own_role / cannot_disable_self / instruction_too_long / mcp_ssrf_blocked 等）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "触发限流（rate_limited），details.retry_after_seconds 为建议重试秒数",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误（internal_error）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "依赖服务不可用（service_unavailable，如 Embedding 服务不可达），或平台密钥存储不可用（secret_store_unavailable）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelopeOut"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/system/info": {
       "get": {
         "tags": [
@@ -21712,6 +22738,300 @@
           "last_login_at"
         ],
         "title": "UserOut"
+      },
+      "WorkflowCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "steps": {
+            "items": {},
+            "type": "array",
+            "title": "Steps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "steps"
+        ],
+        "title": "WorkflowCreate",
+        "description": "创建请求：``name``/``steps`` 必填，``description`` 缺省为空串。"
+      },
+      "WorkflowEnabledRequest": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "WorkflowEnabledRequest",
+        "description": "``PUT /workflows/{id}/enabled`` 请求体。"
+      },
+      "WorkflowListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "WorkflowListOut",
+        "description": "游标分页列表：``next_cursor`` 为空表示没有更多页。"
+      },
+      "WorkflowOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "system",
+              "user"
+            ],
+            "title": "Scope"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "steps": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Steps"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "scope",
+          "name",
+          "description",
+          "steps",
+          "enabled",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WorkflowOut",
+        "description": "工作流视图：列表与详情共用。"
+      },
+      "WorkflowRunListOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowRunOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "WorkflowRunListOut",
+        "description": "运行历史游标分页列表：按映射行 ``created_at DESC`` 排序。"
+      },
+      "WorkflowRunOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "run_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Status"
+          },
+          "run_finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Finished At"
+          },
+          "run_duration_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Duration Ms"
+          },
+          "run_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Error Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "run_id",
+          "status",
+          "created_at",
+          "run_status",
+          "run_finished_at",
+          "run_duration_ms",
+          "run_error_code"
+        ],
+        "title": "WorkflowRunOut",
+        "description": "工作流运行记录视图：``run_*`` 字段来自 join 的 ``runs`` 行，无对应行时为 None。\n\n``status`` 是映射行自身状态（创建即 ``running``，由 chat 终态同步追平）；\n``run_*`` 是 chat run 的终态快照（status/finished_at/duration_ms/error_code）。"
+      },
+      "WorkflowUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "steps": {
+            "anyOf": [
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Steps"
+          }
+        },
+        "type": "object",
+        "title": "WorkflowUpdate",
+        "description": "PATCH 请求：全部可选，``None`` 表示不修改该字段。"
       }
     },
     "securitySchemes": {

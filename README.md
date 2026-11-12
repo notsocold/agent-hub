@@ -4,23 +4,25 @@
 
 配套前端：[agent-hub-web](../../NodeJsProjects/agent-hub-web)（Vue 3 + TypeScript + Vite）。
 
-> **当前状态：M8 管理台后端已完成（2026-11-11，独立审查通过）；前端尚未接入。**
+> **当前状态：M9 工作流后端已完成（2026-11-12）；前端尚未接入。**
 > M6 生产化与可观测已完成（结构化日志 / Prometheus 指标 / OTel Trace、`/readyz`、
 > Dockerfile + 生产 Compose、优雅停机、启动恢复、数据清理、流式实时过滤、CI）。
 > M7 新增：运行事件 SSE 续流端点、回放 `event` 字段、agents/tasks 写操作管理员 RBAC、
 > `approval.required` 5 个展示字段、A2A `authorization_url` 后端白名单；
 > M8 新增：用户/角色管理、只读概览、平台指令、系统技能、系统 MCP、全局 Agent 共 15 个
 > `/admin/*` 端点；管理端配置面不受能力总开关影响（R1）；全局 Agent 采用「全部未软删」
-> 注册表口径（R8）；无迁移、无新配置项。全量回归 **825 passed, 1 skipped**；ruff 全绿；
-> 空库 `alembic upgrade head` + `alembic check` 通过、无漂移；OpenAPI 无 diff；
-> 迁移 head `2d8f6a1c3e70`（M7/M8 均无迁移）。
+> 注册表口径（R8）；无迁移、无新配置项。
+> M9 新增：步骤模板 CRUD/启停/运行历史（7 个 `/workflows` 端点）、`POST /chat/stream`
+> 的 `workflow_id`/`workflow_version` 快照执行、`workflow.step` 事件、
+> `WORKFLOWS_ENABLED` 能力开关；迁移 `e8b4f2a6c9d3`。
 > 前端 M4/M5/M6 已完成并联调（2026-11-11）；M7 后端契约已交付，前端待按
 > [M7 前端交接](docs/feedback/2026-11-11-m7-frontend-handoff.md) 接入（「逐字续流」尚未前端验收）。
 > M8 前端接入见 [M8 前端交接](docs/feedback/2026-11-11-m8-frontend-handoff.md)，
 > 回归证据见 [M8 后端交付报告](docs/feedback/2026-11-11-m8-backend-report.md)；
 > M8 前端页面与联调尚未开始。
-> 后续 **M9（工作流）已于 2026-11-11 立项、未开始**，
-> 见 [M7–M9 立项](docs/superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md)。
+> M9 前端接入见 [M9 前端交接](docs/feedback/2026-11-12-m9-frontend-handoff.md)，
+> 契约细节见 [API 契约](docs/api.md) §13。
+> 迁移 head `e8b4f2a6c9d3`（M9 两表迁移；M7/M8 无迁移），部署前执行 `alembic upgrade head`。
 
 ## 1. 项目定位
 
@@ -155,9 +157,10 @@ curl http://localhost:8000/healthz
 curl http://localhost:8000/api/v1/system/info   # 需要先登录拿 Bearer token
 ```
 
-## 6. 当前状态（M8 管理台后端 · 已完成）
+## 6. 当前状态（M9 工作流后端 · 后端已完成）
 
-后端里程碑 M0–M8 已完成（M3 入站按 2026-11-10 需求变更取消；M8 已完成，独立审查通过，前端待接入）：
+后端里程碑 M0–M9 已完成（M3 入站按 2026-11-10 需求变更取消；M8 已完成，独立审查通过，
+前端待接入；M9 后端已交付，前端待接入）：
 
 | 里程碑 | 状态 |
 |---|---|
@@ -170,6 +173,7 @@ curl http://localhost:8000/api/v1/system/info   # 需要先登录拿 Bearer toke
 | M6 生产化与可观测 | 后端已完成（2026-11-11） |
 | M7 契约补齐与安全收口 | 已完成（2026-11-11；后端契约已交付，前端待接入） |
 | M8 管理台后端 | 已完成（2026-11-11；独立审查通过，前端待接入） |
+| M9 工作流后端 | 后端已完成（2026-11-12）；前端待接入 |
 
 M6 交付：
 
@@ -230,6 +234,20 @@ M8 交付（**已完成 2026-11-11，独立审查通过**；前端待接入；�
 - 契约文档、OpenAPI 与前端交接同步（[M8 前端交接](docs/feedback/2026-11-11-m8-frontend-handoff.md)）；
   **无数据库迁移、无新增配置项/环境变量**（空库 `alembic upgrade head` + `check` 已实测）。
 
+M9 交付（**后端已完成 2026-11-12**；前端待接入；契约见 [API 契约](docs/api.md) §13）：
+
+- 步骤模板 MVP：`workflows`/`workflow_runs` 两表迁移 `e8b4f2a6c9d3`（可逆），
+  五类步骤 `knowledge_search`/`tool`/`a2a`/`approval`/`answer`；
+- 7 个 `/workflows` 端点：CRUD、`PUT /{id}/enabled`（不改 version）、
+  `GET /{id}/runs`（仅 owner；系统模板 403）；系统模板人人可读、不可改删，无管理端点；
+- `POST /chat/stream` 新增 `workflow_id`/`workflow_version`：steps/name/version 冻结进
+  run 快照，恢复轮与后续模板修改解耦；`GET /runs/{id}` 返回快照 `workflow`（模板删除后仍在）；
+- `workflow.step` 事件：`tool.result` 后按「工具名 → 步骤」映射发出（payload 5 键），
+  落库可回放；
+- 能力开关 `WORKFLOWS_ENABLED`（默认 `true`）：只门禁运行入口，`capabilities.workflows`
+  反映开关；CRUD 配置面不受影响（R1 惯例）；
+- 契约文档、OpenAPI 与前端交接同步（[M9 前端交接](docs/feedback/2026-11-12-m9-frontend-handoff.md)）。
+
 明确未包含：
 
 - [-] M3：A2A 入站 Server（需求变更取消）；
@@ -242,8 +260,10 @@ M8 交付（**已完成 2026-11-11，独立审查通过**；前端待接入；�
 - [ ] M8 管理台前端接入：后端 15 个 `/admin/*` 端点与
       [M8 前端交接](docs/feedback/2026-11-11-m8-frontend-handoff.md) 已交付，前端页面与联调尚未开始；
       M8 后端已完成、独立审查通过（2026-11-11），前端接入后另做联调验收；
-- [ ] M9（工作流后端）：已立项、未开始（见 [路线图](docs/roadmap.md) 与
-      [立项文档](docs/superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md)）。
+- [ ] M9 前端接入：后端契约与
+      [M9 前端交接](docs/feedback/2026-11-12-m9-frontend-handoff.md) 已交付（模板管理页、
+      发起带 `workflow_id`、`workflow.step` 步骤卡），前端页面与联调尚未开始；
+      M9 全量回归证据待收口轮补记。
 
 本地假 Agent 联调（详见 [M2 交付报告](docs/feedback/2026-11-09-m2-backend-report.md)）：
 
@@ -293,12 +313,16 @@ curl -X POST http://127.0.0.1:8000/api/v1/agents \
 | [M8 实施计划](docs/superpowers/plans/2026-11-11-m8-admin-console.md) | 管理台 15 个端点、文档 / OpenAPI / 前端 handoff 与回归的任务拆分 |
 | [M8 前端交接](docs/feedback/2026-11-11-m8-frontend-handoff.md) | 管理台认证/403、用户/概览/系统项页面接入、错误码与联调自测清单 |
 | [M8 后端交付报告](docs/feedback/2026-11-11-m8-backend-report.md) | M8 全量回归证据（825 passed）、R1–R10 裁定、R8 偏差、最终审查修复、遗留项与验收对照 |
+| [M9 Spike 报告](docs/superpowers/specs/2026-11-12-m9-spike-report.md) | 步骤模板注入执行模型的机制验证、执行语义裁决与步骤 schema |
+| [M9 实施计划](docs/superpowers/plans/2026-11-12-m9-workflow-backend.md) | 工作流表/装配器/CRUD/chat 接入/事件/开关的任务拆分 |
+| [M9 前端交接](docs/feedback/2026-11-12-m9-frontend-handoff.md) | 模板管理接入、发起示例、错误语义、`workflow.step` 帧与联调自测清单 |
 
 ## 9. 下一步
 
-后端 M0–M8 已完成（M8 已完成，独立审查通过；前端待接入）；后续工作交给部署与前端：
+后端 M0–M9 已完成（M8 已完成，独立审查通过；M9 后端已交付；前端均待接入）；后续工作交给部署与前端：
 
-1. 按 [生产部署](docs/deployment.md) 在目标环境执行 `alembic upgrade head`、配置 JWT/LLM/OTLP 与 Compose；
+1. 按 [生产部署](docs/deployment.md) 在目标环境执行 `alembic upgrade head`（M9 起迁移
+   head 为 `e8b4f2a6c9d3`）、配置 JWT/LLM/OTLP 与 Compose；
 2. 在部署环境验证 Grafana 看板、告警与真实 LB 滚动发布（本地只做了排水与故障演练）；
 3. 前端 M4/M5/M6 已完成；M7 后端契约已交付，前端按
    [M7 前端交接](docs/feedback/2026-11-11-m7-frontend-handoff.md) 接入 SSE 续流、写操作 403 与审批新字段；
@@ -307,8 +331,10 @@ curl -X POST http://127.0.0.1:8000/api/v1/agents \
 4. M8 管理台：后端 15 个 `/admin/*` 端点、独立审查与最终回归已完成（825 passed/1 skipped），
    前端按 [M8 前端交接](docs/feedback/2026-11-11-m8-frontend-handoff.md) 接入用户/概览/系统项页面
    （见 [M8 后端交付报告](docs/feedback/2026-11-11-m8-backend-report.md)）；
-5. 需要多实例时再单独设计 Redis 事件总线/共享限流/跨实例 resume，不在 M6/M7/M8 范围；
-6. M9（工作流后端）按立项顺序启动，需先冻结契约。
+5. M9 工作流：后端契约与 OpenAPI 已交付，前端按
+   [M9 前端交接](docs/feedback/2026-11-12-m9-frontend-handoff.md) 接入模板管理与
+   `workflow.step` 步骤卡（见 [API 契约](docs/api.md) §13）；
+6. 需要多实例时再单独设计 Redis 事件总线/共享限流/跨实例 resume，不在 M6–M9 范围。
 
 编码前建议阅读：
 

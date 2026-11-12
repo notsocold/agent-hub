@@ -19,7 +19,7 @@
 | M6 生产化与可观测 | 后端已完成（2026-11-11） | 日志/OTel/指标/readyz/Dockerfile+Compose/清理/启动恢复/流式过滤/压测/CI；582 测试通过；Grafana 与真实 LB 滚动未实测 |
 | M7 契约补齐与安全收口 | 已完成（2026-11-11；后端契约与全量回归完成，前端待接入） | 事件回放 `event` + SSE 续流端点、agents/tasks 写操作 RBAC、审批事件字段、A2A 授权 URL 白名单、契约/OpenAPI/前端 handoff；无迁移；760 passed / 1 skipped（最终修复后）、ruff 全绿、`alembic check` 无漂移、OpenAPI 无 diff |
 | M8 管理台后端（原 X2） | 已完成（2026-11-11；独立审查通过，前端待接入） | 15 个 `/admin/*` 端点：用户/角色、只读概览、平台指令、系统技能、系统 MCP、全局 Agent；管理端配置面绕过能力开关（R1）、全局 Agent 全局注册表口径（R8）；无迁移；825 passed / 1 skipped、ruff 全绿、空库 `alembic upgrade head`/`check` 通过、OpenAPI 无 diff |
-| M9 工作流后端（原 X1） | 已立项（2026-11-11），未开始 | 轻量步骤模板 MVP（检索/工具/A2A/审批/回答）；先 spike，不引入外部引擎 |
+| M9 工作流后端（原 X1） | 后端已完成（2026-11-12，Task 1–8）；前端待接入 | 步骤模板 MVP：迁移 `e8b4f2a6c9d3`（`workflows`/`workflow_runs` 两表，可逆）、7 个 `/workflows` 端点、chat `workflow_id` 快照执行、`workflow.step` 事件、`WORKFLOWS_ENABLED` 开关；契约见 [API 契约](api.md) §13，交接见 [M9 前端交接](feedback/2026-11-12-m9-frontend-handoff.md)；全量回归证据待收口轮补记 |
 
 > 注：M1.5 是追加的中间里程碑，排在 M1 之后、M2 之前，不改动原 M2–M6 的编号含义。
 
@@ -299,24 +299,28 @@
 - [x] 独立审查通过（2026-11-11；最终修复轮 `504cd39`，复审剩余 Minor 行宽已修）
 - [ ] 前端管理台页面接入与联调（前端 M8 范围；后端契约与 handoff 已交付）
 
-## M9 工作流后端（原 X1，已立项 2026-11-11；未开始）
+## M9 工作流后端（原 X1，后端已完成 2026-11-12；前端待接入）
 
 **目标**：把技能、检索、A2A、MCP 与审批编排成轻量步骤模板。
 
-> 设计见 [M7–M9 立项](superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md) §5。
-> 启动前先做 1 天技术 spike，确认模板注入不破坏主图工具选择。
+> 设计见 [M7–M9 立项](superpowers/specs/2026-11-11-m7-m9-backend-roadmap-design.md) §5，
+> spike 见 [M9 Spike 报告](superpowers/specs/2026-11-12-m9-spike-report.md)，
+> 实施计划见 [M9 实施计划](superpowers/plans/2026-11-12-m9-workflow-backend.md)。
+> 状态口径：Task 1–7（后端）与 Task 8（契约文档、OpenAPI、前端 handoff）已交付；
+> 契约真相见 [API 契约](api.md) §13 与 [M9 前端交接](feedback/2026-11-12-m9-frontend-handoff.md)；
+> 前端接入尚未开始。全量回归证据由收口轮补记。
 
 范围（MVP）：
 
-- [ ] `workflows` / `workflow_runs` 表与迁移（可逆）
-- [ ] 步骤类型：`knowledge_search` / `tool` / `a2a` / `approval` / `answer`
-- [ ] CRUD/启停/运行入口（`POST /chat/stream` 的 `workflow_id`）/运行历史
-- [ ] `workflow.step` 事件与前端 handoff
+- [x] `workflows` / `workflow_runs` 表与迁移（可逆；`e8b4f2a6c9d3`，`down_revision=2d8f6a1c3e70`）
+- [x] 步骤类型：`knowledge_search` / `tool` / `a2a` / `approval` / `answer`
+- [x] CRUD/启停/运行入口（`POST /chat/stream` 的 `workflow_id`）/运行历史
+- [x] `workflow.step` 事件与前端 handoff
 
 验收：
 
-- [ ] 3 步模板（检索 → A2A → 审批）跑通，取消/失败/审批超时语义一致
-- [ ] 不做 DAG/并行/外部引擎；迁移可逆；全量测试通过
+- [ ] 3 步模板（检索 → A2A → 审批）跑通，取消/失败/审批超时语义一致（代码已交付并有专项用例；验收勾选待全量回归证据）
+- [ ] 不做 DAG/并行/外部引擎；迁移可逆；全量测试通过（待收口轮复核勾选）
 
 ## 待决策 / 开放问题
 
