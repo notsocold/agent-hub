@@ -110,6 +110,8 @@ class ToolRunner:
         conversation_id: uuid.UUID | None = None,
         citations: list[dict] | None = None,
         knowledge_categories: list[str] | None = None,
+        workflow_steps: list[dict] | None = None,
+        force_approval_tools: set[str] | None = None,
     ) -> None:
         self.run_id = run_id
         self.publisher = publisher
@@ -123,6 +125,10 @@ class ToolRunner:
         self.citations = citations if citations is not None else []
         # 本轮请求选择的分类，作为 search_knowledge 的默认过滤条件。
         self.knowledge_categories = list(knowledge_categories or [])
+        # M9（T5 仅落快照）：步骤快照与强制审批工具集合；workflow.step 事件映射
+        # 与强制审批 gate 的消费逻辑属于 T6，这里不做任何行为。
+        self.workflow_steps = list(workflow_steps or [])
+        self.force_approval_tools = set(force_approval_tools or ())
 
     # ------------------------------------------------------------------ 图入口
 

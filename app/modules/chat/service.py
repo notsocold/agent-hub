@@ -47,6 +47,7 @@ from app.db.models.chat import Run, RunEvent
 from app.db.models.conversation import Conversation, Message
 from app.db.models.remote import A2aTask, RemoteAgent
 from app.db.models.user import User
+from app.db.models.workflow import Workflow, WorkflowRun
 from app.db.session import get_session_factory
 from app.modules.chat import capabilities as capabilities_module
 from app.modules.chat.approvals import build_approval_gate, build_halt_gate
@@ -83,7 +84,14 @@ from app.modules.conversations.schemas import (
     MessageErrorOut,
     UsageOut,
 )
-from app.modules.workflows.service import sync_workflow_run_status
+from app.modules.workflows.assembler import (
+    filter_tools,
+    force_approval,
+    prompt_section,
+    tool_allowlist,
+    validate_steps,
+)
+from app.modules.workflows.service import get_visible_workflow, sync_workflow_run_status
 
 logger = logging.getLogger(__name__)
 
@@ -175,11 +183,40 @@ def _check_capabilities(payload: ChatStreamRequest) -> None:
 
     ``knowledge_categories`` 的启用门禁（唯一一处）：开关关闭时 403，
     开启时直接放行（分类只作为 search_knowledge 的默认过滤条件）。
+    workflow_id 的校验已交给 ``_validate_workflow``（M9），此处不再占位拒绝。
     """
     if payload.knowledge_categories and not get_settings().knowledge_enabled:
         raise CapabilityDisabledError("知识库能力未启用")
-    if payload.workflow_id is not None:
-        raise ConflictError("工作流能力尚未启用", code="workflow_disabled")
+
+
+async def _validate_workflow(
+    db: AsyncSession, user: User, payload: ChatStreamRequest
+) -> Workflow | None:
+    """按模板语义校验请求携带的 workflow_id，返回可见模板行；未携带返回 None。
+
+    错误语义（spike 报告 §3.1）：不存在/不可见 → 404（不泄露他人模板存在性）；
+    已停用 → 409 ``workflow_disabled``；请求版本与当前 version 不匹配 → 409
+    ``workflow_version_conflict``；steps 未过装配器校验 → 422
+    ``workflow_steps_invalid``（消息拼前 3 条）。``workflows_enabled`` 开关门禁
+    属于 T7，本任务不接入。
+    """
+    if payload.workflow_id is None:
+        return None
+    workflow = await get_visible_workflow(db, user, payload.workflow_id)
+    if workflow is None:
+        raise NotFoundError("工作流不存在")
+    if not workflow.enabled:
+        raise ConflictError("工作流已停用，无法在此轮使用", code="workflow_disabled")
+    if payload.workflow_version is not None and payload.workflow_version != workflow.version:
+        raise ConflictError(
+            "工作流版本已更新，请刷新模板后重试", code="workflow_version_conflict"
+        )
+    errors = validate_steps(workflow.steps)
+    if errors:
+        raise ValidationFailedError(
+            f"工作流步骤不合法：{'；'.join(errors[:3])}", code="workflow_steps_invalid"
+        )
+    return workflow
 
 
 async def _load_owned_run(db: AsyncSession, user: User, run_id: uuid.UUID) -> Run:
@@ -225,6 +262,7 @@ async def start_chat(db: AsyncSession, user: User, payload: ChatStreamRequest) -
     if payload.reasoning_effort not in {None, "low", "medium", "high"}:
         raise ValidationFailedError("推理等级不合法", code="reasoning_effort_invalid")
     _check_capabilities(payload)
+    workflow = await _validate_workflow(db, user, payload)
     await validate_chat_selections(db, user, payload)
 
     reasoning_effort = payload.reasoning_effort or "low"
@@ -236,6 +274,13 @@ async def start_chat(db: AsyncSession, user: User, payload: ChatStreamRequest) -
         "knowledge_categories": list(payload.knowledge_categories),
         "workflow_id": str(payload.workflow_id) if payload.workflow_id else None,
     }
+    if workflow is not None:
+        # M9 模板快照（与 run 同一事务原子落库）：steps/name 冻结进 capabilities，
+        # 恢复轮与模板 PATCH/删除解耦；workflow_name 供 T7 的 run 查询在模板
+        # 删除后仍可显示。
+        capabilities["workflow_version"] = workflow.version
+        capabilities["workflow_steps"] = list(workflow.steps or [])
+        capabilities["workflow_name"] = workflow.name
 
     is_new = payload.conversation_id is None
     if is_new:
@@ -310,11 +355,18 @@ async def start_chat(db: AsyncSession, user: User, payload: ChatStreamRequest) -
         capabilities=capabilities,
         idempotency_key=payload.client_message_id,
         started_at=now,
+        # M9：模板列快照（无外键，模板删除不影响 run 读取）。
+        workflow_id=payload.workflow_id,
+        workflow_version=workflow.version if workflow is not None else None,
     )
     db.add(run)
     await db.flush()
     user_message.run_id = run.id
     assistant_message.run_id = run.id
+    if workflow is not None:
+        # M9：runs 行先 flush（FK 依赖 run.id），再插 workflow_runs 映射行；
+        # 创建即 running，终态由 _finalize_* 里的 sync_workflow_run_status 追平。
+        db.add(WorkflowRun(workflow_id=workflow.id, run_id=run.id, status="running"))
 
     conversation.last_message_at = now
     conversation.last_message_preview = payload.message[:80]
@@ -466,6 +518,27 @@ async def prepare_runtime(
         user_message.attachments = assembled.attachment_snapshot
         await db.commit()
 
+    # M9：从 capabilities 快照读模板步骤与名称。恢复轮模板可能已被 PATCH/删除，
+    # 必须用快照（快照原则：一次 run 的执行语义在 start_chat 时冻结）；快照缺失
+    # （异常数据）回退查表兜底，查不到或 steps 已不合法则按运行关联数据缺失处理。
+    workflow_steps: list[dict[str, Any]] = []
+    workflow_name = ""
+    raw_workflow_id = run_capabilities.get("workflow_id")
+    if raw_workflow_id:
+        snapshot_steps = run_capabilities.get("workflow_steps")
+        if isinstance(snapshot_steps, list) and snapshot_steps:
+            workflow_steps = [dict(item) for item in snapshot_steps if isinstance(item, dict)]
+            workflow_name = str(run_capabilities.get("workflow_name") or "")
+        else:
+            try:
+                workflow = await db.get(Workflow, uuid.UUID(str(raw_workflow_id)))
+            except (ValueError, TypeError):
+                workflow = None
+            if workflow is None or validate_steps(workflow.steps):
+                _raise_missing_run_data()
+            workflow_steps = list(workflow.steps or [])
+            workflow_name = workflow.name
+
     runner = ToolRunner(
         run_id=run.id,
         publisher=publisher,
@@ -480,6 +553,9 @@ async def prepare_runtime(
         knowledge_categories=[
             str(item) for item in run_capabilities.get("knowledge_categories", [])
         ],
+        # M9：步骤快照与强制审批集合（消费逻辑属 T6）。
+        workflow_steps=workflow_steps,
+        force_approval_tools=force_approval(workflow_steps),
     )
     tools = [
         *build_native_tools(runner),
@@ -489,6 +565,8 @@ async def prepare_runtime(
     send_message_tool = build_send_message_tool(runner, assembled.a2a_agent_map)
     if send_message_tool is not None:
         tools.append(send_message_tool)
+    # M9：按模板白名单过滤工具（空白名单不过滤，防御坏模板）；保持原顺序。
+    tools = filter_tools(tools, tool_allowlist(workflow_steps))
 
     content_parts: list[str] = []
     reasoning_parts: list[str] = []
@@ -506,6 +584,9 @@ async def prepare_runtime(
         }
 
     system_prompt = assembled.system_prompt
+    # M9：模板段落拼在 prompt_guard 附注之前，保证安全提醒始终位于提示词末尾。
+    if workflow_steps:
+        system_prompt = f"{system_prompt}\n\n{prompt_section(workflow_name, workflow_steps)}"
     settings = get_settings()
     if settings.prompt_guard_enabled:
         findings = scan_injection(user_message.content)
@@ -955,6 +1036,10 @@ async def execute_run(context: RunContext, is_new_conversation: bool) -> None:
                         conversation.message_count += 1
                         conversation.last_message_at = _now()
                         conversation.last_message_preview = "（已取消）"
+                        # M9/T4 交接：该分支不走 _finalize_canceled，须在同一事务
+                        # 内补同步 workflow_runs 行，避免 start 后立即取消的
+                        # run 让映射行停留 running。
+                        await sync_workflow_run_status(db, run.id, "canceled")
                         await db.commit()
                     await context.publisher.emit(
                         "message.done",
@@ -1259,7 +1344,8 @@ async def _finalize_success(
                 conversation.last_message_at = finished_at
                 conversation.last_message_preview = content[:80]
                 conversation.message_count += 1
-            # T4：同一事务内追平工作流映射行（无对应行 no-op，非工作流 run 不受影响）。
+            # T4：同一事务内追平工作流映射行（无对应行 no-op，非工作流 run 不受影响）；
+            # sync 失败即放弃本轮 finalize（同一事务，无 savepoint），由恢复链路兜底。
             await sync_workflow_run_status(db, run_id, "succeeded")
         model_name = run.model if run is not None else ""
         await db.commit()
@@ -1319,7 +1405,8 @@ async def _finalize_canceled(
             conversation.last_message_at = now
             conversation.last_message_preview = content[:80] or "（已取消）"
             conversation.message_count += 1
-        # T4：同一事务内追平工作流映射行（无对应行 no-op）。
+        # T4：同一事务内追平工作流映射行（无对应行 no-op）；
+        # sync 失败即放弃本轮 finalize（同一事务，无 savepoint），由恢复链路兜底。
         await sync_workflow_run_status(db, run_id, "canceled")
         await db.commit()
         message_id = run.assistant_message_id
@@ -1403,7 +1490,8 @@ async def _finalize_failed(
             conversation.last_message_preview = content[:80] or "（失败）"
             conversation.message_count += 1
         model_name = run.model
-        # T4：同一事务内追平工作流映射行（无对应行 no-op）。
+        # T4：同一事务内追平工作流映射行（无对应行 no-op）；
+        # sync 失败即放弃本轮 finalize（同一事务，无 savepoint），由恢复链路兜底。
         await sync_workflow_run_status(db, run_id, "failed")
         await db.commit()
 
