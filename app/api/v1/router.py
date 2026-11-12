@@ -21,6 +21,7 @@ from app.modules.secrets.router import router as secrets_router
 from app.modules.skills.router import router as skills_router
 from app.modules.system.router import router as system_router
 from app.modules.tasks.router import router as tasks_router
+from app.modules.workflows.router import router as workflows_router
 
 # 所有业务端点共享的错误信封；集中声明，避免 OpenAPI 只有 2xx/422。
 COMMON_ERROR_RESPONSES: dict[int | str, dict] = {
@@ -83,4 +84,5 @@ api_router.include_router(skills_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(mcp_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(agents_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(tasks_router, responses=COMMON_ERROR_RESPONSES)
+api_router.include_router(workflows_router, responses=COMMON_ERROR_RESPONSES)
 api_router.include_router(system_router, responses=COMMON_ERROR_RESPONSES)
