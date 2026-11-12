@@ -71,6 +71,7 @@ from app.modules.mcp.service import clear_test_transports
 reset_settings_cache()
 
 _TABLES = (
+    "workflow_runs, workflows, "
     "knowledge_chunks, knowledge_documents, a2a_tasks, remote_agents, skill_files, "
     "mcp_tools, user_capability_overrides, skills, "
     "mcp_servers, attachments, memories, tool_invocations, run_events, approvals, runs, "

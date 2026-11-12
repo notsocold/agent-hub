@@ -16,6 +16,7 @@ from app.db.models.secret import PlatformSecret
 from app.db.models.skill import Skill, SkillFile
 from app.db.models.system import SystemSetting, UserSetting
 from app.db.models.user import RefreshToken, User
+from app.db.models.workflow import Workflow, WorkflowRun
 
 __all__ = [
     "A2aTask",
@@ -41,4 +42,6 @@ __all__ = [
     "User",
     "UserCapabilityOverride",
     "UserSetting",
+    "Workflow",
+    "WorkflowRun",
 ]
