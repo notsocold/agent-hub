@@ -41,6 +41,7 @@ from app.modules.knowledge import service as knowledge_service
 from app.modules.mcp.service import ChatMcpTool, _client_for
 from app.modules.memories import service as memories_service
 from app.modules.skills import service as skills_service
+from app.modules.workflows.assembler import step_for_tool
 
 logger = logging.getLogger(__name__)
 
@@ -125,8 +126,8 @@ class ToolRunner:
         self.citations = citations if citations is not None else []
         # 本轮请求选择的分类，作为 search_knowledge 的默认过滤条件。
         self.knowledge_categories = list(knowledge_categories or [])
-        # M9（T5 仅落快照）：步骤快照与强制审批工具集合；workflow.step 事件映射
-        # 与强制审批 gate 的消费逻辑属于 T6，这里不做任何行为。
+        # M9（T6）：步骤快照与强制审批工具集合（T5 注入的快照数据），
+        # workflow.step 事件映射与强制审批 gate 在本模块内消费。
         self.workflow_steps = list(workflow_steps or [])
         self.force_approval_tools = set(force_approval_tools or ())
 
@@ -241,6 +242,27 @@ class ToolRunner:
                 subtitle=summary[:200],
                 duration_ms=elapsed_ms(started),
             )
+            # M9（T6）：workflow.step 事件——工具完成后按「工具名 → 首个命中步骤」
+            # 映射 emit（模板顺序，approval/answer 步骤不提供工具、不会命中）。
+            # 仅当模板步骤非空且命中时发；payload 恰为 5 键，status 复用工具执行的
+            # status（ok/error/rejected）。审批挂起轮工具未执行（gate interrupt），
+            # 恢复后才产生 tool.result + workflow.step，事件顺序天然正确。
+            if self.workflow_steps and (step := step_for_tool(self.workflow_steps, name)):
+                await self.publisher.emit(
+                    "workflow.step",
+                    {
+                        "step_id": step.get("id") or "",
+                        "step_type": step.get("type") or "",
+                        "step_title": step.get("title") or "",
+                        "tool": name,
+                        "status": status,
+                    },
+                    event_type="workflow",
+                    status="error" if status == "error" else "ok",
+                    title=f"工作流步骤 {step.get('title') or step.get('id')}",
+                    subtitle=summary[:200],
+                    duration_ms=elapsed_ms(started),
+                )
             return ToolMessage(content=content, tool_call_id=tool_call_id, name=name)
 
     def _classify(self, name: str, args: dict[str, Any] | None = None) -> tuple[str, str | None]:
@@ -534,6 +556,16 @@ class ToolRunner:
                     executor=agent.slug,
                     target=agent.url,
                 )
+        # M9（T6）：workflow 的 approval 步骤强制审批兜底——在原生判定之后，
+        # 集合内的工具无论原生策略（MCP/A2A requires_approval）一律走审批 gate。
+        if name in self.force_approval_tools:
+            return ApprovalSpec(
+                tool_name=name,
+                display_name=name,
+                risk="unknown",
+                source=self._classify(name, args)[0],
+                executor=name,
+            )
         return None
 
     async def _approval_guard(self, tool_call_id: str) -> ToolRunOutcome | None:
