@@ -1,0 +1,112 @@
+# LangChain 模拟智能体清单（示例）
+#
+# 用法：
+#   uv run python scripts/mock_langchain_agents.py --config scripts/mock_agents.example.yaml
+#   uv run python scripts/mock_langchain_agents.py --config scripts/mock_agents.example.yaml --fake-llm
+#
+# 字段：
+#   slug            智能体唯一标识（同时作为注册到 agent-hub 的 slug，^[a-z0-9][a-z0-9-]{0,63}$）
+#   name            展示名（Agent Card 的 name、注册名）
+#   description     简介（Agent Card 的 description）
+#   prompt          系统提示词（决定人设与输出风格）
+#   skills          技能列表（id/name/description/tags/examples），主图据此选择智能体
+#   temperature     采样温度（0-1，默认 0.3）
+#   streaming       是否在 Agent Card 声明支持流式（默认 true）
+#   requires_approval 是否让每次调用触发 agent-hub 审批（默认 false）
+#   tools           内置工具列表：calculator / current_time（默认空）
+#   model           可选，覆盖默认 LLM 模型名（如 deepseek-chat）
+#
+# 新增智能体：复制一段改 slug/prompt 即可；slug 不能重复。
+agents:
+- slug: code-reviewer
+  name: 代码审查助手
+  description: 审查代码片段，指出缺陷、风险与可落地的改进建议
+  prompt: 你是资深代码审查助手。收到代码片段或变更描述后，按「发现的问题 → 风险 → 改进建议」输出中文审查意见；没有明显问题时明确说明。只输出审查结果，不要寒暄。
+  skills:
+  - id: code_review
+    name: 代码审查
+    description: 审查 Python/TypeScript 等代码，给出问题与改进建议
+    tags:
+    - code
+    - review
+    examples:
+    - 帮我审查这段 Python 代码
+    - 这段 SQL 有什么风险
+  temperature: 0.3
+  streaming: true
+  requires_approval: false
+  tools: []
+- slug: data-analyst
+  name: 数据分析助手
+  description: 解释数据、计算指标并给出结论与统计口径说明
+  prompt: 你是数据分析助手。根据用户给出的数据或问题，先说明统计口径与假设，再给计算过程和结论，最后列出需要注意的事项；数据不足时明确说明缺什么。用中文回答。
+  skills:
+  - id: data_analysis
+    name: 数据分析
+    description: 解释数据、计算指标、给出分析结论
+    tags:
+    - data
+    - analysis
+    examples:
+    - 这批订单数据说明了什么
+    - 帮我算一下同比增幅
+  temperature: 0.2
+  streaming: true
+  requires_approval: false
+  tools:
+  - calculator
+- slug: translator
+  name: 翻译助手
+  description: 中英互译，保留原文语气、术语与格式
+  prompt: 你是中英翻译助手。中文输入译为地道英文，英文输入译为自然中文；保留原文语气、术语和格式；只输出译文，必要时在译文后用一行说明术语选择。
+  skills:
+  - id: translate
+    name: 中英翻译
+    description: 中英互译，保留语气与术语
+    tags:
+    - translation
+    - language
+    examples:
+    - 把这段中文翻译成英文
+    - translate this paragraph
+  temperature: 0.1
+  streaming: true
+  requires_approval: false
+  tools: []
+- slug: tech-writer
+  name: 技术文档助手
+  description: 撰写结构清晰的 README、接口说明与操作手册
+  prompt: 你是技术文档助手。输出结构清晰的 Markdown（标题、步骤、示例、注意事项），面向开发者；避免空话，能给出命令或代码示例时就给出。用中文写作。
+  skills:
+  - id: doc_writing
+    name: 技术文档写作
+    description: 写 README、接口说明、操作手册
+    tags:
+    - docs
+    - writing
+    examples:
+    - 帮我写这个脚本的 README
+    - 整理一份部署操作手册
+  temperature: 0.4
+  streaming: true
+  requires_approval: false
+  tools: []
+- slug: ops-troubleshooter
+  name: 运维排障助手
+  description: 根据故障现象给出可执行的排查步骤与修复建议
+  prompt: 你是运维排障助手。按「现象 → 可能原因 → 排查步骤 → 修复建议」输出，步骤要可执行并带命令示例；不确定时给出验证方法而不是猜测。用中文回答。
+  skills:
+  - id: troubleshooting
+    name: 故障排查
+    description: 根据现象给排查步骤与修复建议
+    tags:
+    - ops
+    - troubleshooting
+    examples:
+    - 服务 502 了怎么排查
+    - 数据库连接池耗尽怎么办
+  temperature: 0.2
+  streaming: true
+  requires_approval: false
+  tools: []
+

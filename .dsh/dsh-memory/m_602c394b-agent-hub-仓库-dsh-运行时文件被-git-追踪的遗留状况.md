@@ -1,29 +1,19 @@
 ---
 id: "m_602c394b"
-title: "agent-hub 仓库 .dsh 运行时文件被 Git 追踪的遗留状况"
-summary: "agent-hub 曾把 .dsh 运行时数据（会话记录、项目记忆）提交进 Git，导致 .gitignore 对它们无效，且 .dsh/sessions/ 整目录未被忽略。"
+title: "agent-hub 仓库 .dsh 运行时数据被 Git 追踪并已推送公开仓库"
+summary: "agent-hub 的 .dsh 运行时数据被 Git 跟踪并已推到公开仓库；2026-11-11 用户明确「.dsh 不用管」，本轮不做处置。"
 kind: "project"
 importance: 3
-tags: ["git","gitignore","dsh","repo-hygiene"]
+tags: ["agent-hub","仓库卫生","git","隐私"]
 pinned: false
 status: "active"
 created: "2026-11-10T02:05:24.986Z"
-modified: "2026-11-10T02:05:24.986Z"
-revision: 1
+modified: "2026-11-11T07:10:10.073Z"
+revision: 4
 origin: "auto"
-sessionId: "session-f72adebe-dd2e-4cbc-8df8-e73189b3b24b"
-sessionTitle: "Gitignore 忽略后仍显示更改"
+sessionId: "session-19ed3c95-61c4-4fdc-961b-e2e254f421cf"
+sessionTitle: "项目待办与前端对齐排查"
 model: "deepseek-official/deepseek-flash"
 ---
 
-agent-hub 仓库的 .dsh/ 目录中曾有一批文件被 Git 追踪（早期某次 `git add -A` 导致），使 .gitignore 规则对它们完全失效——典型症状是「.gitignore 明明写了却仍在 VS Code 源代码管理里显示修改」。
-
-已处理：`.dsh/workspace-session.json` 通过 `git rm --cached` + 提交取消追踪，本地文件保留，.gitignore 规则从此生效。
-
-仍遗留（用户当时选择最小范围，未处理）：
-1. 8 个 `.dsh/sessions/*/session.v4.jsonl` 完整对话流水、17 个 `.dsh/dsh-memory/*.md` 项目记忆仍在版本库中。会话流水可能含敏感信息，仅取消追踪不能清除历史，需 rewrite 才可彻底移除。
-2. `.dsh/sessions/` 整目录没有被忽略（规则只挡 `session.lock`、`*.tmp`、`.backup/`），所以每开一个新会话就会出现新的未追踪目录，需要时补一条忽略规则。
-3. `.gitignore` 中 `.dsh/workspace-session.json` 规则重复写了两遍（第 50 与 54 行），无害但冗余。
-4. `.dsh/dsh-memory/` 是否入库是设计选择（跟仓库走以共享团队），不是 bug。
-
-排查口诀：`git ls-files --error-unmatch <路径>` 有输出即「已追踪」，需 `git rm --cached`；无输出才去查规则写法。
+agent-hub 后端 81 个 .dsh 文件（最大 7.2 MiB）与前端 54 个（约 88.3 MiB）被 Git 跟踪并已推送到公开仓库，脱敏核查无密钥，但对话正文属隐私面。2026-11-11 用户明确裁决：.dsh 不用管，后续改动/提交时也不对其做清理或移出版本控制。

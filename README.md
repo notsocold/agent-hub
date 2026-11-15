@@ -274,6 +274,18 @@ curl -X POST http://127.0.0.1:8000/api/v1/agents \
   -d '{"url": "http://127.0.0.1:9100"}'
 ```
 
+LangChain 模拟智能体集群（默认 5 个角色，启动后自动注册，详见
+[脚本说明](scripts/README.md#langchain-模拟智能体集群)）：
+
+```bash
+uv run python scripts/seed_dev_account.py --admin   # 首次：注册接口需要管理员
+uv run python scripts/mock_langchain_agents.py      # 127.0.0.1:9101 + 自动注册
+uv run python scripts/mock_langchain_agents.py --fake-llm   # 离线模式
+```
+
+注册完成后在聊天里直接说「请调用 send_message 工具，agent=code-reviewer，
+task 写……」，主图就会真实走 A2A 调用 mock 智能体。
+
 ## 7. 与 customer-service 的结构差异
 
 | 维度 | customer-service | agent-hub |

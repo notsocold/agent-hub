@@ -5,14 +5,27 @@
 
 Project: `/home/zhaodan/work/PythonProjects/agent-hub`
 
-Active topics: 31
+Active topics: 49
 
+- [agent-hub M6 范围与用户拍板的 5 项基线](m_84d15808-agent-hub-m6-范围与用户拍板的-5-项基线.md) — M6 做路线图 7 项生产化能力并承接 M5 遗留的启动恢复/流式过滤，用户定调：复用已有服务、单实例、Dockerfile+Compose、可观测走 JSON+Prometheus+OTel。 · `decision` · importance 5 · 2026-11-11
+- [agent-hub M5 HITL：独立 approval_gate 节点 + LangGraph interrupt()/Command(resume=)](m_f6e904c1-agent-hub-m5-hitl-独立-approval-gate-节点-la.md) — M5 把审批从进程内 waiter 改为独立 approval_gate 图节点上的 LangGraph interrupt()，并用 Command(resume=...) 恢复同一 run；三条实测结论决定实现形态。 · `decision` · importance 5 · 2026-11-10
 - [agent-hub 测试随机失败根因：本机系统时钟回退（非代码 bug）](m_8e9d71ce-agent-hub-测试随机失败根因-本机系统时钟回退-非代码-bug.md) — 本机 NTP 校正导致系统时钟回退（200 次采样 70 次回退，最差 -494ms），造成 JWT iat 落在未来返回 401 与耗时为负断言失败；已用 JWT leeway + elapsed_ms 夹紧消除。 · `project` · importance 5 · 2026-11-10
 - [agent-hub M4 知识库 RAG 范围与关键设计决策](m_63c9a26d-agent-hub-m4-知识库-rag-范围与关键设计决策.md) — M4 实现知识库 RAG：分类/owner/pgvector/双通道 embedding 基础上，v2 设计补齐原始文件落盘、存储双后端、fake 阈值置 0 与 scope 权限模型。 · `decision` · importance 5 · 2026-11-10
-- [agent-hub 部署/联调前必须 alembic upgrade head，测试 create_all 会掩盖迁移缺失](m_4c883c07-agent-hub-部署-联调前必须-alembic-upgrade-head-.md) — 测试库用 create_all 建表，导致开发库未跑迁移时测试全绿但真实服务上传返回 500；部署前必须执行 alembic upgrade head。 · `project` · importance 4 · 2026-11-10
+- [agent-hub 智能体注册契约：POST /api/v1/agents 必须给真实 A2A 服务](m_5f6db7db-agent-hub-智能体注册契约-post-api-v1-agents-必须给.md) — 注册智能体靠 POST URL + 后端拉 agent-card 校验，因此模拟智能体必须是真正讲 A2A 协议的服务；注册幂等但不刷新 Card。 · `reference` · importance 4 · 2026-11-13
+- [agent-hub 工作流 = 步骤模板数据 + 固定主图 + 参数注入，不是 LangGraph 节点编排](m_5bd6d7c5-agent-hub-工作流-步骤模板数据-固定主图-参数注入-不是-langgr.md) — M9 工作流不给 LangGraph 增加节点、也不编译新图，而是把 steps 模板在运行时翻译成 prompt 段、工具白名单、强制审批集合与事件映射四处注入到同一张主图上。 · `decision` · importance 4 · 2026-11-13
+- [agent-hub M8 管理台 /admin/* 端点范围与实现裁决（R8/R9/R1）](m_abb795f2-agent-hub-m8-管理台-admin-端点范围与实现裁决-r8-r9-r.md) — M8 新增 15 个 AdminUser 门禁的 /admin/* 端点，并定下全局 Agent 口径、审计过滤、配置面与并发保护等裁决。 · `decision` · importance 4 · 2026-11-11
+- [agent-hub M7 契约：事件回放 event 字段、可续流 SSE、写操作 RBAC、A2A 授权 URL 白名单](m_5f490db0-agent-hub-m7-契约-事件回放-event-字段-可续流-sse-写操.md) — M7 定下的对外契约与安全口径：事件回放补 event、新增可续流 SSE（只回放已落库事件）、写接口收紧到管理员、A2A 授权 URL 严格白名单。 · `decision` · importance 4 · 2026-11-11
+- [agent-hub M7–M9 后端立项：契约收口 / 管理台 / 工作流](m_aa80e578-agent-hub-m7-m9-后端立项-契约收口-管理台-工作流.md) — 2026-11-11 把后端「明确后续要做」的能力立项为 M7/M8/M9 三个可独立验收的里程碑，需求触发项收进候选池不占编号。 · `decision` · importance 4 · 2026-11-11
+- [agent-hub M6 后明确不做/推迟的事项清单](m_ea5a9ee5-agent-hub-m6-后明确不做-推迟的事项清单.md) — 2026-11-11 盘点确认：A2A 入站、多实例/Redis/跨实例 resume（留 M7）、Helm、崩溃 run 续跑、消息正文自动清理、计费、管理员读记忆正文等均不在当前范围。 · `decision` · importance 4 · 2026-11-11
+- [agent-hub 部署/联调前必须 alembic upgrade head，测试 create_all 会掩盖迁移缺失](m_4c883c07-agent-hub-部署-联调前必须-alembic-upgrade-head-.md) — 测试库用 create_all 建表，导致开发库未跑迁移时测试全绿但真实服务上传返回 500；部署前必须执行 alembic upgrade head。 · `project` · importance 4 · 2026-11-11
+- [agent-hub M6 后待办与跨前端对齐（2026-11-11 盘点文档为准）](m_a155c964-agent-hub-m6-后待办与跨前端对齐-2026-11-11-盘点文档为准.md) — M0–M6 主干已交付（M3 入站取消），前端 M4/M5/M6 已完成联调；剩余待办按 P0–P3 分级汇总在 docs/feedback/2026-11-11-project-status-review.md。 · `todo` · importance 4 · 2026-11-11
+- [agent-hub M6 收尾裁决：停机预算、恢复链复用、流式过滤多块 PEM](m_7af5fc79-agent-hub-m6-收尾裁决-停机预算-恢复链复用-流式过滤多块-pem.md) — M6 生产化收尾定下的停机预算、恢复链复用、崩溃 run 处置与流式过滤必须覆盖的泄漏面。 · `decision` · importance 4 · 2026-11-11
+- [agent-hub 本地依赖容器：dev_postgres 已装 pgvector，dev_redis/dev_minio 可复用](m_67050ce2-agent-hub-本地依赖容器-dev-postgres-已装-pgvecto.md) — agent-hub 用的 dev_postgres 容器是官方 postgres:latest（PG 18.4），已在容器内装好 pgvector 并在 agent_hub / agent_hub_test 两库建好扩展；dev_redis、dev_minio 已在运行，M6 验收直接复用、不新起容器。 · `project` · importance 4 · 2026-11-11
+- [agent-hub M6 实现口径：健康探针、启动恢复巡检、流式增量过滤、span 取证](m_080603aa-agent-hub-m6-实现口径-健康探针-启动恢复巡检-流式增量过滤-spa.md) — M6 设计中由助手裁决的实现口径：启动依赖不可用快速失败、恢复一次性+周期巡检并排除本进程活跃 run、checkpoint 失效用 updated_at、工具 span 用脚本化假模型取证。 · `decision` · importance 4 · 2026-11-11
+- [agent-hub M5 收尾裁决：halt 同步清理、resume 无挂起回滚](m_58c372c2-agent-hub-m5-收尾裁决-halt-同步清理-resume-无挂起回滚.md) — M5 两处显式裁决：检查点线程清理在取消接口内同步执行，resume 遇到无挂起时回滚 interrupted 并记 warning 而非自动取消。 · `decision` · importance 4 · 2026-11-10
+- [agent-hub M5 安全加固约定：<untrusted> 包裹、secret: 解析、聊天限流](m_5ed13b2e-agent-hub-m5-安全加固约定-untrusted-包裹-secret-.md) — M5 定下注入防护、平台密钥与限流的实现口径：外部内容统一包 <untrusted>、输出落库前打码、secret: 写入按角色/运行时无条件解析、聊天 30 次/60s 可配。 · `decision` · importance 4 · 2026-11-10
 - [M4 知识库 RAG 已交付完成；剩余待办为语义评测证据与生产 Embedding 策略](m_a9aa6490-m4-知识库-rag-已交付完成-剩余待办为语义评测证据与生产-embeddin.md) — M4 知识库 RAG 后端（Task 9–14 + 全分支审查修复）已完成并停在可复看状态，剩余两项待用户裁决/补证据。 · `todo` · importance 4 · 2026-11-10
 - [agent-hub M4 实施约定：不用工作树、沙箱依赖与错误语义 Ruling](m_0e1102ce-agent-hub-m4-实施约定-不用工作树-沙箱依赖与错误语义-ruling.md) — 用户关闭了工作树功能，后续直接在 master 实施；沙箱下用 UV_CACHE_DIR + .venv/bin/python 装依赖跑测试，并已定下错误语义、PDF/rebuild/fixture 等实施约定。 · `decision` · importance 4 · 2026-11-10
-- [agent-hub 数据库环境：dev_postgres 容器已装 pgvector 0.8.7](m_67050ce2-agent-hub-数据库环境-dev-postgres-容器已装-pgvect.md) — agent-hub 用的 dev_postgres 容器是官方 postgres:latest（PG 18.4）原本没有 pgvector，已在容器内安装并在 agent_hub / agent_hub_test 两库建好扩展。 · `project` · importance 4 · 2026-11-10
 - [agent-hub A2A：1.0 为主路径，0.3 兼容层有意保留，不清退](m_9591dea5-agent-hub-a2a-1-0-为主路径-0-3-兼容层有意保留-不清退.md) — 项目里残留的 0.3 相关内容属于显式、受测试覆盖的兼容能力（官方 a2a.compat.v0_3），目标是新功能默认走 1.0、0.3 仅做兼容，因此不做 1.0-only 清理。 · `decision` · importance 4 · 2026-11-10
 - [agent-hub 选型准则：官方 SDK + 薄封装为默认，自研仅为例外](m_8346c8de-agent-hub-选型准则-官方-sdk-薄封装为默认-自研仅为例外.md) — A2A/MCP 一类协议选型默认采用官方 SDK 做协议层、自研只保留安全层薄封装；自研完整协议栈仅在 SDK 不满足硬约束时例外。 · `decision` · importance 4 · 2026-11-10
 - [agent-hub A2A Card 拉取保留自研 httpx，SDK 仅做 schema 校验与传输](m_c5312293-agent-hub-a2a-card-拉取保留自研-httpx-sdk-仅做-s.md) — Card 拉取的安全边界（SSRF/同源/重定向/大小上限）由自有 httpx 实现负责，SDK 的 parse_agent_card 只用于规范 schema 校验。 · `decision` · importance 4 · 2026-11-10
@@ -31,10 +44,15 @@ Active topics: 31
 - [agent-hub Skill v1 定为纯指令包，可执行脚本列为后续方案](m_638f250d-agent-hub-skill-v1-定为纯指令包-可执行脚本列为后续方案.md) — agent-hub 的 Skill 能力第一阶段只做纯指令包，可执行脚本（含沙箱、资源限制、网络隔离等前置条件）单列为后续第二方案，不混入 v1 范围。 · `decision` · importance 4 · 2026-11-05
 - [agent-hub MCP 接入边界：内置可 stdio，用户自建仅远程 URL](m_c9d2ab0a-agent-hub-mcp-接入边界-内置可-stdio-用户自建仅远程-url.md) — agent-hub 的 MCP 支持定为：系统内置 MCP 允许 stdio 传输，用户自建 MCP 只允许远程 URL，stdio 开关默认关闭。 · `decision` · importance 4 · 2026-11-05
 - [agent-hub 需求：MCP、Skill、长期记忆、Instruction 四大能力 + 两层配置模型](m_869f2af8-agent-hub-需求-mcp-skill-长期记忆-instruction-.md) — agent-hub 本阶段做四大能力（MCP、Skill、长期记忆、Instruction），配置为账号级并由「系统默认 + 用户自定义」两层在运行时合并，会话内可显式点名使用 Skill/MCP。 · `project` · importance 4 · 2026-11-05
+- [scripts/mock_langchain_agents.py：本地 LangChain mock 智能体集群](m_bef86b52-scripts-mock-langchain-agents-py-本地-lang.md) — 一条命令在本机起 N 个 LangChain(A2A 0.3) 模拟智能体并自动注册进 agent-hub，供开发联调使用。 · `reference` · importance 3 · 2026-11-13
+- [M9 spike 通过与正式实现输入（2026-11-12）](m_c4d3aa37-m9-spike-通过与正式实现输入-2026-11-12.md) — M9 工作流后端已交付（886 passed，验收全勾），执行模型与 parked 备案记录 · `decision` · importance 3 · 2026-11-12
+- [agent-hub M8 后待办：R8 口径产品确认、前端接入 M7/M8、M9 spike](m_d8990329-agent-hub-m8-后待办-r8-口径产品确认-前端接入-m7-m8-m9.md) — M7/M8 后端已完成，仍需产品确认 R8 全局 Agent 口径，前端接入 M7/M8 契约，M9 工作流先做 1 天 spike。 · `todo` · importance 3 · 2026-11-11
+- [agent-hub 仓库 .dsh 运行时数据被 Git 追踪并已推送公开仓库](m_602c394b-agent-hub-仓库-dsh-运行时数据被-git-追踪并已推送公开仓库.md) — agent-hub 的 .dsh 运行时数据被 Git 跟踪并已推到公开仓库；2026-11-11 用户明确「.dsh 不用管」，本轮不做处置。 · `project` · importance 3 · 2026-11-11
+- [助手文件沙箱只能写 agent-hub 工作区，前端仓库改动需授权或前端会话](m_a78a26e1-助手文件沙箱只能写-agent-hub-工作区-前端仓库改动需授权或前端会话.md) — agent-hub-web 的文档改动无法由本仓库会话直接完成，需用户授权跨仓库写入或交给前端会话处理。 · `project` · importance 3 · 2026-11-11
+- [agent-hub 测试不得依赖本地 .env：Pydantic Settings 会读取导致本地失败/CI 通过](m_666bcdd2-agent-hub-测试不得依赖本地-env-pydantic-settings.md) — test_missing_capability_key_503 用 delenv 删环境变量后仍从本地 .env 读到 CAPABILITY_SECRET_KEY，属既有测试的环境依赖问题，应改成不依赖 .env。 · `project` · importance 3 · 2026-11-11
 - [agent-hub M4 生产 Embedding 策略：缺 key 拒绝启动（偏离计划的 auto 回退 fake）](m_153cc36c-agent-hub-m4-生产-embedding-策略-缺-key-拒绝启动-.md) — 按设计 spec 实现为生产环境缺少 Embedding key 直接拒绝启动，与实施计划的「auto 一律回退 fake」冲突，属待用户裁决的显式偏离。 · `project` · importance 3 · 2026-11-10
 - [agent-hub 前端仓库在 agent-hub-web，当前沙箱只能写后端](m_e8a8d720-agent-hub-前端仓库在-agent-hub-web-当前沙箱只能写后端.md) — 前端 Vue 代码位于 ~/work/NodeJsProjects/agent-hub-web，不在 agent-hub 工作区内，当前会话的文件写入权限只覆盖 agent-hub 后端仓库。 · `project` · importance 3 · 2026-11-10
 - [agent-hub 路线图里程碑状态的标记规范与证据口径](m_1d16a11e-agent-hub-路线图里程碑状态的标记规范与证据口径.md) — docs/roadmap.md 用总览表+标题内联状态+checkbox 标记里程碑，勾选必须有实测证据，不虚报。 · `project` · importance 3 · 2026-11-10
-- [agent-hub 仓库 .dsh 运行时文件被 Git 追踪的遗留状况](m_602c394b-agent-hub-仓库-dsh-运行时文件被-git-追踪的遗留状况.md) — agent-hub 曾把 .dsh 运行时数据（会话记录、项目记忆）提交进 Git，导致 .gitignore 对它们无效，且 .dsh/sessions/ 整目录未被忽略。 · `project` · importance 3 · 2026-11-10
 - [agent-hub 500 request_id 走 request.state，注册/登录限流可配置并用 seed 脚本绕开](m_47794f6a-agent-hub-500-request-id-走-request-state.md) — 未处理异常会越过中间件的 contextvar 清理，因此 request_id 同时写入 request.state；注册/登录限流改为可配置，并用幂等脚本创建开发账号。 · `decision` · importance 3 · 2026-11-09
 - [agent-hub 使用用户本机 PostgreSQL，不依赖 Docker](m_bf4efbaa-agent-hub-使用用户本机-postgresql-不依赖-docker.md) — agent-hub 后端默认使用用户本机已有 PostgreSQL、不自启任何容器；docker-compose 仅作为可选项保留。 · `project` · importance 3 · 2026-11-09
 - [agent-hub 长度口径：API 用字符（指令 4000 字符），token 用保守系数做预算](m_0464a21e-agent-hub-长度口径-api-用字符-指令-4000-字符-token-.md) — 对外 API 一律以字符为单位（如指令上限 4000 字符），内部预算用保守系数估算 token，技能在导入时即校验 ≤8000 tokens。 · `decision` · importance 3 · 2026-11-05
