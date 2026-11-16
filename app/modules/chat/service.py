@@ -377,7 +377,10 @@ async def start_chat(db: AsyncSession, user: User, payload: ChatStreamRequest) -
     conversation.last_message_at = now
     conversation.last_message_preview = payload.message[:80]
     conversation.message_count += 1
-    if is_new or conversation.title == "新对话":
+    # 前端「新建会话」会预创建空会话（历史默认标题「新会话」），此时 is_new 为
+    # False；占位标题集合同时兼容新默认「新对话」与旧前端写入的「新会话」，
+    # 手动改名的会话（非占位标题）不会被首条消息覆盖。
+    if is_new or conversation.title in {"新对话", "新会话"}:
         conversation.title = _title_from_message(payload.message)
 
     try:

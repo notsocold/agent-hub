@@ -231,7 +231,7 @@ CI 会额外跑空库迁移、`alembic check`、OpenAPI diff 与镜像构建，�
 | 问题 | 原因 | 处理 |
 |---|---|---|
 | `psycopg.OperationalError` 连接失败 | 本机 PG 未启动/端口、用户、库名不对 | 检查 `.env` 的 `DATABASE_URL`；项目不负责启停本机 PostgreSQL |
-| `extension "vector" is not available` | 当前 PG 实例没装 pgvector | 容器内装 `postgresql-<ver>-pgvector`（M4 实测 `postgresql-18-pgvector 0.8.7`），或换 `pgvector/pgvector` 镜像；装完 `CREATE EXTENSION vector` 不需要重启 PG |
+| `extension "vector" is not available` | 当前 PG 实例没装 pgvector（共享容器重建后最常见） | 跑 `uv run python scripts/ensure_pgvector.py` 一键补装并对各库建扩展（幂等）；手工等价命令是容器内装 `postgresql-<ver>-pgvector`（M4 实测 `postgresql-18-pgvector 0.8.7`），或换 `pgvector/pgvector` 镜像；装完 `CREATE EXTENSION vector` 不需要重启 PG |
 | `type "vector" does not exist` | 扩展已安装但当前库没建 | 对**该库**执行 `CREATE EXTENSION vector`（迁移会尝试，但需要 superuser 权限） |
 | `psycopg` 连接串报 driver 错误 | 把 `postgresql+psycopg://` 直接给了 psycopg | 用 `settings.checkpoint_dsn`（已去掉驱动后缀） |
 | checkpoint 表找不到 | search_path 未指向 `langgraph` | 连接参数 `options=-csearch_path=langgraph` |

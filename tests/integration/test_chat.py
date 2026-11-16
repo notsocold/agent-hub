@@ -346,3 +346,53 @@ async def test_user_message_keeps_capabilities(client: httpx.AsyncClient) -> Non
     assert user_message["capabilities"]["skills"] == [skill_id]
     assistant_message = next(item for item in items if item["role"] == "assistant")
     assert assistant_message["capabilities"]["skills"] == [skill_id]
+
+
+async def test_precreated_conversation_title_updates_on_first_message(
+    client: httpx.AsyncClient,
+) -> None:
+    """前端先建空会话（默认「新会话」）再发首条消息，标题应被首条消息覆盖。"""
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+
+    created = await client.post(
+        "/api/v1/conversations", json={"title": "新会话"}, headers=headers
+    )
+    assert created.status_code == 201, created.text
+    conversation_id = created.json()["id"]
+    assert created.json()["title"] == "新会话"
+
+    run_id, events = await collect_sse(
+        client,
+        headers=headers,
+        payload={"conversation_id": conversation_id, "message": "首条消息生成标题"},
+    )
+    assert run_id
+
+    detail = await client.get(f"/api/v1/conversations/{conversation_id}", headers=headers)
+    assert detail.status_code == 200
+    assert detail.json()["title"] == "首条消息生成标题"
+
+
+async def test_precreated_conversation_keeps_user_renamed_title(
+    client: httpx.AsyncClient,
+) -> None:
+    """用户给空会话手动改名后，首条消息不应覆盖该标题。"""
+    registered = await register_user(client)
+    headers = auth_headers(registered["access_token"])
+
+    created = await client.post(
+        "/api/v1/conversations", json={"title": "我的手动标题"}, headers=headers
+    )
+    assert created.status_code == 201, created.text
+    conversation_id = created.json()["id"]
+
+    run_id, _ = await collect_sse(
+        client,
+        headers=headers,
+        payload={"conversation_id": conversation_id, "message": "这条消息不该改标题"},
+    )
+    assert run_id
+
+    detail = await client.get(f"/api/v1/conversations/{conversation_id}", headers=headers)
+    assert detail.json()["title"] == "我的手动标题"

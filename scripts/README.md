@@ -13,6 +13,7 @@
 | `mock_langchain_agents.py` | 已实现：本地 LangChain 模拟智能体集群（默认 9101），一键启动并自动注册进 agent-hub |
 | `grant_admin.py` | 已实现：设置/撤销用户管理员角色（`users.role`），用于首个管理员引导 |
 | `seed_dev_account.py` | 已实现：幂等创建/重置开发账号（默认 `dev@example.com`），绕开注册限流 |
+| `ensure_pgvector.py` | 已实现：容器重建后为共享 PostgreSQL 补装 pgvector 扩展并对各库建扩展（幂等） |
 | `export_openapi.py` | 已实现：导出 `docs/openapi.json`，作为前后端契约源 |
 | `cleanup.py` | 已实现：checkpoint/run_events/审计/附件/token 清理（支持 `--dry-run`/`--only`） |
 | `load_test_sse.py` | 已实现：50 并发 SSE 压测 |
